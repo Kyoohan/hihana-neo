@@ -216,6 +216,102 @@ object HanaAcademicApi {
         return entries
     }
 
+    /** 정기고사(중간·기말) 판별 — 공백을 뺀 이름에 들어 있으면 시험입니다. */
+    fun isExamName(name: String): Boolean {
+        val compact = name.replace(" ", "")
+        return compact.contains("중간고사") || compact.contains("기말고사")
+    }
+
+    /** 범위 조회 응답 행에서 날짜를 읽을 때 시도하는 필드명 후보. */
+    private val rowDateKeys = listOf(
+        "sch_date", "sch_day", "sch_st_day", "sch_start_day", "sch_sdate", "sch_st_date", "st_day", "start_day",
+        "sdate", "st_date", "sch_ymd", "ymd", "date",
+    )
+
+    private fun parseRowDate(row: JSONObject): LocalDate? {
+        for (key in rowDateKeys) {
+            val raw = row.optStr(key)?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+            val digits = raw.filter { it.isDigit() }
+            if (digits.length >= 8) {
+                runCatching { LocalDate.parse(digits.take(8), DateTimeFormatter.BASIC_ISO_DATE) }.getOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /**
+     * 앞으로 두 달쯤의 **정기고사(중간·기말)** 만 미리 찾습니다 — 2주치 상세 일정엔 다음 달 시험이 안 잡혀
+     * D-day 가 시험 직전에야 떴습니다. 하루씩 60번 묻는 대신 범위로 한 번 물어 행에 날짜 필드가 있으면 그대로
+     * 쓰고, 날짜를 못 읽으면 시험 이름이 들어 있는 주(週)만 하루씩 되물어 날짜를 확정합니다.
+     */
+    suspend fun fetchUpcomingExams(context: Context, start: LocalDate, end: LocalDate): List<HanaScheduleEntry> {
+        val variant = ScheduleVariantStore.get(context, scheduleVariants.size)?.let { scheduleVariants[it] }
+            ?: scheduleVariants.first()
+        val rows = requestScheduleRows(context, start, end, variant) ?: return emptyList()
+        val examRows = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
+            .filter { isExamName(decodeHtml(it.optStr("sch_nm"))) }
+        if (examRows.isEmpty()) return emptyList()
+
+        // 첫 시험 행의 키를 남겨 실제 날짜 필드명을 확인할 수 있게 합니다.
+        Log.d(TAG, "정기고사 범위 조회 ${start}~${end}: ${examRows.size}행, 키=${examRows.first().keys().asSequence().joinToString(",")}")
+
+        val dated = examRows.mapNotNull { row ->
+            val date = parseRowDate(row) ?: return@mapNotNull null
+            if (date.isBefore(start) || date.isAfter(end)) return@mapNotNull null
+            HanaScheduleEntry(
+                code = row.optStr("sch_cd").orEmpty(),
+                name = decodeHtml(row.optStr("sch_nm")),
+                place = row.optStr("slp_nm"),
+                startTime = row.optStr("st_time"),
+                endTime = row.optStr("ed_time"),
+                allDay = row.optStr("all_day")?.uppercase(Locale.ROOT) in listOf("Y", "1", "TRUE"),
+                date = date,
+            )
+        }
+        if (dated.isNotEmpty()) return dated.distinctBy { it.date to it.name }
+
+        // 날짜 필드를 못 읽음 — 시험이 든 주만 하루씩 되물어 날짜를 붙입니다.
+        val found = mutableListOf<HanaScheduleEntry>()
+        var weekStart = start
+        while (!weekStart.isAfter(end)) {
+            val weekEnd = minOf(weekStart.plusDays(6), end)
+            val weekRows = requestScheduleRows(context, weekStart, weekEnd, variant)
+            val hasExam = weekRows != null && (0 until weekRows.length()).any { i ->
+                weekRows.optJSONObject(i)?.let { isExamName(decodeHtml(it.optStr("sch_nm"))) } == true
+            }
+            if (hasExam) {
+                var day = weekStart
+                while (!day.isAfter(weekEnd)) {
+                    val result = runCatching { requestScheduleDay(context, day, variant) }.getOrNull()
+                    result?.entries?.filter { isExamName(it.name) }?.let { found += it }
+                    day = day.plusDays(1)
+                }
+            }
+            weekStart = weekStart.plusDays(7)
+        }
+        return found.distinctBy { it.date to it.name }
+    }
+
+    /** [start]~[end] 범위를 한 번에 묻고 원본 행 배열만 돌려줍니다 (배열 키를 못 찾으면 null). */
+    private suspend fun requestScheduleRows(
+        context: Context,
+        start: LocalDate,
+        end: LocalDate,
+        variant: ScheduleVariant,
+    ): JSONArray? {
+        val fmt = DateTimeFormatter.ofPattern(variant.datePattern)
+        val params = mutableListOf(
+            "pageSize" to "1000",
+            "schStartDay" to start.format(fmt),
+            "schEndDay" to end.format(fmt),
+        )
+        params += variant.extra
+        val json = HanaPortalClient.get().authenticatedJson(context, "/main/schedule/hana-manage-data.json", params)
+        return json.optJSONArray("itemList")
+            ?: json.optJSONArray("list")
+            ?: json.optJSONObject("paging")?.optJSONArray("result")
+    }
+
     /** 하루치 응답 — 파싱한 일정, 인식한 배열 키가 있었는지, 원문(진단 로그용). */
     private data class ScheduleDayResult(
         val entries: List<HanaScheduleEntry>,
@@ -448,6 +544,23 @@ object HanaAcademicRepository {
         }
 
         if (fresh.isEmpty()) return emptyList()
+        // 다음 달 중간·기말고사처럼 2주 범위 밖의 정기고사를 덧붙입니다 (실패해도 2주치 일정은 그대로).
+        val exams = runCatching { upcomingExams(context, today, force) }.getOrDefault(emptyList())
+        val merged = fresh + exams.filter { exam -> fresh.none { it.date == exam.date && it.name == exam.name } }
+        PlanStore.writeCachedJson(context, name, encodeSchedule(merged))
+        return merged
+    }
+
+    private const val TTL_EXAMS = 12 * 60 * 60 * 1000L
+
+    /** 오늘+14일 ~ 오늘+75일 사이의 정기고사 — 12시간 캐시. */
+    private suspend fun upcomingExams(context: Context, today: LocalDate, force: Boolean): List<HanaScheduleEntry> {
+        val name = "academic_exams"
+        val stored = PlanStore.cachedJson(context, name)
+        if (!force && stored != null && System.currentTimeMillis() - stored.at <= TTL_EXAMS) {
+            return decodeSchedule(stored.value)
+        }
+        val fresh = HanaAcademicApi.fetchUpcomingExams(context, today.plusDays(14), today.plusDays(75))
         PlanStore.writeCachedJson(context, name, encodeSchedule(fresh))
         return fresh
     }
@@ -746,10 +859,7 @@ object AlimNotifier {
  */
 fun examDday(entries: List<HanaScheduleEntry>, today: LocalDate): ExamDday? =
     entries.asSequence()
-        .filter { entry ->
-            val name = entry.name.replace(" ", "")
-            name.contains("중간고사") || name.contains("기말고사")
-        }
+        .filter { entry -> HanaAcademicApi.isExamName(entry.name) }
         .map { entry -> ExamDday(entry.name, entry.date, ChronoUnit.DAYS.between(today, entry.date)) }
         .filter { it.days >= 0 }
         .minByOrNull { it.days }

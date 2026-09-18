@@ -603,4 +603,14 @@ object Timetable {
         val all = blocks(date, placeFor)
         return all.firstOrNull { !it.start.isAfter(time) && time.isBefore(it.end) } ?: all.last()
     }
+
+    /**
+     * "다음 일정" — 쉬는 시간·식사 같은 대기 구간(GapKind)은 일정으로 치지 않고, 다음 수업·면학만 셉니다.
+     * 지금이 대기 구간이면 그 구간의 히어로가 이미 바로 다음 것을 보여주므로, 그 다음(둘째) 일정을 돌려줍니다.
+     */
+    fun nextEvent(blocks: List<Block>, current: Block?, time: LocalDateTime): Block? {
+        val upcoming = blocks.filter { it.start.isAfter(time) && !it.isBlank && it.kind !is BlockKind.GapKind }
+        val skipFirst = current?.kind is BlockKind.GapKind && upcoming.firstOrNull()?.start == current.end
+        return if (skipFirst) upcoming.getOrNull(1) else upcoming.firstOrNull()
+    }
 }

@@ -112,8 +112,8 @@ class TimeTableWidget : GlanceAppWidget() {
             val allergyCodes = PlanStore.allergyCodes(context)
             val now = LocalDateTime.now(PlanStore.seoulZone)
             val block = Timetable.blockAt(today, now) { places[it] }
-            val next = Timetable.blocks(today) { places[it] }
-                .firstOrNull { it.start.isAfter(now) && !it.isBlank }
+            // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다.
+            val next = Timetable.nextEvent(Timetable.blocks(today) { places[it] }, block, now)
 
             // 지금이 급식 "표시 창"(아침·점심·저녁은 종료 10분 전까지, 간식은 전체) 안이면
             // 그 끼니 메뉴를 보여주고, 아니면 아래에서 다음 일정으로 넘어갑니다.
@@ -142,8 +142,7 @@ class TimeTableWidget : GlanceAppWidget() {
             WidgetSnapshot(
                 block = block,
                 nextTitle = next?.title,
-                // 쉬는 시간(GapKind)엔 히어로가 이미 다음 교실을 보여주므로 '다음' 줄에서는 위치를 뺍니다
-                nextRoom = if (block?.kind is BlockKind.GapKind) null else next?.room,
+                nextRoom = next?.room,
                 mealText = mealText,
                 mealAllergyPrefix = mealAllergyPrefix,
                 supervisionText = supervisionText,
@@ -420,7 +419,7 @@ private fun ScheduleContent(
     val tall = LocalSize.current.height >= 120.dp
     if (mealText != null) {
         if (tall) {
-            MealHeroContent(block, mealText, mealAllergyPrefix, supervisionText)
+            MealHeroContent(block, mealText, mealAllergyPrefix, supervisionText, nextTitle, nextRoom)
         } else {
             MealCompactContent(block, mealText, mealAllergyPrefix, supervisionText)
         }
@@ -766,7 +765,14 @@ private fun NormalHeroContent(
  * 2x2처럼 세로 공간이 넉넉한 크기용(급식 창) — 위치 히어로는 유지하고 하단을 메뉴로.
  */
 @Composable
-private fun MealHeroContent(block: Block, mealText: String, allergyPrefix: String, supervisionText: String?) {
+private fun MealHeroContent(
+    block: Block,
+    mealText: String,
+    allergyPrefix: String,
+    supervisionText: String?,
+    nextTitle: String?,
+    nextRoom: String?,
+) {
     val heroText = block.room ?: block.title
     val heroSpace = LocalSize.current.width.value - 32f - (if (block.iconKey.isNotEmpty()) 36f else 0f)
 
@@ -786,7 +792,8 @@ private fun MealHeroContent(block: Block, mealText: String, allergyPrefix: Strin
 
         // 메뉴가 남는 세로 공간을 차지합니다 — 줄 수는 위젯 높이에서 상단(상태·히어로·여백)과 하단 여백을 뺀
         // 만큼 계산해서, 공간이 남는데도 4줄에서 잘리지 않게 합니다 (한 줄 ≈ 20dp).
-        val fixedDp = 32f + 20f + 12f + 40f + 8f + (if (supervisionText != null) 20f else 0f)
+        val hasNext = !nextTitle.isNullOrEmpty()
+        val fixedDp = 32f + 20f + 12f + 40f + 8f + (if (supervisionText != null) 20f else 0f) + (if (hasNext) 20f else 0f)
         val mealLines = ((LocalSize.current.height.value - fixedDp) / 20f).toInt().coerceIn(2, 12)
         Box(
             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
@@ -800,6 +807,12 @@ private fun MealHeroContent(block: Block, mealText: String, allergyPrefix: Strin
                 maxLines = mealLines,
                 allergyPrefix = allergyPrefix,
             )
+        }
+
+        // 급식 창에도 다음 일정(다음 수업·면학)을 한 줄 보여줍니다.
+        if (hasNext) {
+            Spacer(GlanceModifier.height(2.dp))
+            NextRow(nextTitle, nextRoom, 12.sp, maxLines = 1)
         }
 
         if (supervisionText != null) {

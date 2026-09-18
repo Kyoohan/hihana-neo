@@ -761,7 +761,8 @@ private fun TimeTableAppContent(
     val hasTimetable = remember(timetableRevision) { Timetable.fetchedWeek() != null }
     val todayBlocks = remember(today, places, timetableRevision) { Timetable.blocks(today) { places[it] } }
     val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
-    val nextBlock = todayBlocks.firstOrNull { it.start.isAfter(now) && !it.isBlank }
+    // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
+    val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
     val upcomingGroups = coalesceUpcoming(todayBlocks.filter { it.start.isAfter(now) && !it.isBlank })
     val remainingMinutes = currentBlock
         ?.takeUnless { it.isBlank }
