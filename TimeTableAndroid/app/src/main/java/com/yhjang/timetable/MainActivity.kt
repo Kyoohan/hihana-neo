@@ -660,8 +660,9 @@ private fun TimeTableAppContent(
         if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
     }
 
-    // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작
+    // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작 — 탭을 바꾸면 펼친 상태에서 시작합니다.
     val headerState = rememberOneUiHeaderState()
+    LaunchedEffect(tab) { headerState.expand() }
 
     val selectedMealDate = remember(selectedMealDay) {
         runCatching { LocalDate.parse(selectedMealDay) }.getOrDefault(PlanStore.today())
@@ -705,9 +706,14 @@ private fun TimeTableAppContent(
                     // 남는 높이에 맞춰 56~78dp 사이로 정하고, 그래도 넘칠 때만 스크롤을 붙입니다.
                     val periodRows = remember(timetableRevision) { Timetable.activePeriodTimes.size + 1 }
                     val cardChrome = 16.dp
-                    val available = maxHeight - tabContentPadding.calculateTopPadding() - tabContentPadding.calculateBottomPadding() - cardChrome
+                    // 헤더가 접혀 있으면 maxHeight 가 그만큼 커지는데, 그걸 기준으로 "다 들어간다"고 판단하면 스크롤이
+                    // 사라지면서 헤더를 다시 펼칠 방법이 없어집니다 — 헤더가 펼쳐진 상태의 높이로 계산합니다.
+                    val collapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() }
+                    val available = maxHeight - collapsedBy - tabContentPadding.calculateTopPadding() - tabContentPadding.calculateBottomPadding() - cardChrome
                     val rowHeight = (available / periodRows).coerceIn(56.dp, 78.dp)
                     val fits = !timetableInstalled || rowHeight * periodRows <= available
+                    // 스크롤할 게 없는데 헤더가 접혀 있으면(다른 탭에서 넘어온 경우) 펼쳐 둡니다.
+                    LaunchedEffect(fits) { if (fits) headerState.expand() }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()

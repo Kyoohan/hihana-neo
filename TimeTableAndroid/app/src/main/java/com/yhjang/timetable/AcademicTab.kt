@@ -35,6 +35,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -130,18 +137,32 @@ fun AcademicTab(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(modifier = modifier, contentPadding = contentPadding) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+    // 신청·내역은 카드 몇 장뿐이라 시간표 탭처럼 화면에 다 들어가면 스크롤(과 헤더 접힘)을 두지 않습니다 —
+    // 내용 높이를 재 보고 넘칠 때만 스크롤을 붙입니다.
+    if (subTab == 2) {
+        BoxWithConstraints(modifier) {
+            var contentHeightPx by remember { mutableIntStateOf(0) }
+            val availablePx = with(LocalDensity.current) {
+                (maxHeight - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding()).roundToPx()
+            }
+            val fits = contentHeightPx <= availablePx
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
+                    .padding(contentPadding),
             ) {
-                // 게시판이 기본 탭이라 맨 앞에 둡니다 (인덱스는 저장 호환을 위해 그대로: 0=학사일정, 1=게시판, 2=신청·내역).
-                OneUiChip(selected = subTab == 1, onClick = { onSubTabChange(1) }, label = "게시판")
-                OneUiChip(selected = subTab == 2, onClick = { onSubTabChange(2) }, label = "신청·내역")
-                OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
+                Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {
+                    AcademicSubTabs(subTab, onSubTabChange)
+                    ApplyHistorySection(onOpenWeb = onOpenWeb)
+                }
             }
         }
+        return
+    }
+
+    LazyColumn(modifier = modifier, contentPadding = contentPadding) {
+        item { AcademicSubTabs(subTab, onSubTabChange) }
 
         if (subTab == 0) {
             if (scheduleError != null) {
@@ -201,11 +222,20 @@ fun AcademicTab(
                     }
                 }
             }
-        } else {
-            item {
-                ApplyHistorySection(onOpenWeb = onOpenWeb)
-            }
         }
+    }
+}
+
+/** 학사 하위 탭 칩 — 게시판이 기본이라 맨 앞 (인덱스는 저장 호환을 위해 그대로: 0=학사일정, 1=게시판, 2=신청·내역). */
+@Composable
+private fun AcademicSubTabs(subTab: Int, onSubTabChange: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OneUiChip(selected = subTab == 1, onClick = { onSubTabChange(1) }, label = "게시판")
+        OneUiChip(selected = subTab == 2, onClick = { onSubTabChange(2) }, label = "신청·내역")
+        OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
     }
 }
 
@@ -508,10 +538,17 @@ fun BoardDetailScreen(
     // 이걸 화면을 열기 전에 하면 열리기까지 1초 가까이 멈춰 보였습니다.
     var sessionReady by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 포털이 가끔 세션을 끊어 로그인 페이지로 튕기면(재현이 어려운 간헐적 문제), 한 번은 앱이 다시 로그인하고
+    // 쿠키를 새로 심은 뒤 원래 글을 다시 읽어 스스로 복구합니다. 두 번째도 실패하면 로그인 페이지를 그대로 둡니다.
+    var recoveredOnce by remember(url) { mutableStateOf(false) }
     LaunchedEffect(url) {
         HanaPortalClient.get().ensureLoggedIn(context)
         sessionReady = true
     }
+
+    // onPageFinished 의 url 파라미터와 이름이 겹치므로 원래 열려던 주소를 따로 잡아 둡니다.
+    val targetUrl = url
 
     BackHandler(onBack = onDismiss)
 
@@ -566,6 +603,24 @@ fun BoardDetailScreen(
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     loading = false
+                                    val bouncedToLogin = url?.contains("/main/login/") == true
+                                    if (bouncedToLogin) {
+                                        if (!recoveredOnce && view != null) {
+                                            recoveredOnce = true
+                                            loading = true
+                                            scope.launch {
+                                                val ok = runCatching { HanaPortalClient.get().relogin(context) }.isSuccess
+                                                if (ok) {
+                                                    HanaPortalClient.get().syncCookiesToWebView()
+                                                    view.loadUrl(targetUrl)
+                                                } else {
+                                                    loading = false
+                                                }
+                                            }
+                                        }
+                                        // 로그인 페이지의 비로그인 세션 쿠키를 앱 쪽으로 가져오면 안 됩니다.
+                                        return
+                                    }
                                     // 웹뷰가 받은 최신 세션 쿠키를 앱 쪽으로 되가져와 다음 게시글도 같은 세션으로 엽니다.
                                     HanaPortalClient.get().syncCookiesFromWebView()
                                 }

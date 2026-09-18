@@ -449,6 +449,15 @@ class HanaPortalClient private constructor() {
         }
     }
 
+    /**
+     * 세션 상태와 무관하게 다시 로그인합니다 — 웹뷰가 로그인 페이지로 튕겼을 때(세션이 서버에서 끊긴 경우)
+     * 화면이 스스로 복구하는 데 씁니다. 실패는 예외로 알립니다.
+     */
+    suspend fun relogin(context: Context) = withContext(Dispatchers.IO) {
+        login(context)
+        lastAuthenticatedAt = System.currentTimeMillis()
+    }
+
     /** 마지막으로 인증된 응답을 받은 시각 — [ensureLoggedIn] 이 불필요한 왕복을 건너뛰는 기준. */
     @Volatile private var lastAuthenticatedAt = 0L
     private val SESSION_FRESH_MS = 3 * 60 * 1000L
