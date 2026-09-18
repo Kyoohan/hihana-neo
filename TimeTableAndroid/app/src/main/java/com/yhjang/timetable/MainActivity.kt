@@ -321,6 +321,11 @@ private fun TimeTableAppContent(
     var syncError by remember { mutableStateOf<String?>(null) }
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
+    // 계정 유무는 화면 상태로 들고 있어야 연동 직후 '지금' 카드·게시판 등이 바로 바뀝니다.
+    var hasCredentials by remember { mutableStateOf(HanaCredentialStore.hasCredentials(context)) }
+    // 오프라인 표시 — 네트워크 오류로 동기화에 실패하면 다이얼로그 대신 헤더에 조용히 표시하고 캐시로 버팁니다.
+    var offline by remember { mutableStateOf(false) }
+    var lastSyncAt by remember { mutableStateOf(0L) }
     var showingSettings by remember { mutableStateOf(false) }
     var showingAppInfo by remember { mutableStateOf(false) }
     // 앱 내 업데이트 상태 — 실행 시 한 번(6시간 캐시) 조용히 확인하고, 정보 화면에서 수동 확인/설치합니다.
@@ -510,6 +515,8 @@ private fun TimeTableAppContent(
         // TTL이 지났으면 렌더 DOM 으로 새로 받아옵니다 (실패 시 캐시 유지) — 느릴 수 있는
         // 네트워크 단계라, 이미 캐시로 화면이 채워진 뒤(위에서) 조용히 뒤따라오게 둡니다.
         runCatching { HanaTimetableSync.refresh(context, force = false) }
+            .onSuccess { offline = false; PlanStore.markSynced(context); lastSyncAt = System.currentTimeMillis() }
+            .onFailure { if (it is java.io.IOException) offline = true }
         timetableRevision++
 
         // 알리미는 로그인 계정이 있고 권한이 있을 때만 조용히 확인합니다.
@@ -518,12 +525,19 @@ private fun TimeTableAppContent(
         }
     }
 
-    // 앱 실행 시 새 버전을 조용히 확인합니다 — 실패해도 아무것도 띄우지 않습니다.
+    // 앱 실행 시 새 버전을 조용히 확인합니다 — 큰 버전이면(자동 확인은 큰 버전만 돌려줍니다) 실행 시 안내를 한 번 띄웁니다.
+    var majorUpdatePrompt by remember { mutableStateOf<UpdateInfo?>(null) }
     LaunchedEffect(Unit) {
+        lastSyncAt = runCatching { PlanStore.lastSyncAt(context) }.getOrDefault(0L)
         val cached = runCatching { AppUpdater.cached(context) }.getOrNull()
         if (cached != null) updateState = UpdateState.Available(cached)
-        runCatching { AppUpdater.check(context) }.getOrNull()?.let { updateState = UpdateState.Available(it) }
+        val found = runCatching { AppUpdater.check(context) }.getOrNull() ?: cached
+        if (found != null) {
+            updateState = UpdateState.Available(found)
+            if (!UpdatePromptStore.dismissedRecently(context, found.versionName)) majorUpdatePrompt = found
+        }
     }
+
 
     fun checkUpdateNow() {
         if (!AppUpdater.isConfigured) {
@@ -664,10 +678,30 @@ private fun TimeTableAppContent(
             HanaTimetableSync.refresh(context, date, force = true)
             timetableRevision++
             syncEverywhere()
+            offline = false
+            PlanStore.markSynced(context)
+            lastSyncAt = System.currentTimeMillis()
+        } catch (e: java.io.IOException) {
+            // 네트워크가 없거나 서버에 못 닿는 경우 — 오류 창 대신 오프라인 표시로 두고 캐시된 내용을 그대로 씁니다.
+            offline = true
         } catch (e: Exception) {
             syncError = e.message ?: "알 수 없는 오류가 발생했습니다"
         } finally {
             isSyncing = false
+        }
+    }
+
+    // 계정 연동 창을 닫으면 계정 상태를 다시 읽고, 방금 연동됐으면 바로 한 번 동기화합니다.
+    LaunchedEffect(showingAccountSheet) {
+        if (showingAccountSheet) return@LaunchedEffect
+        val now = HanaCredentialStore.hasCredentials(context)
+        val linkedNow = now && !hasCredentials
+        hasCredentials = now
+        if (linkedNow) {
+            runCatching { syncFromHana() }
+            runCatching { loadSchedule(true) }
+            runCatching { loadBoard(true) }
+            runCatching { loadAlim(true) }
         }
     }
 
@@ -729,7 +763,13 @@ private fun TimeTableAppContent(
             OneUiCollapsingHeader(
                 state = headerState,
                 title = tabTitles[tab],
-                subtitle = dateText(today),
+                subtitle = buildString {
+                    append(dateText(today))
+                    if (offline) {
+                        append(" · 오프라인")
+                        if (lastSyncAt > 0L) append(" · ").append(syncTimeText(lastSyncAt)).append(" 동기화")
+                    }
+                },
             )
         },
     ) { innerPadding ->
@@ -878,6 +918,8 @@ private fun TimeTableAppContent(
                         .getOrElse(boardCategoryIndex) { BoardCategory.STUDENT_NOTICE }
                         .label,
                     studentGrade = studentGrade,
+                    needsAccount = !hasCredentials,
+                    onConnectAccount = { showingAccountSheet = true },
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
                     onOpenPost = { openBoardPost(it) },
@@ -970,6 +1012,21 @@ private fun TimeTableAppContent(
 
     if (showingAccountSheet) {
         HanaAccountDialog(onDismiss = { showingAccountSheet = false })
+    }
+
+    majorUpdatePrompt?.let { info ->
+        MajorUpdateDialog(
+            info = info,
+            onLater = {
+                UpdatePromptStore.dismiss(context, info.versionName)
+                majorUpdatePrompt = null
+            },
+            onUpdate = {
+                majorUpdatePrompt = null
+                showingAppInfo = true
+                installUpdate()
+            },
+        )
     }
 
     if (showingAlim) {
@@ -1082,6 +1139,13 @@ private fun TimeTableAppContent(
             message = message,
         )
     }
+}
+
+/** "15:32" — 오프라인 표시에 붙는 마지막 동기화 시각. 오늘이 아니면 "9/17 15:32". */
+private fun syncTimeText(atMillis: Long): String {
+    val at = java.time.Instant.ofEpochMilli(atMillis).atZone(PlanStore.seoulZone).toLocalDateTime()
+    val time = "%02d:%02d".format(at.hour, at.minute)
+    return if (at.toLocalDate() == PlanStore.today()) time else "${at.monthValue}/${at.dayOfMonth} $time"
 }
 
 private fun dateText(date: LocalDate): String {

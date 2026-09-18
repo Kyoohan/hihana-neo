@@ -319,3 +319,127 @@ private fun LicensesScreen(onDismiss: () -> Unit) {
         }
     }
 }
+
+// MARK: - 실행 시 큰 버전 업데이트 안내
+
+/** '나중에'를 누른 버전은 하루 동안 다시 묻지 않습니다. */
+object UpdatePromptStore {
+    private const val PREFS = "update_prompt"
+    private const val SNOOZE_MS = 24 * 60 * 60 * 1000L
+
+    fun dismissedRecently(context: android.content.Context, version: String): Boolean {
+        val at = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getLong("dismissed_$version", 0L)
+        return System.currentTimeMillis() - at < SNOOZE_MS
+    }
+
+    fun dismiss(context: android.content.Context, version: String) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putLong("dismissed_$version", System.currentTimeMillis()).apply()
+    }
+}
+
+/**
+ * 릴리스 노트(마크다운)에서 항목 줄만 뽑아 앞 [max]개 — 글머리 기호·강조 표시는 벗깁니다.
+ * 릴리스 노트가 비면 앱 안의 변경 사항에서 그 버전 항목을 대신 씁니다.
+ */
+private fun updateHighlights(info: UpdateInfo, max: Int = 3): List<String> {
+    val fromNotes = info.notes.lines()
+        .map { it.trim() }
+        .filter { it.startsWith("-") || it.startsWith("*") || it.startsWith("•") }
+        .map { it.trimStart('-', '*', '•', ' ').replace("**", "").replace("`", "") }
+        .filter { it.isNotBlank() && !it.startsWith("Full Changelog", ignoreCase = true) }
+    val picked = if (fromNotes.isNotEmpty()) fromNotes else CHANGELOG.firstOrNull { it.version == info.versionName }?.items.orEmpty()
+    return picked.take(max)
+}
+
+/**
+ * 앱 실행 시 큰 버전(7.x → 8.0) 업데이트를 한 번 권하는 안내 — '중요' 배지, 권장 문구, 이번 버전 요약,
+ * 스토어를 거치지 않는 설치 절차 3단계. 버튼은 One UI 다이얼로그 규칙대로 아래 반반: 나중에 / 업데이트.
+ */
+@Composable
+internal fun MajorUpdateDialog(info: UpdateInfo, onLater: () -> Unit, onUpdate: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val highlights = updateHighlights(info)
+    com.yhjang.timetable.ui.OneUiDialog(
+        onDismissRequest = onLater,
+        title = "업데이트를 권장합니다",
+        buttons = listOf(
+            com.yhjang.timetable.ui.OneUiDialogButton("나중에", onLater),
+            com.yhjang.timetable.ui.OneUiDialogButton("업데이트", onUpdate),
+        ),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            com.yhjang.timetable.ui.OneUiBadge(
+                "중요",
+                container = Color(0xFFFFE3B8),
+                content = Color(0xFF6B3A00),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "새 버전 ${info.versionName}",
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "새 버전 ${info.versionName}에 중대한 버그 수정과 개선이 포함되어 있어 업데이트를 추천합니다. 설치해도 설정과 계정은 그대로 유지됩니다.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurface.copy(alpha = 0.9f),
+        )
+        if (highlights.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(OneUi.CornerMedium))
+                    .background(scheme.surfaceContainerHigh.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Text("이번 버전", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                highlights.forEach { line ->
+                    Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
+                        Text("✓", style = MaterialTheme.typography.bodySmall, color = scheme.primary, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Text(line, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(OneUi.CornerMedium))
+                .background(scheme.surfaceContainerHigh.copy(alpha = 0.6f))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Text("설치 방법", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            InstallStep(1, "'업데이트'를 누르면 다운로드 후 설치 창이 열립니다 → 설치")
+            InstallStep(2, "\"Play 프로텍트\" 경고가 뜨면 자세히 보기 → 무시하고 설치")
+            InstallStep(3, "설치가 끝나면 열기")
+        }
+    }
+}
+
+@Composable
+private fun InstallStep(number: Int, text: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier
+                .padding(top = 1.dp)
+                .width(20.dp)
+                .height(20.dp)
+                .clip(CircleShape)
+                .background(scheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("$number", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = scheme.onPrimaryContainer)
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+    }
+}

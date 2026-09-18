@@ -740,11 +740,15 @@ object AlimNotifier {
 
 // MARK: - 시험 D-day
 
-/** 중간/기말고사 등 `고사`가 들어간 일정 중 오늘 이후 가장 가까운 것을 찾습니다. */
+/**
+ * 중간고사·기말고사 일정 중 오늘 이후 가장 가까운 것을 찾습니다.
+ * "다짐고사" 같은 다른 `고사`는 D-day 대상이 아닙니다 (예전엔 `고사`만 들어가면 잡혀 엉뚱한 D-day 가 떴습니다).
+ */
 fun examDday(entries: List<HanaScheduleEntry>, today: LocalDate): ExamDday? =
     entries.asSequence()
         .filter { entry ->
-            entry.name.contains("중간고사") || entry.name.contains("기말고사") || entry.name.contains("고사")
+            val name = entry.name.replace(" ", "")
+            name.contains("중간고사") || name.contains("기말고사")
         }
         .map { entry -> ExamDday(entry.name, entry.date, ChronoUnit.DAYS.between(today, entry.date)) }
         .filter { it.days >= 0 }

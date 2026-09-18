@@ -56,6 +56,7 @@ class HanaSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
             // 장소 배정과 함께 시간표도 강제로 새로 받아 설치합니다 (실패 시 캐시 유지).
             HanaTimetableSync.refresh(applicationContext, today, force = true)
             HanaSyncGate.clear(applicationContext)
+            PlanStore.markSynced(applicationContext)
             TimeTableWidget().updateAll(applicationContext)
             Result.success()
         } catch (e: HanaPortalException.LoginFailed) {

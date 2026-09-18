@@ -76,6 +76,15 @@ object PlanStore {
         context.planDataStore.edit { prefs -> prefs[accentColorKey] = argb }
     }
 
+    private val lastSyncAtKey = longPreferencesKey("lastSyncAt")
+
+    /** 포털에서 마지막으로 성공적으로 받아온 시각(ms) — 오프라인일 때 "마지막 동기화" 표시에 씁니다. 없으면 0. */
+    suspend fun lastSyncAt(context: Context): Long = context.planDataStore.data.first()[lastSyncAtKey] ?: 0L
+
+    suspend fun markSynced(context: Context, at: Long = System.currentTimeMillis()) {
+        context.planDataStore.edit { prefs -> prefs[lastSyncAtKey] = at }
+    }
+
     /** 면학감독 필터에 쓸 학생 학년 — 1~3 밖의 값은 기본값 2 로 보정합니다. */
     const val DEFAULT_STUDENT_GRADE = 2
 

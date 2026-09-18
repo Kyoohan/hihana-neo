@@ -79,6 +79,9 @@ internal fun TodayDashboard(
     isLoadingBoard: Boolean,
     boardCategoryLabel: String,
     studentGrade: Int,
+    /** 학사시스템 계정이 없을 때 — '지금' 카드가 연동 안내가 되고 탭하면 [onConnectAccount]. */
+    needsAccount: Boolean,
+    onConnectAccount: () -> Unit,
     onOpenAlim: (HanaAlim) -> Unit,
     onOpenAlimList: () -> Unit,
     onOpenPost: (HanaBoardPost) -> Unit,
@@ -100,8 +103,8 @@ internal fun TodayDashboard(
         verticalItemSpacing = 12.dp,
     ) {
         item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-            NowHeroCard(hasTimetable, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress) {
-                scope.launch { gridState.animateScrollToItem(0) }
+            NowHeroCard(hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress) {
+                if (needsAccount) onConnectAccount() else scope.launch { gridState.animateScrollToItem(0) }
             }
         }
         item(span = StaggeredGridItemSpan.FullLine, key = "upcoming") {
@@ -193,6 +196,7 @@ private fun DashboardCard(
 @Composable
 private fun NowHeroCard(
     hasTimetable: Boolean,
+    needsAccount: Boolean,
     block: Block?,
     remainingMinutes: Long?,
     nextTitle: String?,
@@ -205,13 +209,24 @@ private fun NowHeroCard(
         // (블랭크 상태)와 구분합니다 — 안 그러면 로딩 중에도 이 문구가 떠서 앱이 멈춘 것처럼
         // 보였습니다.
         if (!hasTimetable) {
-            Text(
-                "시간표 불러오는 중…",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(4.dp))
-            DashboardEmpty("잠시만 기다려주세요")
+            // 계정이 없으면 "불러오는 중"이 영원히 남아 앱이 멈춘 것처럼 보였습니다 — 연동 안내로 바꿉니다.
+            if (needsAccount) {
+                Text(
+                    "학사시스템 연동이 필요합니다",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(4.dp))
+                DashboardEmpty("계정을 연동하면 시간표·면학 위치·학사일정·게시판을 자동으로 가져옵니다. 탭해서 연동하세요.")
+            } else {
+                Text(
+                    "시간표 불러오는 중…",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(4.dp))
+                DashboardEmpty("잠시만 기다려주세요")
+            }
             return@DashboardCard
         }
         if (block == null || block.isBlank) {
