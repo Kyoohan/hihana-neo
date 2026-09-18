@@ -8,6 +8,17 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "8.3",
+        listOf(
+            "탭을 좌우로 스와이프해서 전환",
+            "아래로 당겨 새로고침하면 오른쪽 위 새로고침 아이콘이 가운데로 내려와 도는 애니메이션",
+            "위젯 '종류별 색'에서 수업·급식·면학 장소 등 종류마다 색을 직접 선택",
+            "앱 설정과 위젯 길게 눌러 여는 설정이 어긋나던 문제 수정",
+            "다이얼로그가 뒤 화면 전체를 흐려 비추는 글래스로 (기존엔 블러가 동작하지 않았음)",
+            "헤더가 접히면 작은 제목·부제목이 든 글래스 툴바로",
+        ),
+    ),
+    ChangelogEntry(
         "8.2",
         listOf(
             "늦게 신청한 교과교실이 앱에서는 생활관으로 뜨던 문제 — 교과교실 신청을 시간표에 반영",
