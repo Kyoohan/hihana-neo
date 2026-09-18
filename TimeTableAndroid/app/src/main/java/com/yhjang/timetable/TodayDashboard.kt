@@ -330,7 +330,6 @@ private fun MealMiniCard(
             present.isEmpty() -> DashboardEmpty("식단이 없습니다")
             else -> present.forEach { meal ->
                 val list = items[meal.key].orEmpty()
-                val first = list.firstOrNull()?.name ?: "메뉴 없음"
                 val flags = shortAllergyLabels(
                     list.flatMap { detectedAllergies(it.codes, it.name, allergyCodes) },
                 )
@@ -357,11 +356,10 @@ private fun MealMiniCard(
                                 )
                             }
                         }
+                        // 카드가 전체 폭이라 대표 메뉴 + "외 n" 대신 메뉴를 쭉 이어 쓰고, 사진(또는 카드 끝)에
+                        // 닿아 넘치는 부분만 …으로 줄입니다.
                         Text(
-                            buildString {
-                                append(first)
-                                if (list.size > 1) append(" 외 ${list.size - 1}")
-                            },
+                            list.joinToString(", ") { it.name }.ifEmpty { "메뉴 없음" },
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
