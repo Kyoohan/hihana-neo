@@ -14,6 +14,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -170,7 +172,13 @@ object HanaTimetableWebView {
             // loadUrl 전에 포털 세션 쿠키를 심어야 로그인된 페이지가 렌더링됩니다.
             HanaPortalClient.get().syncCookiesToWebView()
             view.loadUrl(STUDENT_TIMETABLE_URL)
-            cont.invokeOnCancellation { view.stopLoading() }
+            // 취소 핸들러는 취소를 일으킨 스레드에서 돕니다 — withTimeoutOrNull 의 시간 초과는 코루틴 타이머 스레드
+            // (DefaultExecutor)에서 오는데, 거기서 WebView 메서드를 부르면 "A WebView method was called on thread
+            // 'kotlinx.coroutines.DefaultExecutor'" 로 앱이 죽습니다 (신청 페이지를 연 뒤 재동기화가 시간 초과될 때
+            // 몇 초 뒤 크래시하던 원인). 반드시 메인 스레드로 넘겨서 멈춥니다.
+            cont.invokeOnCancellation {
+                Handler(Looper.getMainLooper()).post { runCatching { view.stopLoading() } }
+            }
         }
 
     /** evaluateJavascript 결과는 JSON 문자열 리터럴 — 따옴표/이스케이프를 풀어 원문 HTML 로. */
