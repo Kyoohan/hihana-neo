@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 실시간 배경 블러는 RemoteViews/AppWidget에서 지원되지 않아, 대신 정적인
+     대각선 하이라이트 그라데이션으로 유리 질감을 표현합니다. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="22dp" />
+    <gradient
+        android:type="linear"
+        android:angle="135"
+        android:startColor="@color/widget_sheen_start"
+        android:endColor="@color/widget_sheen_end" />
+</shape>

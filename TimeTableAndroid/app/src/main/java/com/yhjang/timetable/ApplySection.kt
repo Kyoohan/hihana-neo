@@ -1,0 +1,185 @@
+package com.yhjang.timetable
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.yhjang.timetable.ui.OneUiButton
+import com.yhjang.timetable.ui.OneUiCard
+import com.yhjang.timetable.ui.OneUiLoading
+import com.yhjang.timetable.ui.OneUiSectionTitle
+import com.yhjang.timetable.ui.OneUiTextButton
+import kotlinx.coroutines.launch
+
+private const val PORTAL_BASE = "https://hh.hana.hs.kr"
+
+// MARK: - 신청·내역
+
+private sealed interface ApplyHistoryState {
+    data object Idle : ApplyHistoryState
+    data object Loading : ApplyHistoryState
+    data class Rows(val rows: List<HanaApplyRow>) : ApplyHistoryState
+    data class Error(val message: String) : ApplyHistoryState
+}
+
+/**
+ * 신청·내역 — 서비스마다 "내역"과 "신청하기" 두 동작을 제공합니다.
+ * 교과교실은 확인된 GET JSON 으로 앱 안에서 목록을 그리고, JSON 이 아니면 조용히
+ * 포털 내역 페이지를 웹뷰로 엽니다. 면학실·도서관은 JSON 스키마를 모르므로 웹뷰로 바로 엽니다.
+ * "신청하기"는 세 서비스 모두 실제 신청 페이지를 웹뷰로 엽니다.
+ */
+@Composable
+internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var classroomState by remember { mutableStateOf<ApplyHistoryState>(ApplyHistoryState.Idle) }
+
+    fun openHistory(service: ApplyService) {
+        onOpenWeb("$PORTAL_BASE${service.historyPath}", "${service.label} 내역")
+    }
+
+    fun loadClassroom() {
+        classroomState = ApplyHistoryState.Loading
+        scope.launch {
+            classroomState = try {
+                when (val result = HanaApplyApi.fetchClassroomHistory(context)) {
+                    is ClassroomHistory.Rows -> ApplyHistoryState.Rows(result.rows)
+                    ClassroomHistory.Unsupported -> {
+                        // JSON 스키마가 아니면 오류를 띄우는 대신 포털 내역 페이지로 넘깁니다.
+                        openHistory(ApplyService.CLASSROOM)
+                        ApplyHistoryState.Idle
+                    }
+                }
+            } catch (e: HanaPortalException.MissingCredentials) {
+                ApplyHistoryState.Error(ACADEMIC_NEEDS_LOGIN)
+            } catch (e: Exception) {
+                ApplyHistoryState.Error(e.message ?: "내역을 불러오지 못했습니다")
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OneUiSectionTitle("신청·내역")
+        ApplyService.entries.forEach { service ->
+            ApplyServiceCard(
+                service = service,
+                state = if (service == ApplyService.CLASSROOM) classroomState else null,
+                onHistory = {
+                    if (service == ApplyService.CLASSROOM) loadClassroom() else openHistory(service)
+                },
+                onApply = { onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ApplyServiceCard(
+    service: ApplyService,
+    state: ApplyHistoryState?,
+    onHistory: () -> Unit,
+    onApply: () -> Unit,
+) {
+    OneUiCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                service.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            OneUiButton(text = "신청하기", onClick = onApply, compact = true)
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (state == null) {
+            // 면학실·도서관 — 포털 내역 페이지를 웹뷰로 엽니다.
+            InlineTextButton("내역 조회", onHistory)
+        } else {
+            ClassroomHistoryBody(state = state, onHistory = onHistory)
+        }
+    }
+}
+
+/** 카드 안 왼쪽 정렬 텍스트 버튼 — 카드 여백에 맞추기 위해 좌우 패딩을 없앤 강조색 글자입니다. */
+@Composable
+private fun InlineTextButton(text: String, onClick: () -> Unit) {
+    OneUiTextButton(
+        text = text,
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.primary,
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun ClassroomHistoryBody(state: ApplyHistoryState, onHistory: () -> Unit) {
+    when (state) {
+        ApplyHistoryState.Idle -> InlineTextButton("내역 조회", onHistory)
+
+        ApplyHistoryState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+            OneUiLoading(size = 16.dp, stroke = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "내역을 불러오는 중",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        is ApplyHistoryState.Error -> Column {
+            Text(
+                if (state.message == ACADEMIC_NEEDS_LOGIN) "하이하나 계정을 먼저 등록해 주세요" else state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            InlineTextButton("다시 시도", onHistory)
+        }
+
+        is ApplyHistoryState.Rows -> if (state.rows.isEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "내역 없음",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                InlineTextButton("새로고침", onHistory)
+            }
+        } else {
+            Column {
+                state.rows.forEach { row ->
+                    val parts = listOfNotNull(row.slot, row.place, row.status, row.appliedDate)
+                        .filter { it.isNotBlank() }
+                    Text(
+                        if (parts.isEmpty()) "내역" else parts.joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                InlineTextButton("새로고침", onHistory)
+            }
+        }
+    }
+}

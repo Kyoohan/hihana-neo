@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 시간표를 상징하는 캘린더 글리프 — 108 뷰포트의 중앙 66x66 세이프존 안에만 그립니다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 캘린더 카드 외곽선 -->
+    <path
+        android:pathData="M34,32 L74,32 a4,4 0 0 1 4,4 L78,76 a4,4 0 0 1 -4,4 L34,80 a4,4 0 0 1 -4,-4 L30,36 a4,4 0 0 1 4,-4 z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineJoin="round" />
+
+    <!-- 상단 헤더 밴드 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,32 L74,32 a4,4 0 0 1 4,4 L78,44 L30,44 L30,36 a4,4 0 0 1 4,-4 z" />
+
+    <!-- 상단 링 2개 -->
+    <path
+        android:pathData="M40,27 L40,33"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M68,27 L68,33"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+
+    <!-- 교시 막대 3줄 -->
+    <path
+        android:pathData="M38,52 L70,52"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M38,60 L70,60"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M38,68 L58,68"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+</vector>

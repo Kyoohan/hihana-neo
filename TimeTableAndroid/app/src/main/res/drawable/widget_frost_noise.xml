@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 프로스트 유리 표면의 미세한 그레인. 실시간 블러가 불가능한 위젯에서
+     유리 질감을 만드는 핵심 레이어입니다. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/widget_noise_tile"
+    android:tileMode="repeat" />

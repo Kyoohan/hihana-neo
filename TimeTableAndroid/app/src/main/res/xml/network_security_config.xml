@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 급식 API(hanaMeal.ajax)만 HTTP 라, 하이하나 도메인에 한해 cleartext 를 허용합니다.
+     전역 usesCleartextTraffic 은 켜지 않습니다. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">hana.hs.kr</domain>
+        <domain includeSubdomains="false">www.hana.hs.kr</domain>
+    </domain-config>
+</network-security-config>

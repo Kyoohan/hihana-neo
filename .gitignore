@@ -1,0 +1,17 @@
+# Android / Gradle
+TimeTableAndroid/.gradle/
+TimeTableAndroid/build/
+TimeTableAndroid/*/build/
+TimeTableAndroid/local.properties
+TimeTableAndroid/.idea/
+TimeTableAndroid/.kotlin/
+*.apk
+*.aab
+
+# Xcode
+TimeTable/**/xcuserdata/
+TimeTable/**/*.xcuserstate
+TimeTable/DerivedData/
+
+# macOS
+.DS_Store

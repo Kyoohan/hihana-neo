@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 하나고 로고(초록 방패)가 또렷하게 보이도록 흰 배경을 씁니다 -->
+    <color name="ic_launcher_hana_background">#FFFFFF</color>
+</resources>
