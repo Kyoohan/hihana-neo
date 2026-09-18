@@ -2,7 +2,6 @@ package com.yhjang.timetable
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +26,7 @@ import com.yhjang.timetable.ui.OneUiButton
 import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.OneUiSectionTitle
-import com.yhjang.timetable.ui.OneUiTextButton
+import com.yhjang.timetable.ui.OneUiButtonStyle
 import kotlinx.coroutines.launch
 
 private const val PORTAL_BASE = "https://hh.hana.hs.kr"
@@ -99,42 +98,43 @@ private fun ApplyServiceCard(
     onHistory: () -> Unit,
     onApply: () -> Unit,
 ) {
+    // 내역 조회와 신청하기는 같은 급의 동작이라, 카드 아래에 같은 모양·같은 폭의 알약 버튼 두 개로 나란히 둡니다.
+    val historyLabel = when (state) {
+        null, ApplyHistoryState.Idle -> "내역 조회"
+        ApplyHistoryState.Loading -> "불러오는 중"
+        is ApplyHistoryState.Error -> "다시 시도"
+        is ApplyHistoryState.Rows -> "새로고침"
+    }
     OneUiCard(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                service.label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+        Text(service.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (state != null && state != ApplyHistoryState.Idle) {
+            Spacer(Modifier.height(10.dp))
+            ClassroomHistoryBody(state = state)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OneUiButton(
+                text = historyLabel,
+                onClick = onHistory,
+                style = OneUiButtonStyle.Neutral,
+                enabled = state != ApplyHistoryState.Loading,
                 modifier = Modifier.weight(1f),
             )
-            OneUiButton(text = "신청하기", onClick = onApply, compact = true)
-        }
-        Spacer(Modifier.height(8.dp))
-
-        if (state == null) {
-            // 면학실·도서관 — 포털 내역 페이지를 웹뷰로 엽니다.
-            InlineTextButton("내역 조회", onHistory)
-        } else {
-            ClassroomHistoryBody(state = state, onHistory = onHistory)
+            OneUiButton(
+                text = "신청하기",
+                onClick = onApply,
+                style = OneUiButtonStyle.Neutral,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
 
-/** 카드 안 왼쪽 정렬 텍스트 버튼 — 카드 여백에 맞추기 위해 좌우 패딩을 없앤 강조색 글자입니다. */
+/** 교과교실 내역 본문 — 상태별 문구/목록만 그리고, 동작 버튼은 카드 아래 공용 버튼 줄이 맡습니다. */
 @Composable
-private fun InlineTextButton(text: String, onClick: () -> Unit) {
-    OneUiTextButton(
-        text = text,
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.primary,
-        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun ClassroomHistoryBody(state: ApplyHistoryState, onHistory: () -> Unit) {
+private fun ClassroomHistoryBody(state: ApplyHistoryState) {
     when (state) {
-        ApplyHistoryState.Idle -> InlineTextButton("내역 조회", onHistory)
+        ApplyHistoryState.Idle -> Unit
 
         ApplyHistoryState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
             OneUiLoading(size = 16.dp, stroke = 2.dp)
@@ -146,26 +146,18 @@ private fun ClassroomHistoryBody(state: ApplyHistoryState, onHistory: () -> Unit
             )
         }
 
-        is ApplyHistoryState.Error -> Column {
+        is ApplyHistoryState.Error -> Text(
+            if (state.message == ACADEMIC_NEEDS_LOGIN) "하이하나 계정을 먼저 등록해 주세요" else state.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        is ApplyHistoryState.Rows -> if (state.rows.isEmpty()) {
             Text(
-                if (state.message == ACADEMIC_NEEDS_LOGIN) "하이하나 계정을 먼저 등록해 주세요" else state.message,
+                "내역 없음",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(6.dp))
-            InlineTextButton("다시 시도", onHistory)
-        }
-
-        is ApplyHistoryState.Rows -> if (state.rows.isEmpty()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "내역 없음",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                InlineTextButton("새로고침", onHistory)
-            }
         } else {
             Column {
                 state.rows.forEach { row ->
@@ -177,8 +169,6 @@ private fun ClassroomHistoryBody(state: ApplyHistoryState, onHistory: () -> Unit
                         modifier = Modifier.padding(vertical = 3.dp),
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                InlineTextButton("새로고침", onHistory)
             }
         }
     }
