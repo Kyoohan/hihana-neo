@@ -11,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.unit.toIntSize
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -33,7 +32,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -333,8 +331,6 @@ private fun TimeTableAppContent(
     var boardError by remember { mutableStateOf<String?>(null) }
     // 앱 내 웹뷰로 띄울 페이지 (null 이면 닫힘) — 게시글·신청·내역 페이지 공용
     var webPage by remember { mutableStateOf<HanaWebPage?>(null) }
-    // 시험 키워드 게시글을 탭하면 웹뷰 대신 시험 정보 파싱 화면으로
-    var examPost by remember { mutableStateOf<HanaBoardPost?>(null) }
 
     // 알리미
     var alimList by remember { mutableStateOf<List<HanaAlim>>(emptyList()) }
@@ -447,11 +443,10 @@ private fun TimeTableAppContent(
         openUrl(context, alimUrl(alim.id))
     }
 
-    /** 게시글 열기 — 시험 키워드가 있으면 표/본문을 파싱한 시험 정보 화면, 아니면 기존 웹뷰 상세. */
+    /** 게시글 열기 — 세션이 끊겨 있으면 먼저 로그인해 두고 웹뷰 상세를 엽니다. */
     fun openBoardPost(post: HanaBoardPost) {
-        if (ExamParser.hasExamKeyword(post.title)) {
-            examPost = post
-        } else {
+        scope.launch {
+            HanaPortalClient.get().ensureLoggedIn(context)
             webPage = HanaWebPage(post.url, "게시글")
         }
     }
@@ -955,21 +950,6 @@ private fun TimeTableAppContent(
             onOpenBrowser = {
                 openUrl(context, page.url)
                 webPage = null
-            },
-        )
-    }
-
-    examPost?.let { post ->
-        ExamInfoScreen(
-            post = post,
-            onDismiss = { examPost = null },
-            onFallbackToWeb = { fallback ->
-                examPost = null
-                webPage = HanaWebPage(fallback.url, "게시글")
-            },
-            onOpenBrowser = { fallback ->
-                openUrl(context, fallback.url)
-                examPost = null
             },
         )
     }

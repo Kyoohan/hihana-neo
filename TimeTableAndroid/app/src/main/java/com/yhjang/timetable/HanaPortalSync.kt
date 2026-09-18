@@ -397,6 +397,21 @@ class HanaPortalClient private constructor() {
         }
     }
 
+    /**
+     * 웹뷰를 열기 전에 세션이 살아 있는지 확인하고, 아니면 로그인합니다 — 웹뷰는 OkHttp 쿠키를 복사해 쓰므로
+     * 여기서 세션을 살려 두면 로그인 페이지 대신 바로 게시글이 뜹니다. 실패해도 예외를 밖으로 내지 않습니다.
+     */
+    suspend fun ensureLoggedIn(context: Context) {
+        runCatching {
+            authenticatedJson(
+                context,
+                "/main/alim/alim-target-list.json",
+                listOf("pageSize" to "1"),
+                isValid = { it.optJSONObject("paging")?.has("result") == true },
+            )
+        }
+    }
+
     /** [authenticatedRaw] 의 본문 문자열만 필요한 호출부용 단축. */
     suspend fun authenticatedText(
         context: Context,
@@ -431,8 +446,13 @@ class HanaPortalClient private constructor() {
      * 예전엔 같이 봤지만, 사이트 전역 내비게이션·로그아웃 스크립트가 이 경로를 링크로만
      * 참조해도 걸려버려 정상 로그인 상태의 페이지를 세션 만료로 오판하는 원인이었습니다.
      */
+    /**
+     * 로그인 페이지 HTML 이거나, 세션이 끝났을 때 포털이 돌려주는 짧은 JSON(`{"result":"expired",...}`)이면
+     * 로그인 후 재요청 대상입니다 — 후자를 못 잡으면 그 JSON 이 게시글 본문으로 그대로 화면에 찍혔습니다.
+     */
     private fun looksLikeLoginPage(body: String): Boolean =
-        body.contains("hanaLoginRequestToken")
+        body.contains("hanaLoginRequestToken") ||
+            (body.length < 200 && body.contains("\"result\"") && body.contains("\"expired\""))
 
     private fun formBody(params: List<Pair<String, String>>): FormBody =
         FormBody.Builder().apply { params.forEach { (key, value) -> add(key, value) } }.build()

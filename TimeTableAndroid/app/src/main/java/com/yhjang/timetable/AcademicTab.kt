@@ -48,7 +48,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.yhjang.timetable.ui.OneUi
-import com.yhjang.timetable.ui.OneUiBadge
 import com.yhjang.timetable.ui.OneUiButton
 import com.yhjang.timetable.ui.OneUiButtonStyle
 import com.yhjang.timetable.ui.OneUiCard
@@ -309,10 +308,6 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (ExamParser.hasExamKeyword(post.title)) {
-                Spacer(Modifier.width(6.dp))
-                ExamBadge()
-            }
             if (post.isNew) {
                 Spacer(Modifier.width(6.dp))
                 Text("N", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
@@ -335,15 +330,6 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
             )
         }
     }
-}
-
-@Composable
-private fun ExamBadge() {
-    OneUiBadge(
-        "시험",
-        container = MaterialTheme.colorScheme.errorContainer,
-        content = MaterialTheme.colorScheme.onErrorContainer,
-    )
 }
 
 /** 앱 내 웹뷰로 열 페이지 — 게시글·신청·내역 페이지가 공유합니다. */

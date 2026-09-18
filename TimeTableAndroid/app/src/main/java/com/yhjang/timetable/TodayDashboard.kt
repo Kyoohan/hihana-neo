@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -542,14 +541,6 @@ private fun BoardMiniCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        if (ExamParser.hasExamKeyword(post.title)) {
-                            Spacer(Modifier.width(6.dp))
-                            OneUiBadge(
-                                "시험",
-                                container = MaterialTheme.colorScheme.errorContainer,
-                                content = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                        }
                     }
                     val meta = listOfNotNull(post.writer, post.date).joinToString(" · ")
                     if (meta.isNotEmpty()) {
