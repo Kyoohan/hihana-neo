@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -674,9 +675,12 @@ fun OneUiDialog(
     // 키트의 Dialog 프레임처럼 뒤 화면을 흐려 비추는 글래스 컨테이너 — 메인 화면의 Haze 상태를 다른
     // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
     val body: @Composable () -> Unit = {
+        // 창 안에서 가운데 정렬 — 큰 화면에서도 왼쪽으로 쏠리지 않고 폭은 400dp 까지만 넓어집니다.
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
+                .widthIn(max = 400.dp)
                 .then(
                     if (hazeState != null) Modifier.oneUiGlassSurface(shape, strong = true, state = hazeState)
                     else Modifier.clip(shape).background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
@@ -734,6 +738,7 @@ fun OneUiDialog(
                 }
             }
         }
+        }
     }
     if (hazeState != null) {
         HazeDialog(hazeState = hazeState, onDismissRequest = onDismissRequest, properties = properties, content = body)
@@ -766,9 +771,9 @@ val OneUiToolbarHeight = 64.dp
 
 /**
  * 전체 화면 다이얼로그(설정·알리미·게시글·시험 정보)의 공통 뼈대 — 삼성 앱의 설정 화면과 같은 툴바 동작:
- * 스크롤 전에는 배경 없이 "‹ 제목" 이 놓여 있고, 목록을 조금이라도 스크롤하면 뒤로가기가 글래스 원 안으로,
- * 제목이 그 옆의 글래스 알약 안으로 들어가 콘텐츠 위에 떠 있습니다. [content] 는 받은 패딩을 스크롤
- * contentPadding 에 넣어 첫 항목이 툴바 아래에서 시작하게 합니다.
+ * 스크롤 전에는 배경 없이 "‹ 제목" 이 놓여 있고, 목록을 조금이라도 스크롤하면 제목은 사라지고 뒤로가기만
+ * 글래스 원 안에 남아 콘텐츠 위에 떠 있습니다. [content] 는 받은 패딩을 스크롤 contentPadding 에 넣어
+ * 첫 항목이 툴바 아래에서 시작하게 합니다.
  */
 @Composable
 fun OneUiFullScreen(
@@ -840,12 +845,12 @@ fun OneUiFullScreen(
                         }
                     }
                     Spacer(Modifier.width(6.dp))
-                    // 제목 — 스크롤하면 글래스 알약 안으로 들어갑니다.
+                    // 제목 — 스크롤하면 사라지고 뒤로가기 원만 남습니다 (삼성 설정과 같은 동작).
                     Column(
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            .oneUiGlassSurface(CircleShape, alpha = glass, container = scheme.floatingPill, state = hazeState)
-                            .padding(horizontal = 6.dp + 10.dp * glass, vertical = 6.dp),
+                            .alpha(1f - glass)
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
                     ) {
                         Text(
                             title,

@@ -1074,11 +1074,7 @@ private fun SettingsScreen(
     // 설정에서 돌아올 때 권한 상태가 바뀌었을 수 있어 매 그리기마다 다시 읽습니다 (가벼운 시스템 조회).
     val exactAlarmGranted = ExactAlarmPermission.isGranted(context)
 
-    OneUiFullScreen(
-        title = "설정",
-        subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-        onDismiss = onDismiss,
-    ) { toolbar ->
+    OneUiFullScreen(title = "설정", onDismiss = onDismiss) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -1276,13 +1272,29 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
             val cellWidthPx = with(LocalDensity.current) { cellWidth.toPx() }
 
             // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
+            // 끄는 동안엔 액체 유리 방울처럼 옆으로 늘어나고 위아래로 살짝 눌리며, 테두리에 빛이 맺힙니다.
+            val dragging = dragIndex != null
+            val stretchX by animateFloatAsState(if (dragging) 1.14f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "capsuleStretchX")
+            val squashY by animateFloatAsState(if (dragging) 0.9f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "capsuleSquashY")
+            val rim by animateFloatAsState(if (dragging) 1f else 0f, label = "capsuleRim")
             Box(
                 modifier = Modifier
                     .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
                     .width(cellWidth)
                     .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleX = stretchX
+                        scaleY = squashY
+                    }
                     .clip(RoundedCornerShape(26.dp))
-                    .background(selectedCapsuleColor),
+                    .background(selectedCapsuleColor)
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.55f * rim), Color.White.copy(alpha = 0.08f * rim)),
+                        ),
+                        shape = RoundedCornerShape(26.dp),
+                    ),
             )
             Row(
                 modifier = Modifier

@@ -82,6 +82,8 @@ class TimeTableWidget : GlanceAppWidget() {
         val opacity = runCatching { PlanStore.homeWidgetOpacity(context) }.getOrDefault(60)
         val theme = runCatching { PlanStore.homeWidgetTheme(context) }.getOrDefault(PlanStore.THEME_SYSTEM)
         val isDark = isDarkTheme(context, theme)
+        // 홈 화면 월페이퍼의 대표색 — 위젯 바탕에 옅게 섞어 블러된 배경처럼 보이게 합니다.
+        val wallpaperTint = wallpaperPrimaryColor(context)
 
         // 위젯 프로세스가 새로 떴을 때도 캐시된 포털 시간표를 쓰도록 먼저 설치합니다.
         runCatching { HanaTimetableSync.ensureInstalled(context) }
@@ -162,6 +164,7 @@ class TimeTableWidget : GlanceAppWidget() {
                     block = snapshot?.block,
                     opacityPercent = opacity,
                     isDark = isDark,
+                    wallpaperTint = wallpaperTint,
                     nextTitle = snapshot?.nextTitle,
                     nextRoom = snapshot?.nextRoom,
                     mealText = snapshot?.mealText,
@@ -243,6 +246,7 @@ private fun WidgetContent(
     block: Block?,
     opacityPercent: Int,
     isDark: Boolean,
+    wallpaperTint: Int?,
     nextTitle: String?,
     nextRoom: String?,
     mealText: String?,
@@ -252,12 +256,11 @@ private fun WidgetContent(
 ) {
     // 슬라이더 값을 라이트/다크 모두 그대로 반영합니다.
     val alphaInt = (opacityPercent * 255 / 100).coerceIn(0, 255)
-    // 삼성 기본 위젯과 통일되도록 색조 없는 중성 검정/흰색을 씁니다(남색·액센트 틴트 제거).
-    val surface = if (isDark) {
-        Color(0x00, 0x00, 0x00, alphaInt)
-    } else {
-        Color(0xFF, 0xFF, 0xFF, alphaInt)
-    }
+    // 위젯은 월페이퍼를 실제로 블러할 수 없어, 월페이퍼의 대표색을 흰/검 바탕에 옅게 섞어 "뒤가 비치는"
+    // 헤이즈 느낌을 냅니다 (앱의 글래스 요소와 같은 인상). 대표색을 못 읽으면 중성 흰/검 그대로입니다.
+    val base = if (isDark) 0x000000 else 0xFFFFFF
+    val tinted = wallpaperTint?.let { blendRgb(base, it and 0xFFFFFF, if (isDark) 0.22f else 0.14f) } ?: base
+    val surface = Color((tinted shr 16) and 0xFF, (tinted shr 8) and 0xFF, tinted and 0xFF, alphaInt)
 
     // light/dark 슬롯에 같은 스킴을 넣어 시스템 테마와 무관하게 선택된 테마로 고정합니다.
     val scheme = if (isDark) {
@@ -322,6 +325,19 @@ private fun WidgetContent(
             }
         }
     }
+}
+
+/** 월페이퍼 대표색(ARGB) — 못 읽으면 null. 권한 없이 읽을 수 있는 색 정보만 씁니다. */
+private fun wallpaperPrimaryColor(context: Context): Int? = runCatching {
+    android.app.WallpaperManager.getInstance(context)
+        .getWallpaperColors(android.app.WallpaperManager.FLAG_SYSTEM)
+        ?.primaryColor?.toArgb()
+}.getOrNull()
+
+/** 두 RGB(0xRRGGBB)를 [amount](0..1) 비율로 섞습니다. */
+private fun blendRgb(a: Int, b: Int, amount: Float): Int {
+    fun ch(shift: Int) = (((a shr shift) and 0xFF) * (1 - amount) + ((b shr shift) and 0xFF) * amount).toInt().coerceIn(0, 255)
+    return (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
 }
 
 /** 테마 설정(시스템/라이트/다크)을 실제 다크 여부로 변환합니다 */
