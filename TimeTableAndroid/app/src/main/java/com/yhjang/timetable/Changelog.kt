@@ -8,6 +8,14 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "7.5",
+        listOf(
+            "신청·내역에 외출·외박 추가, 교과교실 내역은 포털 내역 페이지로",
+            "교과교실 신청 화면의 신청 창이 머리글만 보이던 문제 수정 (웹뷰 뷰포트 높이 0)",
+            "학사 탭 순서: 게시판 · 신청·내역 · 학사일정",
+        ),
+    ),
+    ChangelogEntry(
         "7.4",
         listOf("강조 색 팔레트를 카드 폭에 고르게 펼침 (왼쪽에 몰리던 것 수정)"),
     ),

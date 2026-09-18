@@ -16,9 +16,10 @@ import org.json.JSONObject
  *   확인되지 않은 면학실·도서관에서 웹뷰로 보여줍니다.
  */
 enum class ApplyService(val label: String, val applyPath: String, val historyPath: String) {
-    CLASSROOM("교과교실", "/main/classroom/apply.do", "/main/classroom/apply.do"),
+    CLASSROOM("교과교실", "/main/classroom/apply.do", "/main/classroom/history.do"),
     STUDY_ROOM("면학실", "/main/studyroom/study-apply.do", "/main/studyroom/study-history.do"),
     LIBRARY("도서관", "/main/library/library-apply.do", "/main/library/library-history.do"),
+    OUTING("외출·외박", "/main/outing/apply_inscr.do", "/main/outing/history.do"),
 }
 
 // MARK: - 모델

@@ -11,6 +11,8 @@ class TimeTableApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 디버그 빌드에서만 웹뷰를 chrome://inspect 로 들여다볼 수 있게 — 포털 페이지의 JS/DOM 문제 진단용.
+        if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
         AlimNotifier.ensureChannel(this)
         schedulePeriodicSync()
     }

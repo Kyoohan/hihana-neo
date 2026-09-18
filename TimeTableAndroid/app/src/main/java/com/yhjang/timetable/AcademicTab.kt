@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.view.ViewGroup
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiButton
 import com.yhjang.timetable.ui.OneUiButtonStyle
@@ -137,8 +138,8 @@ fun AcademicTab(
             ) {
                 // 게시판이 기본 탭이라 맨 앞에 둡니다 (인덱스는 저장 호환을 위해 그대로: 0=학사일정, 1=게시판, 2=신청·내역).
                 OneUiChip(selected = subTab == 1, onClick = { onSubTabChange(1) }, label = "게시판")
-                OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
                 OneUiChip(selected = subTab == 2, onClick = { onSubTabChange(2) }, label = "신청·내역")
+                OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
             }
         }
 
@@ -550,6 +551,10 @@ fun BoardDetailScreen(
                         // loadUrl 전에 쿠키를 심어야 인증된 페이지가 뜹니다.
                         HanaPortalClient.get().syncCookiesToWebView()
                         WebView(ctx).apply {
+                            // Compose 의 AndroidView 는 뷰의 layoutParams 가 WRAP_CONTENT 면 높이를 AT_MOST 로 재는데,
+                            // 그러면 크로미움이 "높이 미정"으로 보고 페이지의 100vh 를 0 으로 계산합니다 — 포털 모달
+                            // (교과교실 신청 등)이 높이 0 으로 접혀 머리글만 보이던 원인. MATCH_PARENT 로 고정합니다.
+                            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             // 포털이 세션을 UA 에 묶을 수 있어 OkHttp 와 같은 UA 로 맞춥니다.
