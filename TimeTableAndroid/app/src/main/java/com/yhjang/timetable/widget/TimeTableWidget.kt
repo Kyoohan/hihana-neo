@@ -283,43 +283,42 @@ private fun WidgetContent(
 
     GlanceTheme(colors = colors) {
         // 실제 배경(월페이퍼)을 가우시안 블러하는 건 RemoteViews/AppWidget 특성상 불가능합니다.
-        // 대신 4겹(① 테두리 림 ② 틴트 ③ 하이라이트 시트 ④ 그레인 노이즈)으로
-        // 프로스트 유리 질감을 최대한 흉내냅니다.
+        // 대신 3겹(① 틴트 ② 하이라이트 시트 ③ 그레인 노이즈)으로 프로스트 유리 질감을 흉내냅니다.
+        // 예전엔 바깥에 1.5dp 밝은 림(테두리)을 한 겹 더 둘렀는데, 런처가 위젯을 시스템 라운드로 한 번 더
+        // 자르면서 그 림이 모서리에서 어긋나 보였습니다(삼성 기본 위젯엔 테두리가 없음). 림을 없애고 모서리도
+        // 시스템 위젯 라운드(Android 12+)를 그대로 써서 런처의 잘라내기와 정확히 겹치게 합니다.
+        val corner = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            GlanceModifier.cornerRadius(android.R.dimen.system_app_widget_background_radius)
+        } else {
+            GlanceModifier.cornerRadius(24.dp)
+        }
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(GlanceTheme.colors.outline)
-                .cornerRadius(24.dp)
+                .background(GlanceTheme.colors.surface)
+                .then(corner)
                 .clickable(openTabAction(MainActivity.TAB_TODAY)),
         ) {
+            // ② 빛이 스치는 하이라이트
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .padding(1.5.dp)
-                    .background(GlanceTheme.colors.surface)
-                    .cornerRadius(22.dp),
+                    .background(ImageProvider(R.drawable.widget_frost_sheen))
+                    .then(corner),
             ) {
-                // ③ 빛이 스치는 하이라이트
+                // ③ 유리 표면의 미세한 그레인
                 Box(
                     modifier = GlanceModifier
                         .fillMaxSize()
-                        .background(ImageProvider(R.drawable.widget_frost_sheen))
-                        .cornerRadius(22.dp),
+                        .background(ImageProvider(R.drawable.widget_frost_noise))
+                        .then(corner)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.TopStart,
                 ) {
-                    // ④ 유리 표면의 미세한 그레인
-                    Box(
-                        modifier = GlanceModifier
-                            .fillMaxSize()
-                            .background(ImageProvider(R.drawable.widget_frost_noise))
-                            .cornerRadius(22.dp)
-                            .padding(16.dp),
-                        contentAlignment = Alignment.TopStart,
-                    ) {
-                        if (block != null && !block.isBlank) {
-                            ScheduleContent(block, nextTitle, nextRoom, mealText, mealAllergyPrefix, supervisionText, countdownViews)
-                        } else {
-                            EmptyScheduleContent()
-                        }
+                    if (block != null && !block.isBlank) {
+                        ScheduleContent(block, nextTitle, nextRoom, mealText, mealAllergyPrefix, supervisionText, countdownViews)
+                    } else {
+                        EmptyScheduleContent()
                     }
                 }
             }
