@@ -554,6 +554,9 @@ private fun TimeTableAppContent(
         }
     }
 
+    // 정보 화면의 '업데이트'는 설치 안내를 먼저 띄우고 '확인' 뒤에 실제 설치로 갑니다.
+    var installGuideFor by remember { mutableStateOf<UpdateInfo?>(null) }
+
     fun installUpdate() {
         val info = (updateState as? UpdateState.Available)?.info ?: return
         if (!AppUpdater.canInstall(context)) {
@@ -1127,8 +1130,19 @@ private fun TimeTableAppContent(
         AppInfoScreen(
             updateState = updateState,
             onCheckUpdate = { checkUpdateNow() },
-            onInstallUpdate = { installUpdate() },
+            onInstallUpdate = { installGuideFor = (updateState as? UpdateState.Available)?.info },
             onDismiss = { showingAppInfo = false },
+        )
+    }
+
+    installGuideFor?.let { info ->
+        InstallGuideDialog(
+            info = info,
+            onCancel = { installGuideFor = null },
+            onConfirm = {
+                installGuideFor = null
+                installUpdate()
+            },
         )
     }
 

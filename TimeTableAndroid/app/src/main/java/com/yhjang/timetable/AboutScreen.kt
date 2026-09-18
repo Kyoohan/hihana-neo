@@ -408,19 +408,50 @@ internal fun MajorUpdateDialog(info: UpdateInfo, onLater: () -> Unit, onUpdate: 
             }
         }
         Spacer(Modifier.height(10.dp))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(OneUi.CornerMedium))
-                .background(scheme.surfaceContainerHigh.copy(alpha = 0.6f))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            Text("설치 방법", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
-            InstallStep(1, "'업데이트'를 누르면 다운로드 후 설치 창이 열립니다 → 설치")
-            InstallStep(2, "\"Play 프로텍트\" 경고가 뜨면 자세히 보기 → 무시하고 설치")
-            InstallStep(3, "설치가 끝나면 열기")
-        }
+        InstallStepsBox()
+    }
+}
+
+/** 설치 절차 3단계 — 실행 시 안내와 '업데이트' 버튼 앞 확인 창이 같은 내용을 씁니다. */
+@Composable
+private fun InstallStepsBox() {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(OneUi.CornerMedium))
+            .background(scheme.surfaceContainerHigh.copy(alpha = 0.6f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text("설치 방법", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        InstallStep(1, "다운로드가 끝나면 설치 창이 열립니다 → 설치")
+        InstallStep(2, "\"Play 프로텍트\" 경고가 뜨면 세부정보 더보기 → 검사 없이 설치")
+        InstallStep(3, "설치가 끝나면 열기")
+    }
+}
+
+/**
+ * 정보 화면에서 '업데이트'를 눌렀을 때, 시스템 설치 창이 뜨기 전에 한 번 보여주는 설치 안내.
+ * '확인'을 눌러야 다운로드·설치로 넘어갑니다.
+ */
+@Composable
+internal fun InstallGuideDialog(info: UpdateInfo, onCancel: () -> Unit, onConfirm: () -> Unit) {
+    com.yhjang.timetable.ui.OneUiDialog(
+        onDismissRequest = onCancel,
+        title = "업데이트 설치",
+        buttons = listOf(
+            com.yhjang.timetable.ui.OneUiDialogButton("취소", onCancel),
+            com.yhjang.timetable.ui.OneUiDialogButton("확인", onConfirm),
+        ),
+    ) {
+        Text(
+            "새 버전 ${info.versionName}을(를) 받아 설치합니다. 설정과 계정은 그대로 유지됩니다.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+        )
+        Spacer(Modifier.height(12.dp))
+        InstallStepsBox()
     }
 }
 
