@@ -1814,11 +1814,12 @@ private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
             modifier = Modifier.padding(top = 2.dp),
         )
         Spacer(Modifier.height(12.dp))
-        // 스크롤 없이 한눈에 — 폭에 맞춰 여러 줄로 흐릅니다.
+        // 스크롤 없이 한눈에 — 한 줄에 5개씩 두 줄, 카드 폭에 고르게 펼쳐 왼쪽에 몰리지 않게 합니다.
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(6.dp),
+            maxItemsInEachRow = 5,
         ) {
             AccentSwatch(
                 selected = selectedArgb == PlanStore.AUTO_ACCENT_COLOR,
