@@ -49,7 +49,10 @@ object AppUpdater {
     val isConfigured: Boolean get() = BuildConfig.UPDATE_REPO.isNotBlank()
 
     /**
-     * 최신 릴리스를 확인합니다. [force] 가 아니면 [AUTO_CHECK_INTERVAL_MS] 안의 캐시를 재사용합니다.
+     * 최신 릴리스를 확인합니다.
+     * - 자동([force] = false): [AUTO_CHECK_INTERVAL_MS] 안의 캐시를 재사용하고, **큰 버전이 오를 때만**(7.x → 8.0)
+     *   알립니다. 7.1 → 7.2 같은 작은 버전은 조용히 지나갑니다.
+     * - 수동([force] = true, 정보 화면의 '업데이트 확인'): 작은 버전이라도 새 것이면 돌려줘 직접 설치할 수 있습니다.
      * 새 버전이 없으면 null. 저장소가 설정되지 않았으면 네트워크를 타지 않고 null.
      */
     suspend fun check(context: Context, force: Boolean = false): UpdateInfo? {
@@ -57,19 +60,29 @@ object AppUpdater {
         if (!force) {
             PlanStore.cachedJson(context, CACHE_NAME)?.let { stored ->
                 if (System.currentTimeMillis() - stored.at <= AUTO_CHECK_INTERVAL_MS) {
-                    return decode(stored.value)?.takeIf { isNewer(it.versionName, BuildConfig.VERSION_NAME) }
+                    return decode(stored.value)?.takeIf { isMajorUpgrade(it.versionName, BuildConfig.VERSION_NAME) }
                 }
             }
         }
         val info = withContext(Dispatchers.IO) { fetchLatest() }
         PlanStore.writeCachedJson(context, CACHE_NAME, info?.let(::encode) ?: "{}")
-        return info?.takeIf { isNewer(it.versionName, BuildConfig.VERSION_NAME) }
+        return info?.takeIf {
+            if (force) isNewer(it.versionName, BuildConfig.VERSION_NAME)
+            else isMajorUpgrade(it.versionName, BuildConfig.VERSION_NAME)
+        }
     }
 
-    /** 네트워크 없이 마지막 확인 결과만 — 설정 화면의 알림 점을 즉시 그릴 때 씁니다. */
+    /** 네트워크 없이 마지막 확인 결과만 — 설정 화면의 알림 점을 즉시 그릴 때 씁니다 (자동 알림이라 큰 버전만). */
     suspend fun cached(context: Context): UpdateInfo? =
         PlanStore.cachedJson(context, CACHE_NAME)?.let { decode(it.value) }
-            ?.takeIf { isNewer(it.versionName, BuildConfig.VERSION_NAME) }
+            ?.takeIf { isMajorUpgrade(it.versionName, BuildConfig.VERSION_NAME) }
+
+    /** 첫 번째 숫자(큰 버전)가 올랐는지 — 7.2 → 8.0 은 true, 7.1 → 7.2 는 false. */
+    fun isMajorUpgrade(remote: String, installed: String): Boolean {
+        val a = remote.split('.').firstOrNull()?.filter(Char::isDigit)?.toIntOrNull() ?: 0
+        val b = installed.split('.').firstOrNull()?.filter(Char::isDigit)?.toIntOrNull() ?: 0
+        return a > b
+    }
 
     private fun fetchLatest(): UpdateInfo? {
         val request = Request.Builder()
