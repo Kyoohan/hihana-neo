@@ -8,10 +8,5 @@ TimeTableAndroid/.kotlin/
 *.apk
 *.aab
 
-# Xcode
-TimeTable/**/xcuserdata/
-TimeTable/**/*.xcuserstate
-TimeTable/DerivedData/
-
 # macOS
 .DS_Store
