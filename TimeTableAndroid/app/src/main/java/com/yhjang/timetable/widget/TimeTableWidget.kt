@@ -7,7 +7,12 @@ import android.widget.RemoteViews
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import com.yhjang.timetable.ui.OneUi
+import com.yhjang.timetable.ui.systemAccentColor
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -82,6 +87,17 @@ class TimeTableWidget : GlanceAppWidget() {
         val opacity = runCatching { PlanStore.homeWidgetOpacity(context) }.getOrDefault(60)
         val theme = runCatching { PlanStore.homeWidgetTheme(context) }.getOrDefault(PlanStore.THEME_SYSTEM)
         val isDark = isDarkTheme(context, theme)
+        // 강조 글자 색 — 설정에 따라 블록 종류별 색 / 앱 강조 색(자동이면 시스템 테마 색) / 일반 글자색.
+        val accentMode = runCatching { PlanStore.homeWidgetAccent(context) }.getOrDefault(PlanStore.WIDGET_ACCENT_KIND)
+        val accentOverride: Int? = when (accentMode) {
+            PlanStore.WIDGET_ACCENT_APP -> {
+                val saved = runCatching { PlanStore.accentColor(context) }.getOrDefault(PlanStore.AUTO_ACCENT_COLOR)
+                if (saved != PlanStore.AUTO_ACCENT_COLOR) saved
+                else systemAccentColor(context)?.toArgb() ?: OneUi.Blue.toArgb()
+            }
+            PlanStore.WIDGET_ACCENT_TEXT -> if (isDark) 0xFFFFFFFF.toInt() else 0xFF0F172A.toInt()
+            else -> null
+        }
         // 홈 화면 월페이퍼의 대표색 — 위젯 바탕에 옅게 섞어 블러된 배경처럼 보이게 합니다.
         val wallpaperTint = wallpaperPrimaryColor(context)
 
@@ -147,10 +163,9 @@ class TimeTableWidget : GlanceAppWidget() {
         }
 
         // Chronometer는 Glance 컴포저블로 그릴 수 없어 RemoteViews를 미리 만들어 넘깁니다.
-        // 위젯은 앱 강조색과 무관하게, 블록 성격(수업/면학/장소/시간)에 따른 색을 그대로 씁니다.
         val countdownViews = snapshot?.let { snap ->
             val remaining = snap.remainingMillis
-            val blockAccent = snap.block?.let { accentHex.getValue(it.accent).toInt() }
+            val blockAccent = snap.block?.let { accentOverride ?: accentHex.getValue(it.accent).toInt() }
             if (remaining != null && blockAccent != null) {
                 countdownRemoteViews(context, remaining, blockAccent)
             } else {
@@ -159,6 +174,7 @@ class TimeTableWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            CompositionLocalProvider(LocalAccentOverride provides accentOverride) {
             GlanceTheme {
                 WidgetContent(
                     block = snapshot?.block,
@@ -172,6 +188,7 @@ class TimeTableWidget : GlanceAppWidget() {
                     supervisionText = snapshot?.supervisionText,
                     countdownViews = countdownViews,
                 )
+            }
             }
         }
     }
@@ -808,7 +825,14 @@ private val accentHex: Map<Accent, Long> = mapOf(
     Accent.ONE_TWO to 0xFFEAB308,
 )
 
-private fun accentColor(accent: Accent): ColorProvider = ColorProvider(Color(accentHex.getValue(accent)))
+/** 설정에서 고른 강조 색(ARGB) — null 이면 블록 종류별 색을 씁니다. */
+private val LocalAccentOverride = compositionLocalOf<Int?> { null }
+
+@Composable
+private fun accentColor(accent: Accent): ColorProvider {
+    val override = LocalAccentOverride.current
+    return ColorProvider(if (override != null) Color(override) else Color(accentHex.getValue(accent)))
+}
 
 class TimeTableWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = TimeTableWidget()

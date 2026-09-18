@@ -37,6 +37,7 @@ object PlanStore {
     private val mealDayKeyName = stringPreferencesKey("mealDay")
     private val homeOpacityKey = intPreferencesKey("widgetOpacityHome")
     private val homeThemeKey = stringPreferencesKey("widgetThemeHome")
+    private val homeAccentKey = stringPreferencesKey("widgetAccentHome")
     private val accentColorKey = intPreferencesKey("accentColor")
     private val appThemeKey = stringPreferencesKey("appTheme")
     private val studentGradeKey = intPreferencesKey("studentGrade")
@@ -58,6 +59,30 @@ object PlanStore {
         THEME_LIGHT -> "라이트"
         THEME_DARK -> "다크"
         else -> "시스템"
+    }
+
+    /** 위젯 강조 글자(현재 블록 이름·카운트다운) 색 — 블록 종류별 고정 색 / 앱 강조 색 / 일반 글자색과 같게 */
+    const val WIDGET_ACCENT_KIND = "kind"
+    const val WIDGET_ACCENT_APP = "app"
+    const val WIDGET_ACCENT_TEXT = "text"
+
+    val widgetAccents: List<String> = listOf(WIDGET_ACCENT_KIND, WIDGET_ACCENT_APP, WIDGET_ACCENT_TEXT)
+
+    fun widgetAccentLabel(mode: String): String = when (mode) {
+        WIDGET_ACCENT_APP -> "앱 강조 색"
+        WIDGET_ACCENT_TEXT -> "글자색과 같게"
+        else -> "종류별 색"
+    }
+
+    suspend fun homeWidgetAccent(context: Context): String {
+        val prefs = context.planDataStore.data.first()
+        return prefs[homeAccentKey] ?: WIDGET_ACCENT_KIND
+    }
+
+    suspend fun setHomeWidgetAccent(context: Context, mode: String) {
+        context.planDataStore.edit { prefs ->
+            prefs[homeAccentKey] = if (mode in widgetAccents) mode else WIDGET_ACCENT_KIND
+        }
     }
 
     /**

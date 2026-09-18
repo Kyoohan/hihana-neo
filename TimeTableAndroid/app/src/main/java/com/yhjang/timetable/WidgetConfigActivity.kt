@@ -69,10 +69,11 @@ class WidgetConfigActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             TimeTableTheme {
                 WidgetConfigScreen(
-                    onConfirm = { opacity, theme ->
+                    onConfirm = { opacity, theme, accent ->
                         scope.launch {
                             PlanStore.setHomeWidgetOpacity(applicationContext, opacity)
                             PlanStore.setHomeWidgetTheme(applicationContext, theme)
+                            PlanStore.setHomeWidgetAccent(applicationContext, accent)
                             TimeTableWidget().updateAll(applicationContext)
 
                             val resultValue = Intent().apply {
@@ -89,14 +90,16 @@ class WidgetConfigActivity : ComponentActivity() {
 }
 
 @Composable
-fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
+fun WidgetConfigScreen(onConfirm: (Int, String, String) -> Unit) {
     val context = LocalContext.current
     var opacity by remember { mutableFloatStateOf(60f) }
     var theme by remember { mutableStateOf(PlanStore.THEME_SYSTEM) }
+    var accent by remember { mutableStateOf(PlanStore.WIDGET_ACCENT_KIND) }
 
     LaunchedEffect(Unit) {
         opacity = PlanStore.homeWidgetOpacity(context).toFloat()
         theme = PlanStore.homeWidgetTheme(context)
+        accent = PlanStore.homeWidgetAccent(context)
     }
 
     val darkPreview = when (theme) {
@@ -123,7 +126,7 @@ fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
             Spacer(Modifier.height(6.dp))
 
             Text(
-                "위젯의 테마와 배경 불투명도를 조절할 수 있습니다.",
+                "위젯의 테마·강조 색·배경 불투명도를 조절할 수 있습니다.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -136,7 +139,12 @@ fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
             val cardBase = if (darkPreview) Color(0xFF0F172A) else Color(0xFFFFFFFF)
             val previewTitle = if (darkPreview) Color(0xFFFFFFFF) else Color(0xFF0F172A)
             val previewSub = if (darkPreview) Color(0xFFE2E8F0) else Color(0xFF475569)
-            val previewAccent = if (darkPreview) Color(0xFF4C9EF5) else Color(0xFF0072DE)
+            // 미리보기의 강조 글자 — 종류별(수업 색) / 앱 강조 색 / 글자색과 같게
+            val previewAccent = when (accent) {
+                PlanStore.WIDGET_ACCENT_APP -> MaterialTheme.colorScheme.primary
+                PlanStore.WIDGET_ACCENT_TEXT -> previewTitle
+                else -> if (darkPreview) Color(0xFF4C9EF5) else Color(0xFF0072DE)
+            }
 
             Box(
                 modifier = Modifier
@@ -179,6 +187,20 @@ fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
 
                 Spacer(Modifier.height(20.dp))
 
+                Text("강조 색", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlanStore.widgetAccents.forEach { option ->
+                        OneUiChip(
+                            selected = accent == option,
+                            onClick = { accent = option },
+                            label = PlanStore.widgetAccentLabel(option),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -200,7 +222,7 @@ fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
 
             OneUiButton(
                 text = "설정 완료",
-                onClick = { onConfirm(opacity.toInt(), theme) },
+                onClick = { onConfirm(opacity.toInt(), theme, accent) },
                 modifier = Modifier.fillMaxWidth(),
                 leading = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.width(18.dp)) },
             )

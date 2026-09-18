@@ -342,6 +342,7 @@ private fun TimeTableAppContent(
     val updateAvailable = updateState is UpdateState.Available || updateState is UpdateState.Downloading
     var homeWidgetOpacity by remember { androidx.compose.runtime.mutableFloatStateOf(60f) }
     var homeWidgetTheme by remember { mutableStateOf(PlanStore.THEME_SYSTEM) }
+    var homeWidgetAccent by remember { mutableStateOf(PlanStore.WIDGET_ACCENT_KIND) }
     var studentGrade by remember { mutableStateOf(PlanStore.DEFAULT_STUDENT_GRADE) }
     // 추적할 급식 알레르기 — 설정에서 바꾸면 앱 배지·대시보드·위젯에 함께 반영됩니다.
     var allergyCodes by remember { mutableStateOf(DEFAULT_ALLERGY_CODES) }
@@ -515,6 +516,7 @@ private fun TimeTableAppContent(
 
         homeWidgetOpacity = PlanStore.homeWidgetOpacity(context).toFloat()
         homeWidgetTheme = PlanStore.homeWidgetTheme(context)
+        homeWidgetAccent = PlanStore.homeWidgetAccent(context)
         studentGrade = PlanStore.studentGrade(context)
         allergyCodes = PlanStore.allergyCodes(context)
 
@@ -1143,7 +1145,15 @@ private fun TimeTableAppContent(
                 }
             },
             widgetTheme = homeWidgetTheme,
+            widgetAccent = homeWidgetAccent,
             widgetOpacity = homeWidgetOpacity,
+            onWidgetAccentChange = { option ->
+                homeWidgetAccent = option
+                scope.launch {
+                    PlanStore.setHomeWidgetAccent(context, option)
+                    syncEverywhere()
+                }
+            },
             onWidgetThemeChange = { option ->
                 homeWidgetTheme = option
                 scope.launch {
@@ -1232,8 +1242,10 @@ private fun SettingsScreen(
     allergyCodes: Set<Int>,
     onAllergyCodesChange: (Set<Int>) -> Unit,
     widgetTheme: String,
+    widgetAccent: String,
     widgetOpacity: Float,
     onWidgetThemeChange: (String) -> Unit,
+    onWidgetAccentChange: (String) -> Unit,
     onWidgetOpacityChange: (Float) -> Unit,
     onOpenAccount: () -> Unit,
     updateAvailable: Boolean,
@@ -1308,8 +1320,10 @@ private fun SettingsScreen(
                 OneUiGroupColumn {
                     WidgetSettingsSection(
                         theme = widgetTheme,
+                        accent = widgetAccent,
                         opacity = widgetOpacity,
                         onThemeChange = onWidgetThemeChange,
+                        onAccentChange = onWidgetAccentChange,
                         onOpacityChange = onWidgetOpacityChange,
                     )
                     if (!exactAlarmGranted) {
@@ -2089,19 +2103,39 @@ private fun AccentSwatch(
     }
 }
 
-/** 홈 위젯의 테마(라디오 행)와 배경 불투명도(슬라이더 행) — 그룹 컨테이너 안에 들어갑니다. */
+/** 홈 위젯의 테마(라디오 행)·강조 색(라디오 행)·배경 불투명도(슬라이더 행) — 그룹 컨테이너 안에 들어갑니다. */
 @Composable
 private fun WidgetSettingsSection(
     theme: String,
+    accent: String,
     opacity: Float,
     onThemeChange: (String) -> Unit,
+    onAccentChange: (String) -> Unit,
     onOpacityChange: (Float) -> Unit,
 ) {
+    Text(
+        "테마",
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier.padding(start = OneUi.RowPadding, end = OneUi.RowPadding, top = 14.dp, bottom = 4.dp),
+    )
     PlanStore.themes.forEach { option ->
         OneUiRadioRow(
             selected = theme == option,
             label = PlanStore.themeLabel(option),
             onClick = { onThemeChange(option) },
+        )
+    }
+    OneUiDivider()
+    Text(
+        "강조 색",
+        style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier.padding(start = OneUi.RowPadding, end = OneUi.RowPadding, top = 14.dp, bottom = 4.dp),
+    )
+    PlanStore.widgetAccents.forEach { option ->
+        OneUiRadioRow(
+            selected = accent == option,
+            label = PlanStore.widgetAccentLabel(option),
+            onClick = { onAccentChange(option) },
         )
     }
     OneUiDivider()
