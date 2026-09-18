@@ -855,9 +855,11 @@ fun OneUiFullScreen(
                     }
                     Spacer(Modifier.width(6.dp))
                     // 제목 — 스크롤하면 사라지고 뒤로가기 원만 남습니다 (삼성 설정과 같은 동작).
+                    // 제목이 남은 폭을 다 쓰도록 weight 를 줍니다 — 예전엔 오른쪽 Spacer 와 폭을 반씩 나눠
+                    // "오픈소스 라이선스" 같은 긴 제목이 잘렸습니다.
                     Column(
                         modifier = Modifier
-                            .weight(1f, fill = false)
+                            .weight(1f)
                             .alpha(1f - glass)
                             .padding(horizontal = 6.dp, vertical = 6.dp),
                     ) {
@@ -878,7 +880,6 @@ fun OneUiFullScreen(
                             )
                         }
                     }
-                    Spacer(Modifier.weight(1f))
                     if (actions != null) {
                         Spacer(Modifier.width(8.dp))
                         OneUiActionPill(pillAlpha = glass, state = hazeState, content = actions)

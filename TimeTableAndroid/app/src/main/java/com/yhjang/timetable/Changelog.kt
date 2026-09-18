@@ -30,7 +30,7 @@ data class OssLibrary(val name: String, val license: String, val url: String)
 val OSS_LIBRARIES: List<OssLibrary> = listOf(
     OssLibrary("AndroidX / Jetpack Compose", "Apache License 2.0", "https://developer.android.com/jetpack"),
     OssLibrary("Kotlin & kotlinx.coroutines", "Apache License 2.0", "https://kotlinlang.org"),
-    OssLibrary("OkHttp", "Apache License 2.0", "https://square.github.io/okhttp"),
+    OssLibrary("OkHttp", "Apache License 2.0", "https://github.com/square/okhttp"),
     OssLibrary("Haze", "Apache License 2.0", "https://github.com/chrisbanes/haze"),
     OssLibrary("Glance App Widget", "Apache License 2.0", "https://developer.android.com/jetpack/androidx/releases/glance"),
     OssLibrary("Material Icons", "Apache License 2.0", "https://fonts.google.com/icons"),
