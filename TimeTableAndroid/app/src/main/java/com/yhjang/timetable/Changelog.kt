@@ -8,6 +8,16 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "8.0",
+        listOf(
+            "위젯: 테두리를 없애고 모서리를 시스템 위젯 라운드에 맞춰 이질감 해소",
+            "위젯: 다음 수업명이 장소를 밀어내며 잘리던 것, 급식·다음 일정이 공간이 남아도 잘리던 것 수정",
+            "게시글이 가끔 로그인 페이지로 튕기면 자동으로 다시 로그인해 열기",
+            "시간표 탭에서 헤더가 접힌 채 갇히던 버그 수정, 탭을 바꾸면 헤더를 펼친 상태로",
+            "신청·내역 탭은 화면에 다 들어가면 스크롤 없음",
+        ),
+    ),
+    ChangelogEntry(
         "7.5",
         listOf(
             "신청·내역에 외출·외박 추가, 교과교실 내역은 포털 내역 페이지로",
