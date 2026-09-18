@@ -1,7 +1,6 @@
 package com.yhjang.timetable.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,6 +45,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
@@ -58,13 +58,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
@@ -76,6 +75,20 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.core.view.WindowCompat
+import dev.chrisbanes.haze.HazeDialog
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.foundation.layout.BoxScope
 
 /*
  * One UI 9 스타일 공통 컴포넌트 모음.
@@ -85,6 +98,50 @@ import androidx.compose.ui.window.DialogProperties
  * One UI 규칙이 한 곳에서 관리됩니다. 시각 기준은 One UI Design Kit 의 Containers / Card /
  * Buttons / Dialog / Switches / Sliders / Top App Bar / Headers 프레임입니다.
  */
+
+// MARK: - 글래스(블러)
+
+/**
+ * 메인 화면 콘텐츠를 캡처하는 Haze 상태. 하단 바·플로팅 아이콘 알약·다이얼로그가 이걸 받아
+ * 뒤 콘텐츠를 실제로 흐려서(backdrop blur) 비춥니다. Android 12 미만에서는 반투명 스크림으로 폴백됩니다.
+ */
+val LocalHazeState = compositionLocalOf<HazeState?> { null }
+
+/**
+ * One UI 글래스 재질 — 흰색/짙은 회색 반투명 바탕 위에 블러. [strong] 이면 다이얼로그처럼 더 불투명하게.
+ */
+@OptIn(ExperimentalHazeMaterialsApi::class)
+@Composable
+@ReadOnlyComposable
+fun oneUiGlass(
+    strong: Boolean = false,
+    container: Color = if (MaterialTheme.colorScheme.isDark) Color(0xFF1C1C1E) else Color.White,
+): dev.chrisbanes.haze.HazeStyle = if (strong) HazeMaterials.regular(container) else HazeMaterials.thin(container)
+
+/**
+ * 콘텐츠 위에 떠 있는 글래스 판 — [shape] 로 자르고, [LocalHazeState] 가 있으면 뒤를 흐려 비추고
+ * 없으면(다이얼로그 밖 등) 불투명 [fallback] 색으로 채웁니다. [alpha] 로 글래스를 서서히 켤 수 있습니다.
+ */
+@Composable
+fun Modifier.oneUiGlassSurface(
+    shape: Shape,
+    alpha: Float = 1f,
+    strong: Boolean = false,
+    fallback: Color = MaterialTheme.colorScheme.floatingPill,
+    state: HazeState? = LocalHazeState.current,
+    container: Color = if (MaterialTheme.colorScheme.isDark) Color(0xFF1C1C1E) else Color.White,
+): Modifier {
+    val style = oneUiGlass(strong, container)
+    return this
+        .clip(shape)
+        .then(
+            if (state != null && alpha > 0f) {
+                Modifier.hazeEffect(state, style) { this.alpha = alpha }
+            } else {
+                Modifier.background(fallback.copy(alpha = fallback.alpha * alpha))
+            },
+        )
+}
 
 // MARK: - 컨테이너
 
@@ -314,8 +371,8 @@ fun OneUiActionPill(
 ) {
     Row(
         modifier = modifier
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.floatingPill.copy(alpha = pillAlpha))
+            // 흰 카드 위에서도 알약이 읽히도록 카드보다 한 톤 진한 회색을 글래스 바탕으로 씁니다.
+            .oneUiGlassSurface(CircleShape, alpha = pillAlpha, container = MaterialTheme.colorScheme.floatingPill)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -590,12 +647,18 @@ fun OneUiDialog(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Dialog(onDismissRequest = onDismissRequest, properties = properties) {
-        Surface(
-            shape = RoundedCornerShape(OneUi.CornerLarge),
-            // 다크에서는 검정 배경 위라 카드색(#17171A)보다 한 단계 밝은 톤이어야 다이얼로그가 떠 보입니다.
-            color = if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface,
-            modifier = modifier.fillMaxWidth(),
+    val hazeState = LocalHazeState.current
+    val shape = RoundedCornerShape(OneUi.CornerLarge)
+    // 키트의 Dialog 프레임처럼 뒤 화면을 흐려 비추는 글래스 컨테이너 — 메인 화면의 Haze 상태를 다른
+    // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
+    val body: @Composable () -> Unit = {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .then(
+                    if (hazeState != null) Modifier.oneUiGlassSurface(shape, strong = true, state = hazeState)
+                    else Modifier.clip(shape).background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
+                ),
         ) {
             Column {
                 Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)) {
@@ -650,6 +713,11 @@ fun OneUiDialog(
             }
         }
     }
+    if (hazeState != null) {
+        HazeDialog(hazeState = hazeState, onDismissRequest = onDismissRequest, properties = properties, content = body)
+    } else {
+        Dialog(onDismissRequest = onDismissRequest, properties = properties, content = body)
+    }
 }
 
 /** 제목 + 문장 + 확인 버튼 하나짜리 알림 다이얼로그. */
@@ -671,9 +739,14 @@ fun OneUiAlertDialog(
 
 // MARK: - 전체 화면
 
+/** 전체 화면 툴바 높이 — [OneUiFullScreen] 의 content 에 넘겨주는 상단 패딩과 같습니다. */
+val OneUiToolbarHeight = 64.dp
+
 /**
  * 전체 화면 다이얼로그(설정·알리미·게시글·시험 정보)의 공통 뼈대 — 회색 페이지 배경 위에
- * 왼쪽 뒤로가기 화살표, 굵은 제목(+회색 부제목), 오른쪽 액션 캡슐이 있는 One UI 툴바를 얹습니다.
+ * 왼쪽 뒤로가기 화살표, 굵은 제목(+회색 부제목), 오른쪽 액션 캡슐이 있는 One UI 툴바.
+ * 툴바는 콘텐츠 위에 떠 있는 글래스라, [content] 는 받은 패딩을 스크롤 contentPadding 에 넣어
+ * 첫 항목은 툴바 아래에서 시작하고 스크롤하면 툴바 뒤로 흐리게 지나가게 합니다.
  */
 @Composable
 fun OneUiFullScreen(
@@ -682,17 +755,38 @@ fun OneUiFullScreen(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
+    content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    val hazeState = remember { HazeState() }
+    // 시스템 바 뒤까지 그려서(edge-to-edge) 상태바 영역이 어두운 딤으로 남지 않게 하고, 툴바가 그 여백을 품습니다.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        val view = LocalView.current
+        val dark = scheme.isDark
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+        val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(modifier = modifier.fillMaxSize(), color = scheme.background) {
-            Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+                    content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(start = 4.dp, end = 12.dp),
+                        .height(statusTop + OneUiToolbarHeight)
+                        .oneUiGlassSurface(RectangleShape, fallback = scheme.background, state = hazeState)
+                        .padding(start = 4.dp, end = 12.dp, top = statusTop),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDismiss) {
@@ -719,10 +813,10 @@ fun OneUiFullScreen(
                     }
                     if (actions != null) {
                         Spacer(Modifier.width(8.dp))
-                        OneUiActionPill(content = actions)
+                        // 툴바 자체가 글래스라 액션 묶음은 배경 없이 아이콘만 둡니다.
+                        OneUiActionPill(pillAlpha = 0f, content = actions)
                     }
                 }
-                content()
             }
         }
     }
@@ -772,11 +866,8 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
     }
 }
 
-/** 접힌 상태의 헤더 높이(상태바 제외) — 플로팅 아이콘 알약 한 줄. */
-val OneUiHeaderCollapsedHeight = 60.dp
-
-/** 펼쳤을 때 더해지는 높이 — 왼쪽 큰 제목 + 부제목이 들어갈 자리. */
-val OneUiHeaderExpandedExtra = 56.dp
+/** 펼친 상태 헤더의 제목 영역 높이 — 접히면 0 이 되고 상태바 여백만 남습니다. */
+val OneUiHeaderExpandedExtra = 100.dp
 
 @Composable
 fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneUiHeaderState {
@@ -785,8 +876,9 @@ fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneU
 }
 
 /**
- * 삼성 헬스 홈 상단 — 펼치면 왼쪽에 큰 제목(+회색 부제목), 오른쪽에 배경 없는 아이콘들. 스크롤로
- * 접히면 제목은 사라지고 아이콘들만 알약 안에 모여 콘텐츠 위에 떠 있습니다.
+ * 메인 화면 상단 제목 — 펼치면 왼쪽에 큰 제목(+회색 부제목)이 있고, 스크롤로 접히면 제목이 사라지며
+ * 높이도 0 이 되어 콘텐츠가 상태바 바로 아래까지 올라옵니다. 오른쪽 액션 아이콘은 여기 없고,
+ * 호출부가 [OneUiActionPill] 을 화면 위 오버레이로 얹어 접힌 뒤에도 콘텐츠 위에 떠 있게 합니다.
  */
 @Composable
 fun OneUiCollapsingHeader(
@@ -794,7 +886,6 @@ fun OneUiCollapsingHeader(
     title: String,
     subtitle: String?,
     modifier: Modifier = Modifier,
-    actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val fraction = state.fraction
@@ -807,16 +898,16 @@ fun OneUiCollapsingHeader(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(OneUiHeaderCollapsedHeight + extra)
-                .padding(start = 24.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(extra)
+                .clipToBounds(),
         ) {
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    .align(Alignment.TopStart)
+                    .padding(start = 24.dp, end = 120.dp, top = 12.dp)
                     .alpha(titleAlpha),
             ) {
                 Text(
@@ -836,20 +927,11 @@ fun OneUiCollapsingHeader(
                     )
                 }
             }
-            if (actions != null) {
-                Spacer(Modifier.width(8.dp))
-                // 접히는 동안 알약 배경이 서서히 나타나 아이콘들이 한 덩어리로 묶입니다.
-                OneUiActionPill(
-                    pillAlpha = ((fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
-                    modifier = Modifier.align(Alignment.Top).padding(top = if (extra > 0.dp) 4.dp else 6.dp),
-                    content = actions,
-                )
-            }
         }
     }
 }
 
-// MARK: - 삼성 헬스 홈 요소
+// MARK: - 아이콘 배지
 
 /**
  * 지표 아이콘 배지 — 채도 높은 원 안에 흰 글리프 (삼성 헬스 "일일 활동"의 걸음·시간·칼로리 아이콘).
@@ -869,218 +951,5 @@ fun OneUiMetricIcon(
         contentAlignment = Alignment.Center,
     ) {
         Icon(painter, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.5f))
-    }
-}
-
-/**
- * 큰 숫자 + 작은 단위 한 줄 — "642 걸음" 처럼 값은 굵고 크게, 단위는 옆에 작게 붙입니다.
- */
-@Composable
-fun OneUiBigValue(
-    value: String,
-    modifier: Modifier = Modifier,
-    unit: String? = null,
-    valueStyle: TextStyle = MaterialTheme.typography.headlineSmall,
-    color: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Row(modifier = modifier, verticalAlignment = Alignment.Bottom) {
-        Text(
-            value,
-            style = valueStyle,
-            fontWeight = FontWeight.Bold,
-            color = color,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (unit != null) {
-            Spacer(Modifier.width(6.dp))
-            Text(
-                unit,
-                style = MaterialTheme.typography.bodyLarge,
-                color = color.copy(alpha = 0.85f),
-                maxLines = 1,
-                modifier = Modifier.padding(bottom = 3.dp),
-            )
-        }
-    }
-}
-
-/** 얇은 둥근 진행바 — 회색 트랙 위에 색 채움 (삼성 헬스 걸음 타일의 막대). */
-@Composable
-fun OneUiProgressBar(
-    fraction: Float,
-    color: Color,
-    modifier: Modifier = Modifier,
-    height: Dp = 10.dp,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.progressTrack),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                .clip(CircleShape)
-                .background(color),
-        )
-    }
-}
-
-/**
- * 겹친 링 두 개 — 삼성 헬스 활동 링처럼 바깥은 하루 전체 진행, 안쪽은 지금 블록 진행을 보여줍니다.
- * 값이 null 이면 그 링은 트랙만 그립니다.
- */
-@Composable
-fun OneUiRings(
-    outer: Float?,
-    inner: Float?,
-    modifier: Modifier = Modifier,
-    outerColor: Color = OneUi.Lime,
-    innerColor: Color = OneUi.Sky,
-    size: Dp = 96.dp,
-    stroke: Dp = 11.dp,
-) {
-    val track = MaterialTheme.colorScheme.progressTrack
-    Canvas(modifier = modifier.size(size)) {
-        val strokePx = stroke.toPx()
-        val gap = strokePx * 0.55f
-        fun ring(value: Float?, color: Color, inset: Float) {
-            val rect = androidx.compose.ui.geometry.Rect(
-                inset, inset, this.size.width - inset, this.size.height - inset,
-            )
-            drawArc(
-                color = track,
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = rect.topLeft,
-                size = rect.size,
-                style = Stroke(width = strokePx, cap = StrokeCap.Round),
-            )
-            if (value != null && value > 0f) {
-                drawArc(
-                    color = color,
-                    startAngle = -90f,
-                    sweepAngle = 360f * value.coerceIn(0f, 1f),
-                    useCenter = false,
-                    topLeft = rect.topLeft,
-                    size = rect.size,
-                    style = Stroke(width = strokePx, cap = StrokeCap.Round),
-                )
-            }
-        }
-        ring(outer, outerColor, strokePx / 2f)
-        ring(inner, innerColor, strokePx / 2f + strokePx + gap)
-    }
-}
-
-/**
- * 홈 타일 — 왼쪽 위 작은 제목, 오른쪽 위 주황 알림 점(선택), 그 아래 내용. 2열 그리드에 나란히 놓습니다.
- */
-@Composable
-fun OneUiTile(
-    title: String,
-    modifier: Modifier = Modifier,
-    showDot: Boolean = false,
-    onClick: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    OneUiCard(
-        modifier = modifier,
-        contentPadding = PaddingValues(0.dp),
-        onClick = onClick,
-    ) {
-        Box(Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(14.dp))
-                content()
-            }
-            if (showDot) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 12.dp, end = 12.dp)
-                        .size(9.dp)
-                        .clip(CircleShape)
-                        .background(OneUi.NotifyDot),
-                )
-            }
-        }
-    }
-}
-
-/** 페이지 점 — 히어로 카드 아래 현재 페이지는 길쭉한 알약, 나머지는 작은 점. */
-@Composable
-fun OneUiPageDots(count: Int, current: Int, modifier: Modifier = Modifier) {
-    val on = MaterialTheme.colorScheme.onSurface
-    val off = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(count) { index ->
-            val selected = index == current
-            Box(
-                Modifier
-                    .height(8.dp)
-                    .width(if (selected) 26.dp else 8.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) on else off),
-            )
-        }
-    }
-}
-
-/**
- * 알림 카드 — 본문 한 단락과 오른쪽 아래 알약 버튼들 (삼성 헬스 "동기화되지 않았습니다" 카드).
- * 카드 자체는 다른 카드보다 조금 더 불투명한 진한 톤입니다.
- */
-@Composable
-fun OneUiNoticeCard(
-    text: String,
-    modifier: Modifier = Modifier,
-    secondaryText: String? = null,
-    onSecondary: (() -> Unit)? = null,
-    primaryText: String,
-    onPrimary: () -> Unit,
-) {
-    OneUiCard(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.floatingPill,
-        contentPadding = PaddingValues(start = 22.dp, end = 16.dp, top = 22.dp, bottom = 14.dp),
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            if (secondaryText != null && onSecondary != null) {
-                NoticePillButton(secondaryText, onSecondary)
-                Spacer(Modifier.width(10.dp))
-            }
-            NoticePillButton(primaryText, onPrimary)
-        }
-    }
-}
-
-@Composable
-private fun NoticePillButton(text: String, onClick: () -> Unit) {
-    val dark = MaterialTheme.colorScheme.isDark
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (dark) Color(0xFF17171A) else Color.White)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-    ) {
-        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
     }
 }

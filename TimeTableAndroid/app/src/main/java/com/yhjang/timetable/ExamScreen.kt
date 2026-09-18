@@ -156,7 +156,7 @@ internal fun ExamInfoScreen(
         actions = {
             OneUiTextButton(text = "브라우저로 열기", onClick = { onOpenBrowser(post) }, color = MaterialTheme.colorScheme.primary)
         },
-    ) {
+    ) { toolbar ->
         val doc = document
         when {
             doc == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -169,7 +169,12 @@ internal fun ExamInfoScreen(
 
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 4.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(
+                    start = OneUi.PagePadding,
+                    end = OneUi.PagePadding,
+                    top = toolbar.calculateTopPadding() + 4.dp,
+                    bottom = toolbar.calculateBottomPadding() + 24.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {

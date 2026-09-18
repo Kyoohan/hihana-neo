@@ -434,15 +434,16 @@ fun AlimScreen(
         actions = {
             IconButton(onClick = onRetry) { Icon(Icons.Default.Refresh, contentDescription = "새로고침") }
         },
-    ) {
+    ) { toolbar ->
+        val top = toolbar.calculateTopPadding()
         when {
-            error != null -> Box(Modifier.padding(horizontal = OneUi.PagePadding)) {
+            error != null -> Box(Modifier.padding(start = OneUi.PagePadding, end = OneUi.PagePadding, top = top)) {
                 AcademicErrorBlock(error, onRetry, onOpenAccount)
             }
-            isLoading && alims.isEmpty() -> LoadingBlock()
-            alims.isEmpty() -> Box(Modifier.padding(horizontal = OneUi.PagePadding)) { EmptyBlock("알리미가 없습니다") }
+            isLoading && alims.isEmpty() -> Box(Modifier.padding(top = top)) { LoadingBlock() }
+            alims.isEmpty() -> Box(Modifier.padding(start = OneUi.PagePadding, end = OneUi.PagePadding, top = top)) { EmptyBlock("알리미가 없습니다") }
             // 알리미는 항목마다 카드를 따로 두지 않고 One UI 메시지 목록처럼 한 컨테이너에 행으로 쌓습니다.
-            else -> LazyColumn(contentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 4.dp, bottom = 24.dp)) {
+            else -> LazyColumn(contentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = top + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp)) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
@@ -522,9 +523,9 @@ fun BoardDetailScreen(
         actions = {
             OneUiTextButton(text = "브라우저로 열기", onClick = onOpenBrowser, color = MaterialTheme.colorScheme.primary)
         },
-    ) {
+    ) { toolbar ->
         if (failed) {
-            Box(Modifier.padding(OneUi.PagePadding)) {
+            Box(Modifier.padding(toolbar).padding(OneUi.PagePadding)) {
                 OneUiCard(modifier = Modifier.fillMaxWidth()) {
                     Text("게시글을 불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
@@ -542,6 +543,7 @@ fun BoardDetailScreen(
             Box(
                 Modifier
                     .fillMaxSize()
+                    .padding(toolbar)
                     .padding(horizontal = OneUi.PagePadding)
                     .clip(RoundedCornerShape(topStart = OneUi.CornerLarge, topEnd = OneUi.CornerLarge))
                     .background(MaterialTheme.colorScheme.surface),

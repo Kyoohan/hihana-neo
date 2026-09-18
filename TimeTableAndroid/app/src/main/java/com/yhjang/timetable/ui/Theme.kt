@@ -48,32 +48,17 @@ object OneUi {
     /** 다이얼로그 뒷배경 스크림 */
     val Scrim = Color(0x66000000)
 
-    /**
-     * 홈 지표 아이콘 배지 색 — 원형 배지 안의 흰 글리프와 잘 맞는 채도 높은 색. 카드·배경은 무채색이고
-     * 색은 이 배지와 강조색에만 씁니다.
-     */
+    /** 원형 아이콘 배지(급식 끼니 등)에 쓰는 채도 높은 색 — 카드·배경은 무채색이고 색은 배지와 강조색에만 씁니다. */
     val Lime = Color(0xFF7CC22F)
     val Sky = Color(0xFF2FA8F0)
     val Violet = Color(0xFF8C5BE8)
     val Amber = Color(0xFFF2A11B)
-    val Coral = Color(0xFFF0625B)
-    val Mint = Color(0xFF2FBF9C)
-
-    /** 오른쪽 위 알림 점 — 삼성 헬스의 주황 점 */
-    val NotifyDot = Color(0xFFFF7A1A)
-
-    /** 카드 안 얇은 진행바의 회색 트랙 */
-    val TrackDark = Color(0xFF3A3A3D)
-    val TrackLight = Color(0xFFDCDCE0)
 }
 
 /** 플로팅 알약(스크롤 시 액션 아이콘 묶음, 알림 카드, 칩·중립 버튼)의 색 — 카드보다 한 톤 진한 무채색. */
 val ColorScheme.floatingPill: Color
     @Composable @ReadOnlyComposable get() = if (isDarkScheme()) Color(0xFF2C2C2F) else Color(0xFFE3E3E7)
 
-/** 얇은 진행바 트랙 색 */
-val ColorScheme.progressTrack: Color
-    @Composable @ReadOnlyComposable get() = if (isDarkScheme()) OneUi.TrackDark else OneUi.TrackLight
 
 /**
  * One UI 는 M3 기본보다 전반적으로 더 둥급니다 — Shapes 를 쓰는 M3 컴포넌트(TextField 등)에도 반영됩니다.

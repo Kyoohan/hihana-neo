@@ -97,7 +97,17 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.glance.appwidget.updateAll
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.CompositionLocalProvider
 import com.yhjang.timetable.ui.AccentPresets
+import com.yhjang.timetable.ui.LocalHazeState
+import com.yhjang.timetable.ui.OneUiActionPill
+import com.yhjang.timetable.ui.isDark
+import com.yhjang.timetable.ui.oneUiGlassSurface
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiAlertDialog
 import com.yhjang.timetable.ui.OneUiButton
@@ -567,19 +577,6 @@ private fun TimeTableAppContent(
     val remainingMinutes = currentBlock
         ?.takeUnless { it.isBlank }
         ?.let { Duration.between(now, it.end).toMinutes().coerceAtLeast(0) }
-    // 삼성 헬스 활동 링용 진행률 — 바깥 링은 오늘 첫 일정 시작~마지막 일정 끝 사이에서 지금이 어디쯤인지,
-    // 안쪽 링은 현재 블록 안에서 얼마나 지났는지입니다. 일정이 없으면 null(트랙만 그림).
-    val dayProgress = remember(todayBlocks, now) {
-        val real = todayBlocks.filter { !it.isBlank }
-        val first = real.minOfOrNull { it.start }
-        val last = real.maxOfOrNull { it.end }
-        if (first == null || last == null || !last.isAfter(first)) null
-        else (Duration.between(first, now).toMillis().toFloat() / Duration.between(first, last).toMillis()).coerceIn(0f, 1f)
-    }
-    val blockProgress = currentBlock?.takeUnless { it.isBlank }?.let { block ->
-        val total = Duration.between(block.start, block.end).toMillis()
-        if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
-    }
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작
     val headerState = rememberOneUiHeaderState()
@@ -592,6 +589,11 @@ private fun TimeTableAppContent(
 
     // 하단 바는 콘텐츠 위에 떠 있는 알약이라 Scaffold 의 bottomBar 슬롯에 넣지 않고 오버레이로 얹습니다.
     // 대신 각 탭의 스크롤 끝에 바 높이만큼 여백을 줘서 마지막 카드가 바 위까지 올라올 수 있게 합니다.
+    // 메인 화면 콘텐츠를 Haze 소스로 캡처해 하단 바·플로팅 아이콘 알약·다이얼로그가 뒤를 흐려 비춥니다.
+    val hazeState = remember { HazeState() }
+
+    CompositionLocalProvider(LocalHazeState provides hazeState) {
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -599,45 +601,6 @@ private fun TimeTableAppContent(
                 state = headerState,
                 title = tabTitles[tab],
                 subtitle = dateText(today),
-                actions = {
-                    IconButton(onClick = {
-                        scope.launch {
-                            loadMealDay(today, force = true)
-                            syncFromHana()
-                            loadAlim(true)
-                            if (tab == 3) {
-                                when (academicSubTab) {
-                                    0 -> loadSchedule(true)
-                                    1 -> loadBoard(true)
-                                }
-                            }
-                        }
-                    }, enabled = !isSyncing) {
-                        if (isSyncing) {
-                            OneUiLoading(size = 20.dp, stroke = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "동기화")
-                        }
-                    }
-                    IconButton(onClick = { openAlimScreen() }) {
-                        BadgedBox(badge = {
-                            if (alimUnread > 0) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                ) { Text(if (alimUnread > 99) "99+" else "$alimUnread") }
-                            }
-                        }) {
-                            Icon(Icons.Default.Notifications, contentDescription = "알리미")
-                        }
-                    }
-                    IconButton(onClick = { showingAccountSheet = true }) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = "계정")
-                    }
-                    IconButton(onClick = { showingSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "설정")
-                    }
-                },
             )
         },
     ) { innerPadding ->
@@ -650,6 +613,8 @@ private fun TimeTableAppContent(
                 .padding(top = innerPadding.calculateTopPadding())
                 .nestedScroll(headerState.connection),
         ) {
+            // 글래스 요소(하단 바·알약)는 소스 바깥에 둬야 자기 자신을 다시 흐리지 않습니다.
+            Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
             when (tab) {
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
                 1 -> {
@@ -754,8 +719,6 @@ private fun TimeTableAppContent(
                     remainingMinutes = remainingMinutes,
                     nextTitle = nextBlock?.title,
                     nextRoom = nextBlock?.room,
-                    dayProgress = dayProgress,
-                    blockProgress = blockProgress,
                     slots = slots,
                     places = places,
                     supervisor = weekday1Supervisor,
@@ -774,8 +737,6 @@ private fun TimeTableAppContent(
                         .getOrElse(boardCategoryIndex) { BoardCategory.STUDENT_NOTICE }
                         .label,
                     studentGrade = studentGrade,
-                    needsAccount = !HanaCredentialStore.hasCredentials(context),
-                    onConnectAccount = { showingAccountSheet = true },
                     onEditSlot = { editingSlot = it },
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
@@ -795,12 +756,61 @@ private fun TimeTableAppContent(
             }
             // 포털 시간표 페이지를 JS로 렌더링해 DOM을 읽어올 숨은 WebView — 모든 탭에서 동작하도록 앱 루트에 둡니다.
             HanaTimetableWebViewHost()
+            }
             AppNavBar(
                 selected = tab,
                 onSelect = { tab = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+    // 오른쪽 위 액션 아이콘 — 헤더가 펼쳐져 있을 땐 배경 없이, 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다.
+    OneUiActionPill(
+        pillAlpha = ((headerState.fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(top = 8.dp, end = 12.dp),
+    ) {
+        IconButton(onClick = {
+            scope.launch {
+                loadMealDay(today, force = true)
+                syncFromHana()
+                loadAlim(true)
+                if (tab == 3) {
+                    when (academicSubTab) {
+                        0 -> loadSchedule(true)
+                        1 -> loadBoard(true)
+                    }
+                }
+            }
+        }, enabled = !isSyncing) {
+            if (isSyncing) {
+                OneUiLoading(size = 20.dp, stroke = 2.dp)
+            } else {
+                Icon(Icons.Default.Refresh, contentDescription = "동기화")
+            }
+        }
+        IconButton(onClick = { openAlimScreen() }) {
+            BadgedBox(badge = {
+                if (alimUnread > 0) {
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) { Text(if (alimUnread > 99) "99+" else "$alimUnread") }
+                }
+            }) {
+                Icon(Icons.Default.Notifications, contentDescription = "알리미")
+            }
+        }
+        IconButton(onClick = { showingAccountSheet = true }) {
+            Icon(Icons.Default.AccountCircle, contentDescription = "계정")
+        }
+        IconButton(onClick = { showingSettings = true }) {
+            Icon(Icons.Default.Settings, contentDescription = "설정")
+        }
+    }
+    }
     }
 
     editingSlot?.let { slot ->
@@ -979,10 +989,15 @@ private fun SettingsScreen(
         title = "설정",
         subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
         onDismiss = onDismiss,
-    ) {
+    ) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 4.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(
+                start = OneUi.PagePadding,
+                end = OneUi.PagePadding,
+                top = toolbar.calculateTopPadding() + 4.dp,
+                bottom = toolbar.calculateBottomPadding() + 32.dp,
+            ),
         ) {
             item {
                 OneUiSectionTitle("화면")
@@ -1114,8 +1129,9 @@ private val AppNavBarMargin = 10.dp
 
 @Composable
 private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val isDark = isSystemInDarkTheme()
-    // One UI "In-App Navigation" 스타일 — 반투명 알약 바 위에, 선택된 항목만 그 안에서
+    // 시스템 설정이 아니라 앱에 적용된 테마를 따라야, 앱을 라이트로 고정했을 때 바만 어둡게 남지 않습니다.
+    val isDark = MaterialTheme.colorScheme.isDark
+    // One UI "In-App Navigation" 스타일 — 뒤 콘텐츠를 흐려 비추는 글래스 알약 바 위에, 선택된 항목만 그 안에서
     // 자기 자리에 캡슐형 배경이 켜지는 형태입니다 (바 위로 아이콘이 떠오르지 않습니다).
     val barColor = if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.85f)
     val selectedCapsuleColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.07f)
@@ -1126,7 +1142,7 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
 
     Surface(
         shape = RoundedCornerShape(32.dp),
-        color = barColor,
+        color = Color.Transparent,
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -1134,7 +1150,10 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
             .height(AppNavBarHeight),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .oneUiGlassSurface(RoundedCornerShape(32.dp), fallback = barColor)
+                .padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {

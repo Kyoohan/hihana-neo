@@ -56,6 +56,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // 실제 배경 블러(glassmorphism) — 하단 바·플로팅 아이콘 알약이 뒤 콘텐츠를 흐려 비춥니다 (API 31+, 그 아래는 반투명 폴백)
+    implementation("dev.chrisbanes.haze:haze:1.5.3")
+    implementation("dev.chrisbanes.haze:haze-materials:1.5.3")
+
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
