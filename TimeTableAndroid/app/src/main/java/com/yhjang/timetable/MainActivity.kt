@@ -115,6 +115,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -315,8 +316,8 @@ private fun TimeTableAppContent(
     // 오늘 블록이 이 값으로 다시 그려집니다.
     var timetableRevision by remember { mutableStateOf(0) }
 
-    // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/주/급식/학사 네 개입니다.
-    val tabTitles = listOf("홈", "주", "급식", "학사")
+    // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/시간표/급식/학사 네 개입니다.
+    val tabTitles = listOf("홈", "시간표", "급식", "학사")
     // 이전 버전 저장 상태(설정=3, 학사=4)가 복원돼도 범위를 벗어나지 않게 보정합니다.
     if (tab !in tabTitles.indices) tab = 0
 
@@ -698,12 +699,19 @@ private fun TimeTableAppContent(
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
             when (tab) {
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
-                1 -> {
+                1 -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     val timetableInstalled = remember(timetableRevision) { Timetable.fetchedWeek() != null }
+                    // 표가 화면에 다 들어가면 스크롤(그리고 그에 딸린 헤더 접힘)을 아예 두지 않습니다 — 행 높이를
+                    // 남는 높이에 맞춰 56~78dp 사이로 정하고, 그래도 넘칠 때만 스크롤을 붙입니다.
+                    val periodRows = remember(timetableRevision) { Timetable.activePeriodTimes.size + 1 }
+                    val cardChrome = 16.dp
+                    val available = maxHeight - tabContentPadding.calculateTopPadding() - tabContentPadding.calculateBottomPadding() - cardChrome
+                    val rowHeight = (available / periodRows).coerceIn(56.dp, 78.dp)
+                    val fits = !timetableInstalled || rowHeight * periodRows <= available
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
+                            .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
                             .padding(tabContentPadding),
                     ) {
                         OneUiCard(
@@ -711,7 +719,7 @@ private fun TimeTableAppContent(
                             contentPadding = PaddingValues(if (timetableInstalled) 8.dp else 24.dp),
                         ) {
                             if (timetableInstalled) {
-                                WeekTimetable(today, timetableRevision)
+                                WeekTimetable(today, timetableRevision, rowHeight = rowHeight)
                             } else {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1232,7 +1240,7 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
-    val labels = listOf("홈", "주", "급식", "학사")
+    val labels = listOf("홈", "시간표", "급식", "학사")
     val count = labels.size
 
     // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
@@ -1408,7 +1416,7 @@ private object LiquidLens {
 private fun NavIcon(index: Int, tint: Color) {
     when (index) {
         0 -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
-        1 -> Icon(Icons.Outlined.DateRange, contentDescription = "주", tint = tint)
+        1 -> Icon(Icons.Outlined.DateRange, contentDescription = "시간표", tint = tint)
         2 -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
         else -> Icon(painter = painterResource(R.drawable.ic_academic), contentDescription = "학사", tint = tint)
     }
@@ -1683,7 +1691,7 @@ private fun MealCard(
 
 /** 월~금 주간 시간표 — 오늘 요일 열에 옅은 배경을 깔아 한눈에 찾을 수 있게 합니다 */
 @Composable
-private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = Modifier) {
+private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = Modifier, rowHeight: Dp = 78.dp) {
     val todayDow = today.dayOfWeek.value
     val dayLabels = listOf("월", "화", "수", "목", "금")
     // revision 이 바뀌면 포털에서 받은 시간표로 다시 그립니다. 교시 목록과 칸 내용을
@@ -1691,9 +1699,8 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
     // 머리글은 옛 교시인데 칸은 새 표를 보여주는 식으로 어긋나지 않습니다.
     val (periodTimes, lessons) = remember(revision) { Timetable.activePeriodTimes to Timetable.activeLessons }
     val periods = remember(periodTimes) { periodTimes.keys.sorted() }
-    // 교시 열은 좁게, 행은 넉넉히 — 과목명이 세 줄까지 들어가고 교실이 그 아래 붙습니다.
+    // 교시 열은 좁게, 행은 넉넉히(호출부가 화면에 맞춰 정함) — 과목명이 세 줄까지 들어가고 교실이 그 아래 붙습니다.
     val timeWidth = 40.dp
-    val rowHeight = 78.dp
     val todayTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
     val gridLine = MaterialTheme.colorScheme.outlineVariant
 
