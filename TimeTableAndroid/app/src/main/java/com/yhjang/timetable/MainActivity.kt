@@ -116,6 +116,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -708,10 +709,9 @@ private fun TimeTableAppContent(
                             .verticalScroll(rememberScrollState())
                             .padding(tabContentPadding),
                     ) {
-                        OneUiSectionTitle("주간 시간표", modifier = Modifier.padding(bottom = 2.dp))
                         OneUiCard(
                             modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(if (timetableInstalled) 12.dp else 24.dp),
+                            contentPadding = PaddingValues(if (timetableInstalled) 8.dp else 24.dp),
                         ) {
                             if (timetableInstalled) {
                                 WeekTimetable(today, timetableRevision)
@@ -1439,10 +1439,13 @@ private fun MealTab(
     LazyColumn(modifier = modifier, contentPadding = contentPadding) {
         item {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OneUiChip(selected = weekMode, onClick = onToggleWeek, label = "주간 보기")
+                // 일간 / 주간 — 둘 중 하나가 항상 켜져 있어 전환 버튼임이 드러납니다.
+                OneUiChip(selected = !weekMode, onClick = { if (weekMode) onToggleWeek() }, label = "일간 보기")
+                Spacer(Modifier.width(8.dp))
+                OneUiChip(selected = weekMode, onClick = { if (!weekMode) onToggleWeek() }, label = "주간 보기")
                 Spacer(Modifier.weight(1f))
                 if (isLoading) {
                     OneUiLoading(size = 18.dp, stroke = 2.dp)
@@ -1691,8 +1694,9 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
     // 머리글은 옛 교시인데 칸은 새 표를 보여주는 식으로 어긋나지 않습니다.
     val (periodTimes, lessons) = remember(revision) { Timetable.activePeriodTimes to Timetable.activeLessons }
     val periods = remember(periodTimes) { periodTimes.keys.sorted() }
-    val timeWidth = 52.dp
-    val rowHeight = 66.dp
+    // 교시 열은 좁게, 행은 넉넉히 — 과목명이 세 줄까지 들어가고 교실이 그 아래 붙습니다.
+    val timeWidth = 40.dp
+    val rowHeight = 78.dp
     val todayTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
     val gridLine = MaterialTheme.colorScheme.outlineVariant
 
@@ -1734,8 +1738,10 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                     time?.let {
                         Text(
                             timeLabel(it.first),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     }
                 }
@@ -1748,20 +1754,26 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                             .weight(1f)
                             .height(rowHeight)
                             .background(if (isToday) todayTint else Color.Transparent)
-                            .padding(6.dp),
+                            .padding(horizontal = 3.dp, vertical = 5.dp),
                     ) {
                         if (lesson != null) {
                             Column {
                                 Text(
                                     lesson.subject,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp, lineHeight = 14.sp),
                                     fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2,
+                                    maxLines = 3,
                                     overflow = TextOverflow.Ellipsis,
                                     color = if (lesson.isFree) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                                 )
                                 lesson.room?.let {
-                                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
                             }
                         }

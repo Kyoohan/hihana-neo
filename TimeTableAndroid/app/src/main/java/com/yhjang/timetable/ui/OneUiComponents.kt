@@ -935,7 +935,7 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
 }
 
 /** 펼친 상태 헤더의 제목 영역 높이 — 접히면 0 이 되고 상태바 여백만 남습니다. */
-val OneUiHeaderExpandedExtra = 100.dp
+val OneUiHeaderExpandedExtra = 78.dp
 
 @Composable
 fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneUiHeaderState {

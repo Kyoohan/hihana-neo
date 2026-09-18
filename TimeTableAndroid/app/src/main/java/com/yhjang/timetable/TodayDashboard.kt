@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -137,7 +138,7 @@ internal fun TodayDashboard(
     }
 }
 
-/** 카드 공통 틀 — 제목 헤더가 있는 One UI 컨테이너(흰색/#17171A). [icon] 은 예전 호환용으로 받기만 합니다. */
+/** 카드 공통 틀 — 작은 아이콘 + 제목 헤더가 있는 One UI 컨테이너(흰색/#17171A). */
 @Composable
 private fun DashboardCard(
     title: String,
@@ -159,7 +160,14 @@ private fun DashboardCard(
                 .then(if (onHeaderClick != null) Modifier.clickable(onClick = onHeaderClick) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 삼성 헬스 타일처럼 아이콘 없이 제목만 — 아이콘은 호출부 호환을 위해 받기만 하고 그리지 않습니다.
+            // 카드마다 성격에 맞는 작은 아이콘을 제목 왼쪽에 — 지금(위치)·남은 일정(화살표)·급식·게시판·학사·알리미.
+            Icon(
+                painter = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 title,
                 style = MaterialTheme.typography.titleSmall,

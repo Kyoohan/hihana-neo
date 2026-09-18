@@ -5,6 +5,17 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "7.1",
+        listOf(
+            "홈 카드마다 아이콘 추가, 급식 카드는 메뉴를 쭉 이어 표시",
+            "주간 시간표 칸을 키워 과목명이 덜 잘리게, 상단 여백 정리",
+            "급식: 일간 보기 / 주간 보기 전환 버튼",
+            "신청·내역: 내역 조회와 신청하기를 같은 버튼으로",
+            "게시판 '시험' 태그 제거, 세션 만료 시 게시글이 안 열리던 문제 수정",
+            "하단 바 끌기 시 캡슐이 튀던 버그 수정, 유리 효과 완화",
+        ),
+    ),
+    ChangelogEntry(
         "7.0",
         listOf(
             "하단 바: 선택 캡슐을 옆으로 끌어 탭 전환, 액체 유리 굴절 효과",
