@@ -38,6 +38,7 @@ object PlanStore {
     private val homeOpacityKey = intPreferencesKey("widgetOpacityHome")
     private val homeThemeKey = stringPreferencesKey("widgetThemeHome")
     private val homeAccentKey = stringPreferencesKey("widgetAccentHome")
+    private val kindColorsKey = stringPreferencesKey("widgetKindColors")
     private val accentColorKey = intPreferencesKey("accentColor")
     private val appThemeKey = stringPreferencesKey("appTheme")
     private val studentGradeKey = intPreferencesKey("studentGrade")
@@ -77,6 +78,29 @@ object PlanStore {
     suspend fun homeWidgetAccent(context: Context): String {
         val prefs = context.planDataStore.data.first()
         return prefs[homeAccentKey] ?: WIDGET_ACCENT_KIND
+    }
+
+    /** '종류별 색'에서 사용자가 바꾼 색 — Accent 이름 → ARGB. 없는 항목은 기본 색을 씁니다. */
+    suspend fun widgetKindColors(context: Context): Map<String, Int> {
+        val raw = context.planDataStore.data.first()[kindColorsKey] ?: return emptyMap()
+        return runCatching {
+            val json = JSONObject(raw)
+            json.keys().asSequence().associateWith { json.getInt(it) }
+        }.getOrDefault(emptyMap())
+    }
+
+    /** [argb] 가 null 이면 그 종류를 기본 색으로 되돌립니다. */
+    suspend fun setWidgetKindColor(context: Context, kind: String, argb: Int?) {
+        val current = widgetKindColors(context).toMutableMap()
+        if (argb == null) current.remove(kind) else current[kind] = argb
+        context.planDataStore.edit { prefs ->
+            if (current.isEmpty()) prefs.remove(kindColorsKey)
+            else prefs[kindColorsKey] = JSONObject(current as Map<*, *>).toString()
+        }
+    }
+
+    suspend fun resetWidgetKindColors(context: Context) {
+        context.planDataStore.edit { prefs -> prefs.remove(kindColorsKey) }
     }
 
     suspend fun setHomeWidgetAccent(context: Context, mode: String) {

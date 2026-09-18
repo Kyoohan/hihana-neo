@@ -89,6 +89,7 @@ class TimeTableWidget : GlanceAppWidget() {
         val isDark = isDarkTheme(context, theme)
         // 강조 글자 색 — 설정에 따라 블록 종류별 색 / 앱 강조 색(자동이면 시스템 테마 색) / 일반 글자색.
         val accentMode = runCatching { PlanStore.homeWidgetAccent(context) }.getOrDefault(PlanStore.WIDGET_ACCENT_KIND)
+        val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(context) }.getOrDefault(emptyMap()))
         val accentOverride: Int? = when (accentMode) {
             PlanStore.WIDGET_ACCENT_APP -> {
                 val saved = runCatching { PlanStore.accentColor(context) }.getOrDefault(PlanStore.AUTO_ACCENT_COLOR)
@@ -164,7 +165,7 @@ class TimeTableWidget : GlanceAppWidget() {
         // Chronometer는 Glance 컴포저블로 그릴 수 없어 RemoteViews를 미리 만들어 넘깁니다.
         val countdownViews = snapshot?.let { snap ->
             val remaining = snap.remainingMillis
-            val blockAccent = snap.block?.let { accentOverride ?: accentHex.getValue(it.accent).toInt() }
+            val blockAccent = snap.block?.let { accentOverride ?: kindColors.getValue(it.accent) }
             if (remaining != null && blockAccent != null) {
                 countdownRemoteViews(context, remaining, blockAccent)
             } else {
@@ -173,7 +174,7 @@ class TimeTableWidget : GlanceAppWidget() {
         }
 
         provideContent {
-            CompositionLocalProvider(LocalAccentOverride provides accentOverride) {
+            CompositionLocalProvider(LocalAccentOverride provides accentOverride, LocalKindColors provides kindColors) {
             GlanceTheme {
                 WidgetContent(
                     block = snapshot?.block,
@@ -822,29 +823,64 @@ private fun MealHeroContent(
     }
 }
 
-private val accentHex: Map<Accent, Long> = mapOf(
-    Accent.LESSON to 0xFF5B67F1,
-    Accent.FREE to 0xFF14B8A6,
-    Accent.BREAK_TIME to 0xFFF59E0B,
-    Accent.BREAKFAST to 0xFFF97316,
-    Accent.LUNCH to 0xFF22C55E,
-    Accent.DINNER to 0xFF10B981,
-    Accent.SNACK to 0xFFEC4899,
-    Accent.STUDY to 0xFF3B82F6,
-    Accent.LIBRARY to 0xFF92400E,
-    Accent.DORM to 0xFF8B5CF6,
-    Accent.IDLE to 0xFF6B7280,
-    Accent.AFTER_SCHOOL to 0xFF06B6D4,
-    Accent.ONE_TWO to 0xFFEAB308,
-)
+/**
+ * 블록 종류별 기본 강조 색과 설정 화면용 라벨 — 설정의 '종류별 색'에서 종류마다 색을 바꿀 수 있고,
+ * 바꾼 값은 [PlanStore.widgetKindColors] 에 Accent 이름으로 저장됩니다.
+ */
+object WidgetKindColors {
+    val defaults: Map<Accent, Int> = mapOf(
+        Accent.LESSON to 0xFF5B67F1.toInt(),
+        Accent.FREE to 0xFF14B8A6.toInt(),
+        Accent.BREAK_TIME to 0xFFF59E0B.toInt(),
+        Accent.BREAKFAST to 0xFFF97316.toInt(),
+        Accent.LUNCH to 0xFF22C55E.toInt(),
+        Accent.DINNER to 0xFF10B981.toInt(),
+        Accent.SNACK to 0xFFEC4899.toInt(),
+        Accent.STUDY to 0xFF3B82F6.toInt(),
+        Accent.LIBRARY to 0xFF92400E.toInt(),
+        Accent.DORM to 0xFF8B5CF6.toInt(),
+        Accent.IDLE to 0xFF6B7280.toInt(),
+        Accent.AFTER_SCHOOL to 0xFF06B6D4.toInt(),
+        Accent.ONE_TWO to 0xFFEAB308.toInt(),
+    )
 
-/** 설정에서 고른 강조 색(ARGB) — null 이면 블록 종류별 색을 씁니다. */
+    /** 설정에 보이는 순서 — 수업 계열 → 급식 → 면학 장소 → 활동. */
+    val ordered: List<Accent> = listOf(
+        Accent.LESSON, Accent.FREE, Accent.BREAK_TIME, Accent.IDLE,
+        Accent.BREAKFAST, Accent.LUNCH, Accent.DINNER, Accent.SNACK,
+        Accent.STUDY, Accent.LIBRARY, Accent.DORM, Accent.AFTER_SCHOOL, Accent.ONE_TWO,
+    )
+
+    fun label(accent: Accent): String = when (accent) {
+        Accent.LESSON -> "수업"
+        Accent.FREE -> "공강"
+        Accent.BREAK_TIME -> "쉬는 시간"
+        Accent.BREAKFAST -> "아침"
+        Accent.LUNCH -> "점심"
+        Accent.DINNER -> "저녁"
+        Accent.SNACK -> "간식"
+        Accent.STUDY -> "면학실·교과교실"
+        Accent.LIBRARY -> "도서관"
+        Accent.DORM -> "생활관"
+        Accent.IDLE -> "대기"
+        Accent.AFTER_SCHOOL -> "방과후"
+        Accent.ONE_TWO -> "1인2기"
+    }
+
+    /** 저장된 사용자 색을 기본 색 위에 덮은 최종 표. */
+    fun resolve(overrides: Map<String, Int>): Map<Accent, Int> =
+        defaults.mapValues { (accent, default) -> overrides[accent.name] ?: default }
+}
+
+/** 설정에서 고른 단일 강조 색(ARGB) — null 이면 [LocalKindColors] 의 종류별 색을 씁니다. */
 private val LocalAccentOverride = compositionLocalOf<Int?> { null }
+private val LocalKindColors = compositionLocalOf<Map<Accent, Int>> { WidgetKindColors.defaults }
 
 @Composable
 private fun accentColor(accent: Accent): ColorProvider {
     val override = LocalAccentOverride.current
-    return ColorProvider(if (override != null) Color(override) else Color(accentHex.getValue(accent)))
+    val kindColors = LocalKindColors.current
+    return ColorProvider(Color(override ?: kindColors.getValue(accent)))
 }
 
 class TimeTableWidgetReceiver : GlanceAppWidgetReceiver() {

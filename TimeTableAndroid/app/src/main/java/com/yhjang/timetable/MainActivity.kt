@@ -33,6 +33,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -85,7 +97,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -137,9 +148,14 @@ import com.yhjang.timetable.ui.AccentColorPickerDialog
 import com.yhjang.timetable.ui.AccentPresets
 import com.yhjang.timetable.ui.CustomAccentSwatch
 import com.yhjang.timetable.ui.LocalHazeState
+import com.yhjang.timetable.ui.LocalDialogHazeState
 import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiGlassSurface
+import com.yhjang.timetable.ui.OneUiHeaderExpandedExtra
+import com.yhjang.timetable.ui.OneUiCompactBarHeight
+import com.yhjang.timetable.ui.floatingPill
+import androidx.compose.animation.core.animateFloat
 import com.yhjang.timetable.ui.oneUiPageBackground
 import com.yhjang.timetable.ui.systemAccentColor
 import dev.chrisbanes.haze.HazeState
@@ -163,10 +179,12 @@ import com.yhjang.timetable.ui.OneUiRadioRow
 import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.OneUiSlider
 import com.yhjang.timetable.ui.OneUiSwitch
+import com.yhjang.timetable.ui.OneUiTextButton
 import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.TimeTableTheme
 import com.yhjang.timetable.ui.rememberOneUiHeaderState
 import com.yhjang.timetable.widget.TimeTableWidget
+import com.yhjang.timetable.widget.WidgetKindColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -343,6 +361,7 @@ private fun TimeTableAppContent(
     var homeWidgetOpacity by remember { androidx.compose.runtime.mutableFloatStateOf(60f) }
     var homeWidgetTheme by remember { mutableStateOf(PlanStore.THEME_SYSTEM) }
     var homeWidgetAccent by remember { mutableStateOf(PlanStore.WIDGET_ACCENT_KIND) }
+    var widgetKindColors by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var studentGrade by remember { mutableStateOf(PlanStore.DEFAULT_STUDENT_GRADE) }
     // 추적할 급식 알레르기 — 설정에서 바꾸면 앱 배지·대시보드·위젯에 함께 반영됩니다.
     var allergyCodes by remember { mutableStateOf(DEFAULT_ALLERGY_CODES) }
@@ -517,6 +536,7 @@ private fun TimeTableAppContent(
         homeWidgetOpacity = PlanStore.homeWidgetOpacity(context).toFloat()
         homeWidgetTheme = PlanStore.homeWidgetTheme(context)
         homeWidgetAccent = PlanStore.homeWidgetAccent(context)
+        widgetKindColors = PlanStore.widgetKindColors(context)
         studentGrade = PlanStore.studentGrade(context)
         allergyCodes = PlanStore.allergyCodes(context)
 
@@ -788,8 +808,30 @@ private fun TimeTableAppContent(
     // 메인 화면 콘텐츠를 Haze 소스로 캡처해 하단 바·플로팅 아이콘 알약·다이얼로그가 뒤를 흐려 비춥니다.
     val hazeState = remember { HazeState() }
 
-    CompositionLocalProvider(LocalHazeState provides hazeState) {
-    Box(Modifier.fillMaxSize().oneUiPageBackground()) {
+    // 탭 사이 스와이프 — 페이저가 자리를 잡으면 tab 을 따라가고, 하단 바 탭은 페이저를 그 페이지로 넘깁니다.
+    val pagerState = rememberPagerState(initialPage = tab) { 4 }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page -> if (tab != page) tab = page }
+    }
+    LaunchedEffect(tab) {
+        if (pagerState.currentPage != tab && !pagerState.isScrollInProgress) pagerState.animateScrollToPage(tab)
+    }
+
+    // 아래로 당겨 새로고침 상태 — 인디케이터는 따로 그리지 않고, 오른쪽 위 새로고침 아이콘이 당긴 만큼
+    // 가운데로 내려와 도는 애니메이션으로 대신합니다 (아이콘이 둘로 보이지 않게).
+    val pullState = rememberPullToRefreshState()
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
+    var refreshIconOrigin by remember { mutableStateOf(Offset.Zero) }
+    val refreshTravel by animateFloatAsState(
+        targetValue = if (isRefreshingAll) 1f else pullState.distanceFraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+        label = "refreshTravel",
+    )
+
+    // 다이얼로그가 헤더·하단 바까지 포함한 화면 전체를 흐려 비추도록 루트를 따로 캡처합니다.
+    val dialogHazeState = remember { HazeState() }
+    CompositionLocalProvider(LocalHazeState provides hazeState, LocalDialogHazeState provides dialogHazeState) {
+    Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(dialogHazeState).onSizeChanged { rootSize = it }) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -808,38 +850,35 @@ private fun TimeTableAppContent(
     ) { innerPadding ->
         // bottomBar 슬롯이 비어 있으므로 innerPadding 의 아래 값은 시스템 내비게이션 인셋입니다 — 그 위에 바 높이를 더합니다.
         val navBarSpace = innerPadding.calculateBottomPadding() + AppNavBarHeight + AppNavBarMargin * 2 + 8.dp
-        val tabContentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 8.dp, bottom = navBarSpace)
+        // 위쪽은 헤더 높이만큼 — 콘텐츠 상자 자체엔 위 여백을 주지 않아, 스크롤하면 목록이 글래스 툴바 아래로 지나갑니다.
+        val tabContentPadding = PaddingValues(
+            start = OneUi.PagePadding,
+            end = OneUi.PagePadding,
+            top = innerPadding.calculateTopPadding() + 8.dp,
+            bottom = navBarSpace,
+        )
         // 아래로 당겨 새로고침 — 헤더의 nestedScroll 보다 바깥에 둬서, 접힌 헤더가 먼저 다 펼쳐진 뒤에야
         // 남은 당김이 새로고침 인디케이터로 갑니다 (안 그러면 당길 때 헤더가 안 펼쳐지고 인디케이터만 내려옵니다).
-        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = isRefreshingAll,
             onRefresh = { scope.launch { refreshAll() } },
             state = pullState,
             modifier = Modifier.fillMaxSize(),
-            indicator = {
-                PullToRefreshDefaults.Indicator(
-                    state = pullState,
-                    isRefreshing = isRefreshingAll,
-                    // 카드와 같은 색이면 카드 위에서 구분이 안 되므로 카드보다 한 단계 밝은 면을 씁니다.
-                    containerColor = if (MaterialTheme.colorScheme.isDark) Color(0xFF2E2E33) else Color.White,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .zIndex(1f)
-                        .padding(top = innerPadding.calculateTopPadding()),
-                )
-            },
+            indicator = {},
         ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = innerPadding.calculateTopPadding())
                 .nestedScroll(headerState.connection),
         ) {
             // 글래스 요소(하단 바·알약)는 소스 바깥에 둬야 자기 자신을 다시 흐리지 않습니다.
             Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
-            when (tab) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 0,
+            ) { page ->
+            when (page) {
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
                 1 -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     val timetableInstalled = remember(timetableRevision) { Timetable.fetchedWeek() != null }
@@ -995,12 +1034,16 @@ private fun TimeTableAppContent(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            }
             // 포털 시간표 페이지를 JS로 렌더링해 DOM을 읽어올 숨은 WebView — 모든 탭에서 동작하도록 앱 루트에 둡니다.
             HanaTimetableWebViewHost()
             }
             AppNavBar(
                 selected = tab,
                 onSelect = { tab = it },
+                // 스와이프 중엔 캡슐이 페이지 위치를 그대로 따라갑니다.
+                pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction,
+                following = pagerState.isScrollInProgress,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -1012,13 +1055,21 @@ private fun TimeTableAppContent(
         modifier = Modifier
             .align(Alignment.TopEnd)
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(top = 8.dp, end = 12.dp),
+            .padding(top = 4.dp, end = 12.dp),
     ) {
-        IconButton(onClick = { scope.launch { refreshAll() } }, enabled = !isSyncing) {
-            if (isSyncing) {
-                OneUiLoading(size = 20.dp, stroke = 2.dp)
-            } else {
-                Icon(Icons.Default.Refresh, contentDescription = "동기화")
+        IconButton(
+            onClick = { scope.launch { refreshAll() } },
+            enabled = !isSyncing && !isRefreshingAll,
+            modifier = Modifier.onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                refreshIconOrigin = Offset(pos.x + coords.size.width / 2f, pos.y + coords.size.height / 2f)
+            },
+        ) {
+            // 전체 새로고침 중엔 아이콘이 가운데로 내려가 있으므로 여기 자리는 비워 둡니다.
+            when {
+                isRefreshingAll || refreshTravel > 0.01f -> Spacer(Modifier.size(24.dp))
+                isSyncing -> OneUiLoading(size = 20.dp, stroke = 2.dp)
+                else -> Icon(Icons.Default.Refresh, contentDescription = "동기화")
             }
         }
         IconButton(onClick = { openAlimScreen() }) {
@@ -1040,6 +1091,43 @@ private fun TimeTableAppContent(
             Icon(Icons.Default.Settings, contentDescription = "설정")
         }
     }
+    // 알약에서 떠난 새로고침 아이콘 — 당긴 만큼 알약 자리에서 화면 가운데(펼친 헤더 아래)로 내려오고,
+    // 새로고침 중에는 거기서 돌다가 끝나면 다시 알약으로 돌아갑니다.
+    if (refreshTravel > 0.005f) {
+        val density = LocalDensity.current
+        val statusTop = WindowInsets.statusBars.getTop(density)
+        val targetX = rootSize.width / 2f
+        val targetY = statusTop + with(density) { (OneUiCompactBarHeight + OneUiHeaderExpandedExtra + 28.dp).toPx() }
+        val cx = refreshIconOrigin.x + (targetX - refreshIconOrigin.x) * refreshTravel
+        val cy = refreshIconOrigin.y + (targetY - refreshIconOrigin.y) * refreshTravel
+        val spin by rememberInfiniteTransition(label = "refreshSpin").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+            label = "refreshSpinAngle",
+        )
+        val halfPx = with(density) { 20.dp.toPx() }
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    translationX = cx - halfPx
+                    translationY = cy - halfPx
+                    // 알약 자리에선 투명 배경, 내려올수록 글래스 원이 드러납니다.
+                    alpha = 1f
+                }
+                .size(40.dp)
+                .oneUiGlassSurface(CircleShape, alpha = refreshTravel, container = MaterialTheme.colorScheme.floatingPill),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.graphicsLayer {
+                    rotationZ = if (isRefreshingAll) spin else refreshTravel * 300f
+                },
+            )
+        }
     }
     }
 
@@ -1116,6 +1204,15 @@ private fun TimeTableAppContent(
         )
     }
 
+    // 위젯을 길게 눌러 여는 설정 화면(WidgetConfigActivity)이 같은 값을 바꿀 수 있으므로, 설정을 열 때마다 다시 읽습니다.
+    LaunchedEffect(showingSettings) {
+        if (!showingSettings) return@LaunchedEffect
+        homeWidgetOpacity = PlanStore.homeWidgetOpacity(context).toFloat()
+        homeWidgetTheme = PlanStore.homeWidgetTheme(context)
+        homeWidgetAccent = PlanStore.homeWidgetAccent(context)
+        widgetKindColors = PlanStore.widgetKindColors(context)
+    }
+
     if (showingSettings) {
         SettingsScreen(
             accentArgb = accentArgb,
@@ -1147,6 +1244,21 @@ private fun TimeTableAppContent(
             },
             widgetTheme = homeWidgetTheme,
             widgetAccent = homeWidgetAccent,
+            widgetKindColors = widgetKindColors,
+            onWidgetKindColorChange = { kind, argb ->
+                widgetKindColors = if (argb == null) widgetKindColors - kind else widgetKindColors + (kind to argb)
+                scope.launch {
+                    PlanStore.setWidgetKindColor(context, kind, argb)
+                    syncEverywhere()
+                }
+            },
+            onWidgetKindColorsReset = {
+                widgetKindColors = emptyMap()
+                scope.launch {
+                    PlanStore.resetWidgetKindColors(context)
+                    syncEverywhere()
+                }
+            },
             widgetOpacity = homeWidgetOpacity,
             onWidgetAccentChange = { option ->
                 homeWidgetAccent = option
@@ -1206,6 +1318,7 @@ private fun TimeTableAppContent(
             message = message,
         )
     }
+    } // CompositionLocalProvider(LocalHazeState) — 다이얼로그도 글래스 상태를 받도록 여기까지 감쌉니다.
 }
 
 /** "15:32" — 오프라인 표시에 붙는 마지막 동기화 시각. 오늘이 아니면 "9/17 15:32". */
@@ -1244,6 +1357,9 @@ private fun SettingsScreen(
     onAllergyCodesChange: (Set<Int>) -> Unit,
     widgetTheme: String,
     widgetAccent: String,
+    widgetKindColors: Map<String, Int>,
+    onWidgetKindColorChange: (String, Int?) -> Unit,
+    onWidgetKindColorsReset: () -> Unit,
     widgetOpacity: Float,
     onWidgetThemeChange: (String) -> Unit,
     onWidgetAccentChange: (String) -> Unit,
@@ -1322,6 +1438,9 @@ private fun SettingsScreen(
                     WidgetSettingsSection(
                         theme = widgetTheme,
                         accent = widgetAccent,
+                        kindColors = widgetKindColors,
+                        onKindColorChange = onWidgetKindColorChange,
+                        onKindColorsReset = onWidgetKindColorsReset,
                         opacity = widgetOpacity,
                         onThemeChange = onWidgetThemeChange,
                         onAccentChange = onWidgetAccentChange,
@@ -1433,7 +1552,13 @@ private val AppNavBarHeight = 64.dp
 private val AppNavBarMargin = 10.dp
 
 @Composable
-private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun AppNavBar(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    pagePosition: Float = selected.toFloat(),
+    following: Boolean = false,
+) {
     // 시스템 설정이 아니라 앱에 적용된 테마를 따라야, 앱을 라이트로 고정했을 때 바만 어둡게 남지 않습니다.
     val isDark = MaterialTheme.colorScheme.isDark
     // One UI "In-App Navigation" 스타일 — 뒤 콘텐츠를 흐려 비추는 글래스 알약 바 위에, 선택된 항목만 그 안에서
@@ -1456,8 +1581,8 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
     val capsuleIndex by animateFloatAsState(
-        targetValue = dragIndex ?: selected.toFloat(),
-        animationSpec = if (dragging) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f),
+        targetValue = dragIndex ?: if (following) pagePosition else selected.toFloat(),
+        animationSpec = if (dragging || following) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f),
         label = "navCapsuleIndex",
     )
     // 끄는 동안 액체 유리 방울처럼 살짝 늘어나고, 굴절·림 하이라이트가 세집니다. 시작/끝 모두 부드러운 스프링.
@@ -2109,6 +2234,9 @@ private fun AccentSwatch(
 private fun WidgetSettingsSection(
     theme: String,
     accent: String,
+    kindColors: Map<String, Int>,
+    onKindColorChange: (String, Int?) -> Unit,
+    onKindColorsReset: () -> Unit,
     opacity: Float,
     onThemeChange: (String) -> Unit,
     onAccentChange: (String) -> Unit,
@@ -2138,6 +2266,10 @@ private fun WidgetSettingsSection(
             label = PlanStore.widgetAccentLabel(option),
             onClick = { onAccentChange(option) },
         )
+        // '종류별 색'이 켜져 있으면 바로 아래에 종류마다 색을 고르는 칩을 펼칩니다.
+        if (option == PlanStore.WIDGET_ACCENT_KIND && accent == option) {
+            WidgetKindColorChips(kindColors, onKindColorChange, onKindColorsReset)
+        }
     }
     OneUiDivider()
     Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
@@ -2152,6 +2284,56 @@ private fun WidgetSettingsSection(
             onValueChange = onOpacityChange,
             valueRange = 10f..100f,
             steps = 8,
+        )
+    }
+}
+
+/** 종류별 색 칩 — 색 점 + 이름, 탭하면 컬러 피커. 바꾼 항목이 있으면 '기본값으로' 버튼이 보입니다. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WidgetKindColorChips(
+    kindColors: Map<String, Int>,
+    onKindColorChange: (String, Int?) -> Unit,
+    onKindColorsReset: () -> Unit,
+) {
+    var picking by remember { mutableStateOf<Accent?>(null) }
+    val resolved = WidgetKindColors.resolve(kindColors)
+
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = OneUi.RowPadding, end = OneUi.RowPadding, top = 4.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        WidgetKindColors.ordered.forEach { accent ->
+            val color = Color(resolved.getValue(accent))
+            OneUiChip(
+                selected = false,
+                onClick = { picking = accent },
+                label = WidgetKindColors.label(accent),
+                leading = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) },
+            )
+        }
+    }
+    if (kindColors.isNotEmpty()) {
+        OneUiTextButton(
+            text = "기본 색으로 되돌리기",
+            onClick = onKindColorsReset,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = OneUi.RowPadding - 14.dp, bottom = 6.dp),
+        )
+    }
+
+    picking?.let { accent ->
+        AccentColorPickerDialog(
+            initialArgb = resolved.getValue(accent),
+            onDismiss = { picking = null },
+            onApply = { argb ->
+                picking = null
+                // 기본 색과 같으면 저장하지 않고 기본으로 둡니다.
+                onKindColorChange(accent.name, argb.takeIf { it != WidgetKindColors.defaults[accent] })
+            },
         )
     }
 }

@@ -88,6 +88,8 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.core.view.WindowCompat
 import dev.chrisbanes.haze.HazeDialog
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
@@ -111,6 +113,12 @@ import androidx.compose.foundation.layout.BoxScope
  * 뒤 콘텐츠를 실제로 흐려서(backdrop blur) 비춥니다. Android 12 미만에서는 반투명 스크림으로 폴백됩니다.
  */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
+
+/**
+ * 화면 **전체**(헤더·하단 바까지)를 캡처하는 Haze 상태 — 다이얼로그가 뒤 화면 전체를 흐릴 때 씁니다.
+ * [LocalHazeState] 의 소스는 콘텐츠 영역만이라 그걸 쓰면 헤더·하단 바 자리가 비어 보입니다.
+ */
+val LocalDialogHazeState = compositionLocalOf<HazeState?> { null }
 
 /**
  * One UI 글래스 재질 — 흰색/짙은 회색 반투명 바탕 위에 블러. [strong] 이면 다이얼로그처럼 더 불투명하게.
@@ -669,11 +677,12 @@ fun OneUiDialog(
     buttons: List<OneUiDialogButton>,
     modifier: Modifier = Modifier,
     // 플랫폼 기본 폭 대신 창을 화면 전체로 잡고 안에서 직접 가운데 정렬합니다 — 일부 기기에서 왼쪽으로 쏠리던 문제.
-    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false),
+    // 시스템 바 뒤까지 그려야 흐린 배경이 상태바·내비게이션 바 자리까지 이어집니다.
+    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val hazeState = LocalHazeState.current
+    val hazeState = LocalDialogHazeState.current ?: LocalHazeState.current
     val shape = RoundedCornerShape(OneUi.CornerLarge)
     // 키트의 Dialog 프레임처럼 뒤 화면을 흐려 비추는 글래스 컨테이너 — 메인 화면의 Haze 상태를 다른
     // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
@@ -681,18 +690,49 @@ fun OneUiDialog(
         // 일부 기기(One UI)는 다이얼로그 창의 기본 레이아웃/정렬을 자체 테마로 바꿔서, usePlatformDefaultWidth=false 만으로는
         // 창이 화면 전체를 못 채우고 왼쪽에 붙었습니다. 창 자체를 화면 크기·가운데 정렬로 강제합니다.
         val view = LocalView.current
+        val dark = scheme.isDark
         SideEffect {
             (view.parent as? DialogWindowProvider)?.window?.let { window ->
                 window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
                 window.setGravity(Gravity.CENTER)
                 window.decorView.setPadding(0, 0, 0, 0)
+                // MATCH_PARENT 로 잡으면 창이 시스템 바를 피해 배치돼 상태바 자리가 검게 남습니다 — 인셋을 피하지 않게 합니다.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    window.attributes = window.attributes.also { it.fitInsetsTypes = 0 }
+                }
+                // 시스템의 어두운 스크림 대신 아래에서 화면 전체를 흐린 배경(프로스트)을 직접 그립니다.
+                if (hazeState != null) window.setDimAmount(0f)
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
             }
         }
+        // 키트 Dialog 프레임처럼 뒤 화면 전체를 크게 흐리고 옅은 스크림만 얹습니다 — 다이얼로그가 화면 위에
+        // "떠 있는" 느낌이 나고, 카드 자체는 그 위에 반투명 글래스로 놓입니다.
+        val container = if (scheme.isDark) Color(0xFF232326) else Color.White
+        val backdropStyle = HazeStyle(
+            backgroundColor = if (scheme.isDark) Color(0xFF0B1512) else Color(0xFFE4EEE8),
+            tints = listOf(HazeTint(if (scheme.isDark) Color.Black.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.22f))),
+            blurRadius = 36.dp,
+            noiseFactor = 0f,
+        )
+        val cardStyle = HazeStyle(
+            backgroundColor = container,
+            tints = listOf(HazeTint(container.copy(alpha = if (scheme.isDark) 0.66f else 0.7f))),
+            blurRadius = 48.dp,
+            noiseFactor = 0.02f,
+        )
         // 창 안에서 가운데 정렬 — 큰 화면에서도 왼쪽으로 쏠리지 않고 폭은 400dp 까지만 넓어집니다.
         // 창이 화면 전체라 바깥 탭 닫기를 직접 처리합니다 — 카드 자체는 탭을 삼켜 닫히지 않게 합니다.
         Box(
             Modifier
                 .fillMaxSize()
+                .then(if (hazeState != null) Modifier.hazeEffect(hazeState, backdropStyle) else Modifier)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
@@ -702,9 +742,10 @@ fun OneUiDialog(
                 .fillMaxWidth()
                 .widthIn(max = 400.dp)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                .clip(shape)
                 .then(
-                    if (hazeState != null) Modifier.oneUiGlassSurface(shape, strong = true, state = hazeState)
-                    else Modifier.clip(shape).background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
+                    if (hazeState != null) Modifier.hazeEffect(hazeState, cardStyle)
+                    else Modifier.background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
                 ),
         ) {
             Column {
@@ -837,8 +878,12 @@ fun OneUiFullScreen(
         }
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        // 이 화면 안에서 여는 다이얼로그(컬러 피커 등)가 메인 화면이 아니라 이 화면을 흐려 비추도록,
+        // 콘텐츠용·다이얼로그용 Haze 상태를 둘 다 여기 것으로 바꿔 줍니다.
+        val dialogHazeState = remember { HazeState() }
+        CompositionLocalProvider(LocalHazeState provides hazeState, LocalDialogHazeState provides dialogHazeState) {
         Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
-            Box(Modifier.fillMaxSize().oneUiPageBackground()) {
+            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(dialogHazeState)) {
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -899,6 +944,7 @@ fun OneUiFullScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -951,8 +997,11 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
     }
 }
 
-/** 펼친 상태 헤더의 제목 영역 높이 — 접히면 0 이 되고 상태바 여백만 남습니다. */
+/** 펼친 상태 헤더의 큰 제목 영역 높이 — 접히면 0 이 되고 [OneUiCompactBarHeight] 의 툴바만 남습니다. */
 val OneUiHeaderExpandedExtra = 78.dp
+
+/** 접힌 뒤 남는 툴바(작은 제목·부제목) 높이 — 키트 "Top App Bar". */
+val OneUiCompactBarHeight = 52.dp
 
 @Composable
 fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneUiHeaderState {
@@ -961,9 +1010,9 @@ fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneU
 }
 
 /**
- * 메인 화면 상단 제목 — 펼치면 왼쪽에 큰 제목(+회색 부제목)이 있고, 스크롤로 접히면 제목이 사라지며
- * 높이도 0 이 되어 콘텐츠가 상태바 바로 아래까지 올라옵니다. 오른쪽 액션 아이콘은 여기 없고,
- * 호출부가 [OneUiActionPill] 을 화면 위 오버레이로 얹어 접힌 뒤에도 콘텐츠 위에 떠 있게 합니다.
+ * 메인 화면 상단 헤더 — 펼치면 왼쪽 아래에 큰 제목(+회색 부제목)이 있고, 스크롤로 접히면 큰 제목이 사라지며
+ * 키트 "Top App Bar" 처럼 작은 제목·부제목이 든 글래스 툴바만 남습니다. 콘텐츠는 이 툴바 아래로 지나가며
+ * 흐려 비칩니다. 오른쪽 액션 아이콘은 여기 없고, 호출부가 [OneUiActionPill] 을 오버레이로 얹습니다.
  */
 @Composable
 fun OneUiCollapsingHeader(
@@ -973,43 +1022,75 @@ fun OneUiCollapsingHeader(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val scheme = MaterialTheme.colorScheme
     val fraction = state.fraction
     val extra = with(density) { (state.rangePx + state.offsetPx).toDp() }
     val titleAlpha = (1f - fraction * 1.6f).coerceIn(0f, 1f)
+    val barAlpha = ((fraction - 0.4f) / 0.6f).coerceIn(0f, 1f)
+    // 툴바 글래스 — 라이트는 밝은 반투명, 다크는 짙은 반투명 (키트 Top App Bar 의 1·2번째 변형).
+    val barColor = if (scheme.isDark) Color(0xFF151517) else Color(0xFFF3F4F6)
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars),
+            .oneUiGlassSurface(
+                RectangleShape,
+                alpha = barAlpha,
+                container = barColor,
+                fallback = barColor.copy(alpha = 0.92f),
+            )
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .height(OneUiCompactBarHeight + extra)
+            .clipToBounds(),
     ) {
-        Box(
+        // 접힌 툴바의 작은 제목·부제목 — 오른쪽 액션 알약 자리는 비워 둡니다.
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(extra)
-                .clipToBounds(),
+                .align(Alignment.TopStart)
+                .height(OneUiCompactBarHeight)
+                .padding(start = 24.dp, end = 200.dp)
+                .alpha(barAlpha),
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 24.dp, end = 120.dp, top = 12.dp)
-                    .alpha(titleAlpha),
-            ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
                 Text(
-                    title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (subtitle != null) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            }
+        }
+        // 펼친 상태의 큰 제목 — 영역 아래쪽에 붙어 있어 접힐수록 툴바 뒤로 밀려 올라가며 사라집니다.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 24.dp, end = 120.dp, bottom = 10.dp)
+                .alpha(titleAlpha),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
