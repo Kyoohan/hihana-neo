@@ -12,6 +12,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.unit.toIntSize
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.drawWithContent
+import android.os.Build
+import android.graphics.RuntimeShader
+import android.graphics.RenderEffect
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
@@ -1242,16 +1255,31 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
     val labels = listOf("홈", "주", "급식", "학사")
+    val count = labels.size
 
     // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
-    // dragIndex 는 끄는 동안의 실수 위치(칸 단위), null 이면 selected 로 애니메이션합니다.
+    // dragIndex 는 끄는 동안의 실수 위치(칸 단위) — 끌기 시작할 땐 지금 자리에서 출발해 손가락 이동량만큼만 따라오고,
+    // 놓으면 가장 가까운 칸으로 스프링 스냅합니다.
     var dragIndex by remember { mutableStateOf<Float?>(null) }
+    val dragging = dragIndex != null
     val capsuleIndex by animateFloatAsState(
         targetValue = dragIndex ?: selected.toFloat(),
-        animationSpec = if (dragIndex != null) snap() else spring(dampingRatio = 0.85f, stiffness = 400f),
+        animationSpec = if (dragging) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f),
         label = "navCapsuleIndex",
     )
-    val count = labels.size
+    // 끄는 동안 액체 유리 방울처럼 살짝 늘어나고, 굴절·림 하이라이트가 세집니다. 시작/끝 모두 부드러운 스프링.
+    val liquid by animateFloatAsState(
+        targetValue = if (dragging) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 220f),
+        label = "navLiquid",
+    )
+    val stretchX = 1f + 0.08f * liquid
+    val squashY = 1f - 0.05f * liquid
+
+    // 굴절 렌즈 — Android 13+ 의 AGSL 런타임 셰이더로, 캡슐 아래의 아이콘·글자를 유리 너머로 보듯 휘어 그립니다.
+    val lensShader = remember { LiquidLens.create() }
+    val contentLayer = rememberGraphicsLayer()
+    val lensLayer = rememberGraphicsLayer()
 
     Surface(
         shape = RoundedCornerShape(32.dp),
@@ -1270,13 +1298,9 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
         ) {
             val cellWidth = maxWidth / count
             val cellWidthPx = with(LocalDensity.current) { cellWidth.toPx() }
+            val capsuleRadiusPx = with(LocalDensity.current) { 26.dp.toPx() }
 
             // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
-            // 끄는 동안엔 액체 유리 방울처럼 옆으로 늘어나고 위아래로 살짝 눌리며, 테두리에 빛이 맺힙니다.
-            val dragging = dragIndex != null
-            val stretchX by animateFloatAsState(if (dragging) 1.14f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "capsuleStretchX")
-            val squashY by animateFloatAsState(if (dragging) 0.9f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "capsuleSquashY")
-            val rim by animateFloatAsState(if (dragging) 1f else 0f, label = "capsuleRim")
             Box(
                 modifier = Modifier
                     .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
@@ -1287,22 +1311,14 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
                         scaleY = squashY
                     }
                     .clip(RoundedCornerShape(26.dp))
-                    .background(selectedCapsuleColor)
-                    .border(
-                        width = 1.dp,
-                        brush = Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = 0.55f * rim), Color.White.copy(alpha = 0.08f * rim)),
-                        ),
-                        shape = RoundedCornerShape(26.dp),
-                    ),
+                    .background(selectedCapsuleColor),
             )
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(count) {
-                        // 옆으로 끌면 캡슐이 손가락을 따라오고, 놓으면 가장 가까운 칸으로 스냅합니다.
                         detectHorizontalDragGestures(
-                            onDragStart = { pos -> dragIndex = (pos.x / cellWidthPx - 0.5f).coerceIn(0f, (count - 1).toFloat()) },
+                            onDragStart = { dragIndex = selected.toFloat() },
                             onDragEnd = {
                                 dragIndex?.let { onSelect(it.roundToInt().coerceIn(0, count - 1)) }
                                 dragIndex = null
@@ -1313,6 +1329,31 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
                                 dragIndex = ((dragIndex ?: selected.toFloat()) + dx / cellWidthPx).coerceIn(0f, (count - 1).toFloat())
                             },
                         )
+                    }
+                    .drawWithContent {
+                        // ① 항목들을 레이어에 기록해 그대로 그리고, ② 캡슐 영역만 굴절 셰이더를 거친 복사본으로 덮습니다.
+                        contentLayer.record(this, layoutDirection, size.toIntSize()) { this@drawWithContent.drawContent() }
+                        drawLayer(contentLayer)
+                        if (lensShader != null) {
+                            val left = capsuleIndex * cellWidthPx
+                            val w = cellWidthPx * stretchX
+                            val h = size.height * squashY
+                            val rect = Rect(
+                                left = left + (cellWidthPx - w) / 2f,
+                                top = (size.height - h) / 2f,
+                                right = left + (cellWidthPx + w) / 2f,
+                                bottom = (size.height + h) / 2f,
+                            )
+                            lensShader.setFloatUniform("rect", rect.left, rect.top, rect.right, rect.bottom)
+                            lensShader.setFloatUniform("radius", capsuleRadiusPx)
+                            lensShader.setFloatUniform("strength", 0.55f + 0.45f * liquid)
+                            lensLayer.renderEffect = RenderEffect
+                                .createRuntimeShaderEffect(lensShader, "content")
+                                .asComposeRenderEffect()
+                            lensLayer.record(this, layoutDirection, size.toIntSize()) { drawLayer(contentLayer) }
+                            val clipPath = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(capsuleRadiusPx))) }
+                            clipPath(clipPath) { drawLayer(lensLayer) }
+                        }
                     },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1344,6 +1385,40 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
             }
         }
     }
+}
+
+/**
+ * 하단 바 캡슐의 "액체 유리" 굴절 셰이더 (AGSL, Android 13+). 캡슐 안쪽에서 픽셀의 샘플 위치를 가장자리로 갈수록
+ * 바깥쪽으로 밀어 빛이 휘는 것처럼 보이게 하고, 가운데는 살짝 확대하며, 위쪽 림에 반사광을 얹습니다.
+ * 12 이하에서는 null 을 돌려줘 굴절 없이 캡슐 틴트만 그립니다.
+ */
+private object LiquidLens {
+    private const val AGSL = """
+        uniform shader content;
+        uniform float4 rect;
+        uniform float radius;
+        uniform float strength;
+
+        half4 main(float2 p) {
+            float2 c = (rect.xy + rect.zw) * 0.5;
+            float2 halfSize = (rect.zw - rect.xy) * 0.5;
+            float2 q = abs(p - c) - (halfSize - radius);
+            float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+            float edge = clamp(1.0 + d / (radius * 1.15), 0.0, 1.0);
+            edge = edge * edge;
+            float2 n = normalize(p - c + float2(0.0001, 0.0001));
+            float2 disp = n * edge * radius * 0.42 * strength;
+            float2 src = c + (p - c) * (1.0 - 0.07 * strength) + disp;
+            half4 col = content.eval(src);
+            float rim = smoothstep(0.45, 1.0, edge) * strength;
+            float light = clamp(dot(n, float2(-0.55, -0.83)), 0.0, 1.0);
+            col.rgb += half3(rim * light * 0.38);
+            return col;
+        }
+    """
+
+    fun create(): RuntimeShader? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) runCatching { RuntimeShader(AGSL) }.getOrNull() else null
 }
 
 @Composable

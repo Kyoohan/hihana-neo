@@ -138,7 +138,7 @@ internal fun TodayDashboard(
     }
 }
 
-/** 카드 공통 틀 — 작은 아이콘 + 제목 헤더가 있는 One UI 컨테이너(흰색/#17171A, 26dp 라운드). */
+/** 카드 공통 틀 — 제목 헤더가 있는 One UI 컨테이너(흰색/#17171A). [icon] 은 예전 호환용으로 받기만 합니다. */
 @Composable
 private fun DashboardCard(
     title: String,
@@ -160,17 +160,11 @@ private fun DashboardCard(
                 .then(if (onHeaderClick != null) Modifier.clickable(onClick = onHeaderClick) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                painter = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.width(8.dp))
+            // 삼성 헬스 타일처럼 아이콘 없이 제목만 — 아이콘은 호출부 호환을 위해 받기만 하고 그리지 않습니다.
             Text(
                 title,
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             if (subtitle != null) {

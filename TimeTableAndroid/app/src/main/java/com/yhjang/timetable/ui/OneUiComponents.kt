@@ -666,7 +666,8 @@ fun OneUiDialog(
     title: String,
     buttons: List<OneUiDialogButton>,
     modifier: Modifier = Modifier,
-    properties: DialogProperties = DialogProperties(),
+    // 플랫폼 기본 폭 대신 창을 화면 전체로 잡고 안에서 직접 가운데 정렬합니다 — 일부 기기에서 왼쪽으로 쏠리던 문제.
+    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -676,11 +677,19 @@ fun OneUiDialog(
     // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
     val body: @Composable () -> Unit = {
         // 창 안에서 가운데 정렬 — 큰 화면에서도 왼쪽으로 쏠리지 않고 폭은 400dp 까지만 넓어집니다.
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // 창이 화면 전체라 바깥 탭 닫기를 직접 처리합니다 — 카드 자체는 탭을 삼켜 닫히지 않게 합니다.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
+                .padding(horizontal = 24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .widthIn(max = 400.dp)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
                 .then(
                     if (hazeState != null) Modifier.oneUiGlassSurface(shape, strong = true, state = hazeState)
                     else Modifier.clip(shape).background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
