@@ -35,23 +35,46 @@ class WidgetTickReceiver : BroadcastReceiver() {
 
         // 재예약마다 같은 알람을 덮어쓰도록 고정 요청 코드를 씁니다
         private const val REQUEST_CODE = 7301
+        private const val REQUEST_CODE_BOUNDARY = 7302
 
         fun schedule(context: Context) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             // inexact 알람 — Doze/배터리 최적화에서는 지연될 수 있습니다
-            alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + INTERVAL_MS, pendingIntent(context))
+            alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + INTERVAL_MS, pendingIntent(context, REQUEST_CODE))
         }
 
         fun cancel(context: Context) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.cancel(pendingIntent(context))
+            alarmManager.cancel(pendingIntent(context, REQUEST_CODE))
         }
 
-        private fun pendingIntent(context: Context): PendingIntent {
+        /**
+         * 블록이 바뀌는 시각(수업 끝, 면학 시작 등)에 정확히 깨워 다시 그립니다. 1분 틱과 달리 이건
+         * 몇 초만 늦어도 이전 블록의 카운트다운이 0 을 지나 음수(-00:xx)로 보이므로 exact alarm 을 씁니다.
+         * 하루 10~15번이라 배터리 영향은 없고, 권한이 없으면 false 를 돌려줘 호출부가 WorkManager 로 폴백합니다.
+         */
+        fun scheduleBoundary(context: Context, atMillis: Long): Boolean {
+            if (!com.yhjang.timetable.ExactAlarmPermission.isGranted(context)) return false
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            return runCatching {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    atMillis,
+                    pendingIntent(context, REQUEST_CODE_BOUNDARY),
+                )
+            }.isSuccess
+        }
+
+        fun cancelBoundary(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.cancel(pendingIntent(context, REQUEST_CODE_BOUNDARY))
+        }
+
+        private fun pendingIntent(context: Context, requestCode: Int): PendingIntent {
             val intent = Intent(context, WidgetTickReceiver::class.java)
             return PendingIntent.getBroadcast(
                 context,
-                REQUEST_CODE,
+                requestCode,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )

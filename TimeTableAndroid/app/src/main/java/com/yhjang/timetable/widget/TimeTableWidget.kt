@@ -541,7 +541,16 @@ private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, m
 
 /** 블록 경계(급식 창 전환/구간 종료)에 맞춰 위젯을 다시 그립니다 */
 private fun scheduleBoundaryRefresh(context: Context, delayMillis: Long) {
-    if (delayMillis <= 0) return
+    if (delayMillis <= 0) {
+        WidgetTickReceiver.cancelBoundary(context)
+        return
+    }
+    // exact alarm 권한이 있으면 전환 시각 +1초에 정확히 깨우고, 없으면 예전처럼 WorkManager 에 맡깁니다
+    // (JobScheduler 가 수십 초 미룰 수 있어 그동안 카운트다운이 음수로 보일 수 있습니다).
+    if (WidgetTickReceiver.scheduleBoundary(context, System.currentTimeMillis() + delayMillis + 1_000)) {
+        WorkManager.getInstance(context).cancelUniqueWork(WidgetRefreshWorker.WORK_NAME)
+        return
+    }
     val request = OneTimeWorkRequestBuilder<WidgetRefreshWorker>()
         .setInitialDelay(delayMillis + 1_500, TimeUnit.MILLISECONDS)
         .build()

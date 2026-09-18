@@ -13,13 +13,37 @@ android {
         applicationId = "com.yhjang.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 71
-        versionName = "6.19"
+        versionCode = 72
+        versionName = "6.20"
+
+        // 앱 내 업데이트가 최신 릴리스를 읽을 GitHub 저장소(owner/repo). gradle.properties 의 updateRepo 로 지정하며,
+        // 비어 있으면 업데이트 확인을 건너뜁니다.
+        val updateRepo = (project.findProperty("updateRepo") as? String).orEmpty()
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
+    }
+
+    // 릴리스 서명 — CI(또는 로컬)에서 환경 변수로 키스토어를 넘기면 그걸로, 없으면 디버그 키로 서명합니다.
+    // 앱 내 업데이트는 같은 키로 서명된 APK 만 덮어쓸 수 있으므로, 배포용 키는 한 번 정하면 계속 같아야 합니다.
+    signingConfigs {
+        create("release") {
+            val storePath = System.getenv("RELEASE_KEYSTORE")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (System.getenv("RELEASE_KEYSTORE").isNullOrBlank()) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }
         }
     }
 

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -62,6 +61,8 @@ internal fun TodayDashboard(
     remainingMinutes: Long?,
     nextTitle: String?,
     nextRoom: String?,
+    /** 현재 블록 진행률 0..1 — '지금' 카드 아래 진행바. 블록이 없으면 null. */
+    blockProgress: Float?,
     slots: List<PlanSlot>,
     places: Map<PlanSlot, StudyPlace?>,
     supervisor: String?,
@@ -78,7 +79,6 @@ internal fun TodayDashboard(
     isLoadingBoard: Boolean,
     boardCategoryLabel: String,
     studentGrade: Int,
-    onEditSlot: (PlanSlot) -> Unit,
     onOpenAlim: (HanaAlim) -> Unit,
     onOpenAlimList: () -> Unit,
     onOpenPost: (HanaBoardPost) -> Unit,
@@ -100,32 +100,22 @@ internal fun TodayDashboard(
         verticalItemSpacing = 12.dp,
     ) {
         item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-            NowHeroCard(hasTimetable, currentBlock, remainingMinutes, nextTitle, nextRoom) {
+            NowHeroCard(hasTimetable, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress) {
                 scope.launch { gridState.animateScrollToItem(0) }
             }
         }
         item(span = StaggeredGridItemSpan.FullLine, key = "upcoming") {
             UpcomingCard(upcomingGroups, supervisor)
         }
-        // 면학 위치·급식은 반 폭 카드 두 장이지만 높이가 달라 보이던 문제를, 한 줄 전체를
-        // 차지하는 Row 로 묶고 IntrinsicSize.Min 으로 더 큰 카드에 맞춰 해결합니다.
-        item(span = StaggeredGridItemSpan.FullLine, key = "place_meal") {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                PlaceCard(
-                    slots, places, supervisor, onEditSlot,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
-                MealMiniCard(
-                    meals, allergyCodes, isLoadingMeals,
-                    onClick = { onNavigateToTab(2) },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
-            }
+        // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 전체 폭 한 장으로 둡니다.
+        item(span = StaggeredGridItemSpan.FullLine, key = "meal") {
+            MealMiniCard(
+                meals, allergyCodes, isLoadingMeals,
+                onClick = { onNavigateToTab(2) },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        // 게시판은 자주 보는 정보라 전체 폭, 알리미는 최근 1건만 학사일정 옆 반 폭에 둡니다.
+        // 게시판은 자주 보는 정보라 전체 폭, 알리미는 최근 2건만 학사일정 옆 반 폭에 둡니다.
         item(span = StaggeredGridItemSpan.FullLine, key = "board") {
             BoardMiniCard(boardPosts, boardCategoryLabel, isLoadingBoard, onOpenPost, onOpenBoardList)
         }
@@ -140,7 +130,7 @@ internal fun TodayDashboard(
                 )
                 AlimMiniCard(
                     alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList,
-                    limit = 1,
+                    limit = 2,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             }
@@ -206,6 +196,7 @@ private fun NowHeroCard(
     remainingMinutes: Long?,
     nextTitle: String?,
     nextRoom: String?,
+    blockProgress: Float?,
     onClick: () -> Unit,
 ) {
     DashboardCard(title = "지금", icon = painterResource(R.drawable.ic_place), onCardClick = onClick) {
@@ -280,6 +271,31 @@ private fun NowHeroCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+
+        // 카드 맨 아래 얇은 진행바 — 현재 블록이 얼마나 지났는지 (위젯의 막대와 같은 의미).
+        blockProgress?.let { progress ->
+            Spacer(Modifier.height(14.dp))
+            BlockProgressBar(progress)
+        }
+    }
+}
+
+@Composable
+private fun BlockProgressBar(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
     }
 }
 
@@ -296,93 +312,6 @@ private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?) {
         } else {
             groups.forEach { group ->
                 UpcomingGroupRow(group, supervision = supervisor.takeIf { group.supervisionSlot })
-            }
-        }
-    }
-}
-
-/** 면학 위치 — 오늘 슬롯을 탭하면 기존 장소 편집 다이얼로그가 열립니다. */
-@Composable
-private fun PlaceCard(
-    slots: List<PlanSlot>,
-    places: Map<PlanSlot, StudyPlace?>,
-    supervisor: String?,
-    onEditSlot: (PlanSlot) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 0타임은 포털 동기화로만 채워지는 자동 슬롯 — 배정이 있을 때만 평일 목록 맨 앞에 덧붙입니다.
-    val isWeekday = slots.any { it == PlanSlot.weekday1 || it == PlanSlot.weekday2 }
-    val shown = if (isWeekday && places[PlanSlot.weekday0] != null) listOf(PlanSlot.weekday0) + slots else slots
-
-    DashboardCard(title = "면학 위치", icon = painterResource(R.drawable.ic_chair), modifier = modifier) {
-        if (shown.isEmpty()) {
-            DashboardEmpty("오늘은 면학이 없습니다")
-        } else {
-            shown.forEach { slot ->
-                val place = places[slot]
-                val auto = slot == PlanSlot.weekday0
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(OneUi.CornerSmall))
-                        // 자동 슬롯은 여기서 편집할 수 없어 탭 동작을 붙이지 않습니다.
-                        .then(if (auto) Modifier else Modifier.clickable { onEditSlot(slot) })
-                        .padding(vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // 제목·시간 열은 최소 폭을 확보하고 한 줄 고정 → 반 폭 카드에서도 글자 단위로 쪼개지지 않게 합니다.
-                    Column(Modifier.widthIn(min = 54.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                slot.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                softWrap = false,
-                            )
-                            if (auto) {
-                                Spacer(Modifier.width(4.dp))
-                                OneUiBadge(
-                                    "자동",
-                                    container = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    content = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        Text(
-                            slot.timeText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    // 장소 텍스트는 남은 폭을 차지하고 두 줄까지만 — 넘치면 말줄임.
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End,
-                    ) {
-                        Text(
-                            place?.displayText ?: "미설정",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (place == null) FontWeight.Normal else FontWeight.SemiBold,
-                            color = if (place == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        // 평일 1타임 면학실은 학사일정에서 뽑은 감독 교사를 덧붙입니다.
-                        if (slot == PlanSlot.weekday1 && place is StudyPlace.StudyRoom && supervisor != null) {
-                            Text(
-                                "감독 $supervisor",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                softWrap = false,
-                            )
-                        }
-                    }
-                }
             }
         }
     }

@@ -218,6 +218,8 @@ fun OneUiListItem(
     trailing: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
+    /** 제목 오른쪽에 붙는 주황 점 — 갤러리 설정의 "갤러리 정보•" 처럼 새 소식(업데이트 등)을 알립니다. */
+    badgeDot: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -235,7 +237,19 @@ fun OneUiListItem(
             Spacer(Modifier.width(16.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
+            Row(verticalAlignment = Alignment.Top) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
+                if (badgeDot) {
+                    Spacer(Modifier.width(3.dp))
+                    Box(
+                        Modifier
+                            .padding(top = 3.dp)
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(OneUi.NotifyDot),
+                    )
+                }
+            }
             if (subtitle != null) {
                 Text(
                     subtitle,
@@ -253,7 +267,8 @@ fun OneUiListItem(
 }
 
 /**
- * 그룹 위에 붙는 소제목 — One UI 설정처럼 강조색의 작은 굵은 글씨로, 컨테이너 왼쪽 텍스트 라인에 맞춥니다.
+ * 그룹 위에 붙는 소제목 — One UI 설정(갤러리 설정의 "앨범", "개인정보")처럼 회색 작은 글씨로,
+ * 컨테이너 왼쪽 텍스트 라인에 맞춥니다.
  */
 @Composable
 fun OneUiSectionTitle(text: String, modifier: Modifier = Modifier) {
@@ -261,7 +276,7 @@ fun OneUiSectionTitle(text: String, modifier: Modifier = Modifier) {
         text,
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.padding(start = OneUi.RowPadding, top = 18.dp, bottom = 8.dp),
     )
 }
@@ -776,8 +791,8 @@ fun OneUiFullScreen(
         }
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        Surface(modifier = modifier.fillMaxSize(), color = scheme.background) {
-            Box(Modifier.fillMaxSize()) {
+        Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
+            Box(Modifier.fillMaxSize().oneUiPageBackground()) {
                 Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                     content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
                 }
@@ -895,7 +910,6 @@ fun OneUiCollapsingHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Box(

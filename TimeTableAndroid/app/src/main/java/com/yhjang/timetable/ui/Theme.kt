@@ -12,7 +12,19 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.imageResource
+import com.yhjang.timetable.R
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
@@ -53,6 +65,60 @@ object OneUi {
     val Sky = Color(0xFF2FA8F0)
     val Violet = Color(0xFF8C5BE8)
     val Amber = Color(0xFFF2A11B)
+
+    /** 설정 항목 옆 알림 점 — One UI 의 주황 점 */
+    val NotifyDot = Color(0xFFFF7A1A)
+}
+
+/**
+ * 페이지 배경 — 초록 기운이 도는 바탕에 은은한 광원 두 개와 미세한 그레인(아크릴 질감).
+ * 카드는 불투명해서 이 배경은 카드 사이와, 글래스 요소(하단 바·알약·다이얼로그·툴바) 뒤로만 보입니다 —
+ * 순수 검정/회색이면 블러가 티가 안 나서, 흐려질 만한 결을 배경에 둡니다. 라이트/다크가 다릅니다.
+ */
+@Composable
+fun Modifier.oneUiPageBackground(): Modifier {
+    val dark = MaterialTheme.colorScheme.isDark
+    val grain = ImageBitmap.imageResource(LocalContext.current.resources, R.drawable.page_grain_tile)
+    val grainBrush = remember(grain) { ShaderBrush(ImageShader(grain, TileMode.Repeated, TileMode.Repeated)) }
+    return drawBehind {
+        val w = size.width
+        val h = size.height
+        if (dark) {
+            drawRect(Color(0xFF0B1512))
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFF1F4A3A), Color.Transparent),
+                    center = Offset(w * 0.9f, h * 0.08f),
+                    radius = w * 0.95f,
+                ),
+            )
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFF163A2F).copy(alpha = 0.9f), Color.Transparent),
+                    center = Offset(w * 0.05f, h * 0.7f),
+                    radius = w * 0.85f,
+                ),
+            )
+            drawRect(brush = grainBrush, alpha = 0.07f)
+        } else {
+            drawRect(Color(0xFFE4EEE8))
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFFBFDCCB), Color.Transparent),
+                    center = Offset(w * 0.9f, h * 0.08f),
+                    radius = w * 0.95f,
+                ),
+            )
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFFCDE5D6), Color.Transparent),
+                    center = Offset(w * 0.05f, h * 0.7f),
+                    radius = w * 0.85f,
+                ),
+            )
+            drawRect(brush = grainBrush, alpha = 0.06f)
+        }
+    }
 }
 
 /** 플로팅 알약(스크롤 시 액션 아이콘 묶음, 알림 카드, 칩·중립 버튼)의 색 — 카드보다 한 톤 진한 무채색. */
@@ -108,7 +174,7 @@ private fun oneUiLightScheme(): ColorScheme = lightColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFFFFE1E1),
     onErrorContainer = Color(0xFF8F1418),
-    background = Color(0xFFF1F1F3),
+    background = Color(0xFFE4EEE8),
     onBackground = Color(0xFF111114),
     surface = Color(0xFFFCFCFF),
     onSurface = Color(0xFF111114),
@@ -141,7 +207,7 @@ private fun oneUiDarkScheme(): ColorScheme = darkColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFF5A1D1F),
     onErrorContainer = Color(0xFFFFDAD8),
-    background = Color(0xFF010102),
+    background = Color(0xFF0B1512),
     onBackground = Color(0xFFF4F4F6),
     surface = Color(0xFF17171A),
     onSurface = Color(0xFFF4F4F6),

@@ -1,0 +1,53 @@
+# 태그(v6.20 처럼 'v' + versionName)를 푸시하면 릴리스 APK 를 빌드해 GitHub Release 에 첨부합니다.
+# 앱은 이 릴리스의 tag_name 과 .apk 첨부를 읽어 앱 내 업데이트를 띄웁니다 (AppUpdater.kt).
+#
+# 필요한 Secrets (Settings → Secrets and variables → Actions):
+#   RELEASE_KEYSTORE_BASE64  — 서명 키스토어(.jks)를 base64 로 인코딩한 문자열 (`base64 -i release.jks | pbcopy`)
+#   RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+# 서명 키는 한 번 정하면 계속 같아야 합니다 — 다른 키로 서명된 APK 는 기존 설치 위에 덮어쓸 수 없습니다.
+name: Release APK
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: TimeTableAndroid
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build release APK
+        env:
+          RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        # 앱이 자기 저장소의 릴리스를 읽도록 updateRepo 를 이 저장소로 고정합니다.
+        run: ./gradlew :app:assembleRelease -PupdateRepo="${{ github.repository }}" --no-daemon
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk "hihana-neo-${GITHUB_REF_NAME#v}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TimeTableAndroid/hihana-neo-*.apk
+          # 릴리스 본문은 앱의 '변경 사항' 화면에 그대로 표시됩니다 — 태그 메시지나 릴리스 편집으로 채우세요.
+          generate_release_notes: true

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -106,6 +107,7 @@ import com.yhjang.timetable.ui.LocalHazeState
 import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiGlassSurface
+import com.yhjang.timetable.ui.oneUiPageBackground
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import com.yhjang.timetable.ui.OneUi
@@ -265,6 +267,10 @@ private fun TimeTableAppContent(
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
     var showingSettings by remember { mutableStateOf(false) }
+    var showingAppInfo by remember { mutableStateOf(false) }
+    // 앱 내 업데이트 상태 — 실행 시 한 번(6시간 캐시) 조용히 확인하고, 정보 화면에서 수동 확인/설치합니다.
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    val updateAvailable = updateState is UpdateState.Available || updateState is UpdateState.Downloading
     var homeWidgetOpacity by remember { androidx.compose.runtime.mutableFloatStateOf(60f) }
     var homeWidgetTheme by remember { mutableStateOf(PlanStore.THEME_SYSTEM) }
     var studentGrade by remember { mutableStateOf(PlanStore.DEFAULT_STUDENT_GRADE) }
@@ -282,8 +288,8 @@ private fun TimeTableAppContent(
     // 오늘 블록이 이 값으로 다시 그려집니다.
     var timetableRevision by remember { mutableStateOf(0) }
 
-    // 설정을 상단 아이콘으로 옮겨 하단 탭은 오늘/주/급식/학사 네 개입니다.
-    val tabTitles = listOf("오늘", "주", "급식", "학사")
+    // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/주/급식/학사 네 개입니다.
+    val tabTitles = listOf("홈", "주", "급식", "학사")
     // 이전 버전 저장 상태(설정=3, 학사=4)가 복원돼도 범위를 벗어나지 않게 보정합니다.
     if (tab !in tabTitles.indices) tab = 0
 
@@ -459,6 +465,48 @@ private fun TimeTableAppContent(
         }
     }
 
+    // 앱 실행 시 새 버전을 조용히 확인합니다 — 실패해도 아무것도 띄우지 않습니다.
+    LaunchedEffect(Unit) {
+        val cached = runCatching { AppUpdater.cached(context) }.getOrNull()
+        if (cached != null) updateState = UpdateState.Available(cached)
+        runCatching { AppUpdater.check(context) }.getOrNull()?.let { updateState = UpdateState.Available(it) }
+    }
+
+    fun checkUpdateNow() {
+        if (!AppUpdater.isConfigured) {
+            updateState = UpdateState.Error("이 빌드에는 업데이트 저장소가 설정되어 있지 않습니다.")
+            return
+        }
+        scope.launch {
+            updateState = UpdateState.Checking
+            updateState = runCatching { AppUpdater.check(context, force = true) }
+                .fold(
+                    onSuccess = { info -> if (info != null) UpdateState.Available(info) else UpdateState.UpToDate },
+                    onFailure = { e -> UpdateState.Error("확인하지 못했습니다: ${e.message ?: "네트워크 오류"}") },
+                )
+        }
+    }
+
+    fun installUpdate() {
+        val info = (updateState as? UpdateState.Available)?.info ?: return
+        if (!AppUpdater.canInstall(context)) {
+            // '알 수 없는 앱 설치' 허용이 먼저 — 설정에서 켜고 돌아오면 다시 '업데이트'를 누르면 됩니다.
+            AppUpdater.openInstallPermission(context)
+            return
+        }
+        scope.launch {
+            updateState = UpdateState.Downloading(info, -1f)
+            runCatching { AppUpdater.download(context, info) { p -> updateState = UpdateState.Downloading(info, p) } }
+                .fold(
+                    onSuccess = { file ->
+                        updateState = UpdateState.Available(info)
+                        AppUpdater.install(context, file)
+                    },
+                    onFailure = { e -> updateState = UpdateState.Error("다운로드하지 못했습니다: ${e.message ?: "네트워크 오류"}") },
+                )
+        }
+    }
+
     // API 33+ 알림 권한 — 앱 첫 진입 시 한 번 요청합니다.
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
@@ -583,6 +631,11 @@ private fun TimeTableAppContent(
     val remainingMinutes = currentBlock
         ?.takeUnless { it.isBlank }
         ?.let { Duration.between(now, it.end).toMinutes().coerceAtLeast(0) }
+    // '지금' 카드 아래 진행바 — 현재 블록 안에서 얼마나 지났는지 (20초 틱마다 갱신).
+    val blockProgress = currentBlock?.takeUnless { it.isBlank }?.let { block ->
+        val total = Duration.between(block.start, block.end).toMillis()
+        if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
+    }
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작
     val headerState = rememberOneUiHeaderState()
@@ -599,9 +652,9 @@ private fun TimeTableAppContent(
     val hazeState = remember { HazeState() }
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().oneUiPageBackground()) {
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             OneUiCollapsingHeader(
                 state = headerState,
@@ -725,6 +778,7 @@ private fun TimeTableAppContent(
                     remainingMinutes = remainingMinutes,
                     nextTitle = nextBlock?.title,
                     nextRoom = nextBlock?.room,
+                    blockProgress = blockProgress,
                     slots = slots,
                     places = places,
                     supervisor = weekday1Supervisor,
@@ -743,7 +797,6 @@ private fun TimeTableAppContent(
                         .getOrElse(boardCategoryIndex) { BoardCategory.STUDENT_NOTICE }
                         .label,
                     studentGrade = studentGrade,
-                    onEditSlot = { editingSlot = it },
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
                     onOpenPost = { openBoardPost(it) },
@@ -941,7 +994,18 @@ private fun TimeTableAppContent(
                 showingSettings = false
                 showingAccountSheet = true
             },
+            updateAvailable = updateAvailable,
+            onOpenAppInfo = { showingAppInfo = true },
             onDismiss = { showingSettings = false },
+        )
+    }
+
+    if (showingAppInfo) {
+        AppInfoScreen(
+            updateState = updateState,
+            onCheckUpdate = { checkUpdateNow() },
+            onInstallUpdate = { installUpdate() },
+            onDismiss = { showingAppInfo = false },
         )
     }
 
@@ -986,10 +1050,14 @@ private fun SettingsScreen(
     onWidgetThemeChange: (String) -> Unit,
     onWidgetOpacityChange: (Float) -> Unit,
     onOpenAccount: () -> Unit,
+    updateAvailable: Boolean,
+    onOpenAppInfo: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val connected = remember { HanaCredentialStore.hasCredentials(context) }
+    // 설정에서 돌아올 때 권한 상태가 바뀌었을 수 있어 매 그리기마다 다시 읽습니다 (가벼운 시스템 조회).
+    val exactAlarmGranted = ExactAlarmPermission.isGranted(context)
 
     OneUiFullScreen(
         title = "설정",
@@ -1068,6 +1136,22 @@ private fun SettingsScreen(
                         onThemeChange = onWidgetThemeChange,
                         onOpacityChange = onWidgetOpacityChange,
                     )
+                    if (!exactAlarmGranted) {
+                        OneUiDivider()
+                        OneUiListItem(
+                            title = "정확한 시각에 갱신",
+                            subtitle = "수업·면학이 바뀌는 순간 위젯을 바로 갱신하려면 '알람 및 리마인더' 권한이 필요합니다. 탭해서 허용하세요.",
+                            trailing = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            badgeDot = true,
+                            onClick = { ExactAlarmPermission.openSettings(context) },
+                        )
+                    }
                 }
             }
 
@@ -1107,17 +1191,19 @@ private fun SettingsScreen(
             item {
                 OneUiSectionTitle("정보")
                 OneUiGroupColumn {
+                    // 갤러리 설정의 "갤러리 정보•" — 버전만 적고, 상세(업데이트·변경 사항)는 정보 화면에서.
                     OneUiListItem(
-                        title = "버전",
-                        subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        title = "${context.getString(R.string.app_name)} 정보",
+                        subtitle = "버전 ${BuildConfig.VERSION_NAME}",
+                        badgeDot = updateAvailable,
                         trailing = {
-                            Text(
-                                "하드코딩 시간표 제거",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         },
+                        onClick = onOpenAppInfo,
                     )
                 }
             }
@@ -1144,7 +1230,7 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
-    val labels = listOf("오늘", "주", "급식", "학사")
+    val labels = listOf("홈", "주", "급식", "학사")
 
     Surface(
         shape = RoundedCornerShape(32.dp),
@@ -1155,12 +1241,12 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
             .padding(horizontal = 20.dp, vertical = AppNavBarMargin)
             .height(AppNavBarHeight),
     ) {
+        // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .oneUiGlassSurface(RoundedCornerShape(32.dp), fallback = barColor)
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+                .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             labels.indices.forEach { index ->
@@ -1171,11 +1257,13 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
                 )
                 Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(26.dp))
                         .background(capsuleColor)
-                        .clickable(onClick = { onSelect(index) })
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .clickable(onClick = { onSelect(index) }),
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     NavIcon(index, if (isSelected) activeTint else inactiveTint)
                     Spacer(Modifier.height(2.dp))
@@ -1194,7 +1282,7 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
 @Composable
 private fun NavIcon(index: Int, tint: Color) {
     when (index) {
-        0 -> Icon(Icons.Outlined.Home, contentDescription = "오늘", tint = tint)
+        0 -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
         1 -> Icon(Icons.Outlined.DateRange, contentDescription = "주", tint = tint)
         2 -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
         else -> Icon(painter = painterResource(R.drawable.ic_academic), contentDescription = "학사", tint = tint)
