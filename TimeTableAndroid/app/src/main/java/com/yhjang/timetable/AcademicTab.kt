@@ -35,6 +35,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -501,6 +503,14 @@ fun BoardDetailScreen(
 ) {
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
+    // 화면 뼈대는 바로 그리고, 세션 확인(대개 즉시 통과)이 끝난 뒤에야 웹뷰를 붙여 쿠키를 복사합니다 —
+    // 이걸 화면을 열기 전에 하면 열리기까지 1초 가까이 멈춰 보였습니다.
+    var sessionReady by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    LaunchedEffect(url) {
+        HanaPortalClient.get().ensureLoggedIn(context)
+        sessionReady = true
+    }
 
     BackHandler(onBack = onDismiss)
 
@@ -535,7 +545,7 @@ fun BoardDetailScreen(
                     .clip(RoundedCornerShape(topStart = OneUi.CornerLarge, topEnd = OneUi.CornerLarge))
                     .background(MaterialTheme.colorScheme.surface),
             ) {
-                AndroidView(
+                if (sessionReady) AndroidView(
                     factory = { ctx ->
                         // loadUrl 전에 쿠키를 심어야 인증된 페이지가 뜹니다.
                         HanaPortalClient.get().syncCookiesToWebView()

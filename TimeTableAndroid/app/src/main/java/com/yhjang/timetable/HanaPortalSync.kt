@@ -345,9 +345,12 @@ class HanaPortalClient private constructor() {
         } catch (e: HanaPortalException.UnexpectedResponse) {
             null
         }
-        if (first != null && isValid(first)) return@withContext first
+        if (first != null && isValid(first)) {
+            lastAuthenticatedAt = System.currentTimeMillis()
+            return@withContext first
+        }
         login(context)
-        requestJson(path, params, referer)
+        requestJson(path, params, referer).also { lastAuthenticatedAt = System.currentTimeMillis() }
     }
 
     private fun requestJson(path: String, params: List<Pair<String, String>>, referer: String): JSONObject {
@@ -394,7 +397,7 @@ class HanaPortalClient private constructor() {
         } catch (e: HanaPortalException.LoginPage) {
             login(context)
             requestRaw(path, params, method, referer)
-        }
+        }.also { lastAuthenticatedAt = System.currentTimeMillis() }
     }
 
     /**
@@ -402,6 +405,8 @@ class HanaPortalClient private constructor() {
      * 여기서 세션을 살려 두면 로그인 페이지 대신 바로 게시글이 뜹니다. 실패해도 예외를 밖으로 내지 않습니다.
      */
     suspend fun ensureLoggedIn(context: Context) {
+        // 방금 다른 요청이 인증된 채로 성공했으면 세션이 살아 있다고 보고 네트워크를 타지 않습니다.
+        if (System.currentTimeMillis() - lastAuthenticatedAt < SESSION_FRESH_MS) return
         runCatching {
             authenticatedJson(
                 context,
@@ -411,6 +416,10 @@ class HanaPortalClient private constructor() {
             )
         }
     }
+
+    /** 마지막으로 인증된 응답을 받은 시각 — [ensureLoggedIn] 이 불필요한 왕복을 건너뛰는 기준. */
+    @Volatile private var lastAuthenticatedAt = 0L
+    private val SESSION_FRESH_MS = 3 * 60 * 1000L
 
     /** [authenticatedRaw] 의 본문 문자열만 필요한 호출부용 단축. */
     suspend fun authenticatedText(

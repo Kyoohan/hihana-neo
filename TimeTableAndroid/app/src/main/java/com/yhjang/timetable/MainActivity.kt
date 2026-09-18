@@ -444,12 +444,9 @@ private fun TimeTableAppContent(
         openUrl(context, alimUrl(alim.id))
     }
 
-    /** 게시글 열기 — 세션이 끊겨 있으면 먼저 로그인해 두고 웹뷰 상세를 엽니다. */
+    /** 게시글 열기 — 화면은 즉시 뜨고, 세션 확인·로그인은 웹뷰가 페이지를 읽기 직전에 화면 안에서 합니다. */
     fun openBoardPost(post: HanaBoardPost) {
-        scope.launch {
-            HanaPortalClient.get().ensureLoggedIn(context)
-            webPage = HanaWebPage(post.url, "게시글")
-        }
+        webPage = HanaWebPage(post.url, "게시글")
     }
 
     suspend fun syncEverywhere() {
