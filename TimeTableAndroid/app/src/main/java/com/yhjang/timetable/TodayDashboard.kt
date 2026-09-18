@@ -125,14 +125,25 @@ internal fun TodayDashboard(
                 )
             }
         }
-        item(span = StaggeredGridItemSpan.FullLine, key = "alim") {
-            AlimMiniCard(alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList)
-        }
-        item(key = "schedule") {
-            ScheduleMiniCard(schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule)
-        }
-        item(key = "board") {
+        // 게시판은 자주 보는 정보라 전체 폭, 알리미는 최근 1건만 학사일정 옆 반 폭에 둡니다.
+        item(span = StaggeredGridItemSpan.FullLine, key = "board") {
             BoardMiniCard(boardPosts, boardCategoryLabel, isLoadingBoard, onOpenPost, onOpenBoardList)
+        }
+        item(span = StaggeredGridItemSpan.FullLine, key = "schedule_alim") {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ScheduleMiniCard(
+                    schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+                AlimMiniCard(
+                    alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList,
+                    limit = 1,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            }
         }
     }
 }
@@ -454,17 +465,20 @@ private fun AlimMiniCard(
     isLoading: Boolean,
     onOpenAlim: (HanaAlim) -> Unit,
     onOpenList: () -> Unit,
+    limit: Int = 3,
+    modifier: Modifier = Modifier,
 ) {
     DashboardCard(
         title = "알리미",
         icon = rememberVectorPainter(Icons.Default.Notifications),
         subtitle = if (unread > 0) "안 읽음 $unread" else null,
         onHeaderClick = onOpenList,
+        modifier = modifier,
     ) {
         when {
             alims.isEmpty() && isLoading -> DashboardEmpty("불러오는 중")
             alims.isEmpty() -> DashboardEmpty("알리미가 없습니다")
-            else -> alims.sortedBy { it.read }.take(3).forEach { alim ->
+            else -> alims.sortedBy { it.read }.take(limit).forEach { alim ->
                 val isUnread = !alim.read
                 Column(
                     modifier = Modifier
@@ -515,8 +529,9 @@ private fun ScheduleMiniCard(
     studentGrade: Int,
     isLoading: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    DashboardCard(title = "학사일정", icon = painterResource(R.drawable.ic_academic), onCardClick = onClick) {
+    DashboardCard(title = "학사일정", icon = painterResource(R.drawable.ic_academic), onCardClick = onClick, modifier = modifier) {
         examDday(schedule, today)?.let { exam ->
             Row(
                 modifier = Modifier.padding(bottom = 8.dp),

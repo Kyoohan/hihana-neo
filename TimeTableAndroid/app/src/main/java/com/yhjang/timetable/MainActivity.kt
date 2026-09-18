@@ -517,12 +517,18 @@ private fun TimeTableAppContent(
     }
 
     // 오늘 탭 카드(학사일정·게시판)는 학사 탭과 같은 캐시를 씁니다.
-    // 비어 있을 때만 조용히 채우고, TTL 캐시라 대부분 네트워크를 타지 않습니다.
+    // 비어 있을 때만 조용히 채우고, TTL 캐시라 대부분 네트워크를 타지 않습니다. 캐시가 "빈 목록"이면
+    // (세션이 없을 때 받은 응답일 수 있음) 이번 실행에 한 번은 강제로 새로 받아 옵니다.
+    var boardForcedOnce by remember { mutableStateOf(false) }
     LaunchedEffect(tab) {
         if (tab != 0) return@LaunchedEffect
         if (!HanaCredentialStore.hasCredentials(context)) return@LaunchedEffect
         if (scheduleEntries.isEmpty()) runCatching { loadSchedule(false) }
         if (boardPosts.isEmpty()) runCatching { loadBoard(false) }
+        if (boardPosts.isEmpty() && !boardForcedOnce) {
+            boardForcedOnce = true
+            runCatching { loadBoard(true) }
+        }
     }
 
     suspend fun syncFromHana() {

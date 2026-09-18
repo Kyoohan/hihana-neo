@@ -165,6 +165,7 @@ object HanaAcademicApi {
             context,
             "/main/alim/alim-target-list.json",
             listOf("pageSize" to "7", "alimManYn" to "Y", "filterReserve" to "Y"),
+            isValid = { it.optJSONObject("paging")?.has("result") == true },
         )
         val result = json.optJSONObject("paging")?.optJSONArray("result") ?: return emptyList()
         return (0 until result.length()).mapNotNull { index ->
@@ -366,7 +367,12 @@ object HanaAcademicApi {
         )
         params += category.extraParams
 
-        val json = HanaPortalClient.get().authenticatedJson(context, "/main/board/board_main_list.json", params)
+        val json = HanaPortalClient.get().authenticatedJson(
+            context,
+            "/main/board/board_main_list.json",
+            params,
+            isValid = { it.has("noticeList") },
+        )
         val list = json.optJSONArray("noticeList") ?: return emptyList()
         return (0 until list.length()).mapNotNull { index ->
             val row = list.optJSONObject(index) ?: return@mapNotNull null
@@ -412,12 +418,12 @@ object HanaAcademicRepository {
     private const val TTL_SCHEDULE = 24 * 60 * 60 * 1000L
 
     suspend fun alim(context: Context, force: Boolean = false): List<HanaAlim> =
-        cached(context, "academic_alim", TTL_ALIM, force, ::decodeAlim, ::encodeAlim) {
+        cached(context, "academic_alim", TTL_ALIM, force, ::decodeAlim, ::encodeAlim, keepNonEmpty = true) {
             HanaAcademicApi.fetchAlim(context)
         }
 
     suspend fun board(context: Context, category: BoardCategory, force: Boolean = false): List<HanaBoardPost> =
-        cached(context, "academic_board_${category.bmtIdx}", TTL_BOARD, force, ::decodeBoard, ::encodeBoard) {
+        cached(context, "academic_board_${category.bmtIdx}", TTL_BOARD, force, ::decodeBoard, ::encodeBoard, keepNonEmpty = true) {
             HanaAcademicApi.fetchBoard(context, category)
         }
 
@@ -455,6 +461,10 @@ object HanaAcademicRepository {
         return decodeSchedule(stored.value)
     }
 
+    /**
+     * [keepNonEmpty] 면 새 응답이 비었을 때 이전의 비어 있지 않은 캐시를 덮어쓰지 않고 그걸 돌려줍니다 —
+     * 세션 문제로 잠깐 빈 목록이 와도 10분 동안 "없음"으로 굳어 버리지 않게 합니다.
+     */
     private suspend fun <T> cached(
         context: Context,
         name: String,
@@ -462,6 +472,7 @@ object HanaAcademicRepository {
         force: Boolean,
         decode: (String) -> List<T>,
         encode: (List<T>) -> String,
+        keepNonEmpty: Boolean = false,
         fetch: suspend () -> List<T>,
     ): List<T> {
         val stored = PlanStore.cachedJson(context, name)
@@ -470,6 +481,10 @@ object HanaAcademicRepository {
         }
         return try {
             val fresh = fetch()
+            if (keepNonEmpty && fresh.isEmpty() && stored != null) {
+                val previous = decode(stored.value)
+                if (previous.isNotEmpty()) return previous
+            }
             PlanStore.writeCachedJson(context, name, encode(fresh))
             fresh
         } catch (e: Exception) {

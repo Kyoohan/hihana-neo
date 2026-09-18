@@ -328,18 +328,26 @@ class HanaPortalClient private constructor() {
      * 세션이 없거나 만료돼 JSON 이 아니면(로그인 페이지 HTML 등) 한 번 로그인하고 재시도합니다.
      * [requestJson] 이 던지는 예외는 그대로 호출부로 전달되므로, 자격증명 없음/로그인 실패를 구분할 수 있습니다.
      */
+    /**
+     * [isValid] 는 "로그인된 응답인지"를 판별합니다 — 포털은 세션이 없어도 HTML 이 아니라 목록 키가 빠진
+     * JSON 을 돌려줄 때가 있어서, JSON 파싱만으로는 로그인 실패를 못 잡고 빈 목록을 캐시해 버렸습니다
+     * (앱을 켜면 게시판이 "없음"으로 보이던 원인). 비어 있으면 한 번 로그인하고 다시 요청합니다.
+     */
     suspend fun authenticatedJson(
         context: Context,
         path: String,
         params: List<Pair<String, String>>,
         referer: String = "$BASE/",
+        isValid: (JSONObject) -> Boolean = { true },
     ): JSONObject = withContext(Dispatchers.IO) {
-        try {
+        val first = try {
             requestJson(path, params, referer)
         } catch (e: HanaPortalException.UnexpectedResponse) {
-            login(context)
-            requestJson(path, params, referer)
+            null
         }
+        if (first != null && isValid(first)) return@withContext first
+        login(context)
+        requestJson(path, params, referer)
     }
 
     private fun requestJson(path: String, params: List<Pair<String, String>>, referer: String): JSONObject {
