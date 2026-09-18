@@ -531,10 +531,13 @@ private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, m
             modifier = GlanceModifier.size(14.dp),
         )
         Spacer(GlanceModifier.width(4.dp))
+        // 제목은 남는 폭 안에서 줄바꿈하고, 장소는 자기 폭을 먼저 확보합니다 — 제목에 폭 제한이 없으면 긴 과목명이
+        // 한 줄로 늘어나 장소가 위젯 밖으로 밀려 잘려 보였습니다.
         Text(
             text = title,
             style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
             maxLines = maxLines,
+            modifier = GlanceModifier.defaultWeight(),
         )
         if (room != null) {
             Spacer(GlanceModifier.width(8.dp))
@@ -617,7 +620,7 @@ private fun NormalCompactContent(block: Block, nextTitle: String?, nextRoom: Str
 
         if (!nextTitle.isNullOrEmpty()) {
             Spacer(GlanceModifier.height(2.dp))
-            NextRow(nextTitle, nextRoom, 12.sp, maxLines = 1)
+            NextRow(nextTitle, nextRoom, 12.sp, maxLines = ((LocalSize.current.height.value - 90f) / 16f).toInt().coerceIn(1, 3))
         }
 
         Spacer(GlanceModifier.defaultWeight())
@@ -646,7 +649,9 @@ private fun MealCompactContent(block: Block, mealText: String, allergyPrefix: St
 
         Spacer(GlanceModifier.defaultWeight())
 
-        MealOrNextContent(mealText = mealText, nextTitle = null, nextRoom = null, fontSize = 13.sp, maxLines = 2, allergyPrefix = allergyPrefix)
+        // 가로형도 높이에 여유가 있으면 메뉴 줄 수를 늘립니다 (한 줄 ≈ 18dp).
+        val mealLines = ((LocalSize.current.height.value - 32f - 20f - 8f) / 18f).toInt().coerceIn(1, 4)
+        MealOrNextContent(mealText = mealText, nextTitle = null, nextRoom = null, fontSize = 13.sp, maxLines = mealLines, allergyPrefix = allergyPrefix)
 
         if (supervisionText != null) {
             Spacer(GlanceModifier.height(2.dp))
@@ -707,9 +712,10 @@ private fun NormalHeroContent(
 
             Spacer(GlanceModifier.defaultWeight())
 
-            // 2x2 는 세로 여유가 있어 긴 과목명이 잘리지 않도록 두 줄까지 허용합니다.
+            // 세로 여유가 있으면 긴 과목명이 잘리지 않도록 줄 수를 높이에 맞춰 늘립니다 (2~4줄).
             if (!nextTitle.isNullOrEmpty()) {
-                NextRow(nextTitle, nextRoom, 13.sp, maxLines = 2)
+                val nextLines = ((LocalSize.current.height.value - 150f) / 18f).toInt().coerceIn(2, 4)
+                NextRow(nextTitle, nextRoom, 13.sp, maxLines = nextLines)
             }
 
             Spacer(GlanceModifier.defaultWeight())
@@ -761,7 +767,10 @@ private fun MealHeroContent(block: Block, mealText: String, allergyPrefix: Strin
 
         Spacer(GlanceModifier.height(8.dp))
 
-        // 메뉴가 남는 세로 공간을 차지합니다 — 모든 끼니 전체 메뉴를 4줄까지 보여줍니다.
+        // 메뉴가 남는 세로 공간을 차지합니다 — 줄 수는 위젯 높이에서 상단(상태·히어로·여백)과 하단 여백을 뺀
+        // 만큼 계산해서, 공간이 남는데도 4줄에서 잘리지 않게 합니다 (한 줄 ≈ 20dp).
+        val fixedDp = 32f + 20f + 12f + 40f + 8f + (if (supervisionText != null) 20f else 0f)
+        val mealLines = ((LocalSize.current.height.value - fixedDp) / 20f).toInt().coerceIn(2, 12)
         Box(
             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
             contentAlignment = Alignment.TopStart,
@@ -771,7 +780,7 @@ private fun MealHeroContent(block: Block, mealText: String, allergyPrefix: Strin
                 nextTitle = null,
                 nextRoom = null,
                 fontSize = 15.sp,
-                maxLines = 4,
+                maxLines = mealLines,
                 allergyPrefix = allergyPrefix,
             )
         }
