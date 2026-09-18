@@ -1247,12 +1247,6 @@ private fun SettingsScreen(
                     OneUiDivider()
                     Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
                         Text("학년", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "학사일정에서 내 학년 면학감독만 표시합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             (1..3).forEach { grade ->
@@ -1300,12 +1294,6 @@ private fun SettingsScreen(
                 // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
                 var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
                 OneUiGroupColumn {
-                    Text(
-                        "새 글이 올라오면 알립니다. 약 30분 간격으로 확인하며, 켠 직후에는 지금 있는 글을 기준으로 삼습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = OneUi.RowPadding, end = OneUi.RowPadding, top = 14.dp, bottom = 4.dp),
-                    )
                     BoardCategory.entries.forEachIndexed { index, category ->
                         OneUiListItem(
                             title = category.label,
@@ -1334,12 +1322,6 @@ private fun SettingsScreen(
                 OneUiGroupColumn {
                     Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
                         Text("알레르기", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "고른 알레르기가 있는 메뉴만 급식 화면과 위젯에서 ⚠ 표시로 강조합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
                         Spacer(Modifier.height(12.dp))
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
