@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 기하 모노그램 H — 세로획 흰색, 가로획은 '지금 교시'를 뜻하는 연초록.
-     108 뷰포트 중앙, 글리프 박스 x 38.2~69.8 / y 35.2~72.8 (가시영역 72dp의 44% x 52%). -->
+<!-- Android 13+ 테마 아이콘 레이어 — 시스템이 색을 입히므로 단색 한 가지로만 그립니다. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -24,7 +23,7 @@
     <!-- 가로획 -->
     <path
         android:pathData="M41.9,54 L66.1,54"
-        android:strokeColor="#A8D8BC"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="7.5"
         android:strokeLineCap="round" />
 </vector>

@@ -1,11 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 어댑티브 아이콘 배경 레이어(API 26+). 값 색상은 @color/ic_launcher_background 와 동일. -->
+<!-- 하이하나 Neo 런처 아이콘 배경 — Theme.kt 페이지 배경의 초록 광원을 아이콘 비율로 옮긴 방사 그라디언트 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#0072DE"
-        android:pathData="M0,0h108v108h-108z" />
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="84"
+                android:centerY="11"
+                android:gradientRadius="130">
+                <item android:offset="0.0" android:color="#FF2A6249" />
+                <item android:offset="0.46" android:color="#FF1A4133" />
+                <item android:offset="1.0" android:color="#FF0D211B" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>
