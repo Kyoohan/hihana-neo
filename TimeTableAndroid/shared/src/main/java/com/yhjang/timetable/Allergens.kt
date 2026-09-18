@@ -27,8 +27,8 @@ val ALLERGY_LEGEND: Map<Int, String> = linkedMapOf(
     19 to "잣",
 )
 
-/** 설정 이전과 같은 기본 추적값 — 땅콩·호두·잣·새우 */
-val DEFAULT_ALLERGY_CODES: Set<Int> = setOf(4, 14, 19, 9)
+/** 기본 추적값 — 없음. 처음 설치하면 아무것도 표시하지 않고, 설정에서 고른 것만 추적합니다. */
+val DEFAULT_ALLERGY_CODES: Set<Int> = emptySet()
 
 /** 알레르기 한 종류가 검출된 결과 — 표시 라벨과 매칭된 원재료 이름들(모르면 빈 목록) */
 data class DetectedAllergy(val label: String, val names: List<String>)

@@ -503,7 +503,8 @@ fun OneUiRadioRow(
 }
 
 /**
- * One UI 슬라이더 — 두꺼운 둥근 트랙(강조색/회색)과 강조색 테두리의 동그란 썸. 눈금은 그리지 않습니다.
+ * One UI 슬라이더 — 키트 "Sliders" 프레임 그대로: 두꺼운 둥근 트랙(강조색 채움 / 회색), 그 위에 트랙과
+ * 거의 같은 지름의 동그란 손잡이(배경색 채움 + 강조색 테두리)가 채움 끝에 얹힙니다. 눈금은 그리지 않습니다.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -516,10 +517,13 @@ fun OneUiSlider(
 ) {
     val scheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
+    val trackHeight = 22.dp
+    val thumbSize = 26.dp
+    val thumbFill = if (scheme.isDark) Color.Black else Color.White
     Slider(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().height(thumbSize + 8.dp),
         valueRange = valueRange,
         steps = steps,
         interactionSource = interaction,
@@ -533,10 +537,10 @@ fun OneUiSlider(
         thumb = {
             Box(
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(thumbSize)
                     .clip(CircleShape)
-                    .background(scheme.surface)
-                    .border(2.5.dp, scheme.primary, CircleShape),
+                    .background(thumbFill)
+                    .border(3.dp, scheme.primary, CircleShape),
             )
         },
         track = { state ->
@@ -545,7 +549,7 @@ fun OneUiSlider(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
+                    .height(trackHeight)
                     .clip(CircleShape)
                     .background(OneUi.SliderInactive.copy(alpha = 0.45f)),
             ) {

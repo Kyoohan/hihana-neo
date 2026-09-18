@@ -89,8 +89,8 @@ object PlanStore {
     }
 
     /**
-     * 추적할 급식 알레르기 코드(교육청 19종). 저장값이 없으면 기존 사용자와 같은
-     * [DEFAULT_ALLERGY_CODES] 로 동작하고, 모두 해제하면 빈 집합이 됩니다.
+     * 추적할 급식 알레르기 코드(교육청 19종). 저장값이 없으면 [DEFAULT_ALLERGY_CODES](없음)로 동작합니다.
+     * 저장값은 앱 데이터에 남으므로 앱 내 업데이트(같은 서명 키)로는 초기화되지 않습니다.
      */
     suspend fun allergyCodes(context: Context): Set<Int> {
         val prefs = context.planDataStore.data.first()

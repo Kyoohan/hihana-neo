@@ -102,7 +102,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import com.yhjang.timetable.ui.AccentColorPickerDialog
 import com.yhjang.timetable.ui.AccentPresets
+import com.yhjang.timetable.ui.CustomAccentSwatch
 import com.yhjang.timetable.ui.LocalHazeState
 import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
@@ -1651,10 +1653,18 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
  */
 @Composable
 private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
+    var showingPicker by remember { mutableStateOf(false) }
+    val isPreset = AccentPresets.any { it.toArgb() == selectedArgb }
+    val isCustom = selectedArgb != PlanStore.AUTO_ACCENT_COLOR && !isPreset
+
     Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
         Text("강조 색", style = MaterialTheme.typography.bodyLarge)
         Text(
-            if (selectedArgb == PlanStore.AUTO_ACCENT_COLOR) "자동 (One UI 파란색)" else "직접 선택",
+            when {
+                selectedArgb == PlanStore.AUTO_ACCENT_COLOR -> "자동 (One UI 파란색)"
+                isCustom -> "직접 선택 · #%06X".format(0xFFFFFF and selectedArgb)
+                else -> "프리셋"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp),
@@ -1677,7 +1687,24 @@ private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
                     color = color,
                 )
             }
+            // 프리셋 밖의 색 — 무지개 스와치를 탭하면 컬러 피커가 열립니다.
+            CustomAccentSwatch(
+                selected = isCustom,
+                customColor = if (isCustom) Color(selectedArgb) else null,
+                onClick = { showingPicker = true },
+            )
         }
+    }
+
+    if (showingPicker) {
+        AccentColorPickerDialog(
+            initialArgb = if (selectedArgb == PlanStore.AUTO_ACCENT_COLOR) OneUi.Blue.toArgb() else selectedArgb,
+            onDismiss = { showingPicker = false },
+            onApply = { argb ->
+                showingPicker = false
+                onSelect(argb)
+            },
+        )
     }
 }
 
