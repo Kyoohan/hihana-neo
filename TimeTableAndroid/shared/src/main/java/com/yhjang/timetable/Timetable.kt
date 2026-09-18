@@ -383,16 +383,16 @@ data class TimetableWeek(
 object Timetable {
 
     /**
-     * 포털에서 받아 둔 주간 시간표(메모리). null 이면 아직 포털 표를 못 받았다는 뜻이고,
-     * 이때는 내장 기본 시간표([lessons])로 폴백합니다. 앱과 위젯이 보통 같은 프로세스에서 돌기
+     * 포털에서 받아 둔 주간 시간표(메모리). null 이면 표시할 시간표가 없다는 뜻입니다 —
+     * 더 이상 내장 기본 시간표로 폴백하지 않습니다. 앱과 위젯이 보통 같은 프로세스에서 돌기
      * 때문에, 캐시에서 복원해 여기 설치해 두면 블록 계산과 주간 표가 함께 이 값을 씁니다
      * — 캐시 복원은 HanaTimetableSync 가 담당합니다.
      */
     @Volatile private var installedWeek: TimetableWeek? = null
 
-    /** 지금 유효한 주간 과목표 — 설치된 포털 값, 없으면 내장 기본 시간표. */
+    /** 지금 유효한 주간 과목표 — 설치된 포털 값만. 아무것도 받지 못했으면 빈 표입니다. */
     val activeLessons: Map<Int, Map<Int, Lesson>>
-        get() = installedWeek?.lessons ?: lessons
+        get() = installedWeek?.lessons ?: emptyMap()
 
     /** 지금 유효한 교시 시각 — 포털이 시각을 주면 그 값을, 아니면 기본 수업 시각표를 씁니다. */
     val activePeriodTimes: Map<Int, Pair<Int, Int>>
@@ -415,62 +415,6 @@ object Timetable {
         5 to (13 * 60 + 10 to 14 * 60 + 0),
         6 to (14 * 60 + 10 to 15 * 60 + 0),
         7 to (15 * 60 + 10 to 16 * 60 + 0),
-    )
-
-    /**
-     * 포털 표를 받기 전/받지 못했을 때 쓰는 내장 기본 시간표 (월~금).
-     * 요일(월=1 … 금=5) → 교시 → [Lesson]. 공강은 [Lesson.FREE].
-     */
-    private val lessons: Map<Int, Map<Int, Lesson>> = mapOf(
-        // 월
-        1 to mapOf(
-            1 to Lesson("확률과 통계", "B301"),
-            2 to Lesson("확률과 통계", "B301"),
-            3 to Lesson("AP일반화학Ⅱ", "A205"),
-            4 to Lesson("AP일반화학Ⅱ", "A205"),
-            5 to Lesson("미적분Ⅱ", "B303"),
-            6 to Lesson("스포츠 생활1(남)", "체육관"),
-            7 to Lesson("스포츠 생활1(남)", "체육관"),
-        ),
-        // 화
-        2 to mapOf(
-            1 to Lesson("AP일반물리Ⅰ", "A201"),
-            2 to Lesson("AP일반물리Ⅰ", "A201"),
-            3 to Lesson("인공지능을 위한 선형대수학", "B302"),
-            4 to Lesson("인공지능을 위한 선형대수학", "B302"),
-            5 to Lesson("심화 영어 독해Ⅰ", "B304"),
-            6 to Lesson("심화 영어 독해Ⅰ", "B304"),
-            7 to Lesson("미적분Ⅱ", "B303"),
-        ),
-        // 수 (7교시 없음)
-        3 to mapOf(
-            1 to Lesson.FREE,
-            2 to Lesson.FREE,
-            3 to Lesson("AP일반화학Ⅱ", "A205"),
-            4 to Lesson("AP일반화학Ⅱ", "A205"),
-            5 to Lesson("데이터 과학과 인공지능", "컴퓨터실2"),
-            6 to Lesson("데이터 과학과 인공지능", "컴퓨터실2"),
-        ),
-        // 목
-        4 to mapOf(
-            1 to Lesson("인공지능을 위한 선형대수학", "B302"),
-            2 to Lesson("인공지능을 위한 선형대수학", "B302"),
-            3 to Lesson.FREE,
-            4 to Lesson("심화 영어 독해Ⅰ", "B304"),
-            5 to Lesson("확률과 통계", "B301"),
-            6 to Lesson("확률과 통계", "B301"),
-            7 to Lesson("AP일반물리Ⅰ", "A201"),
-        ),
-        // 금
-        5 to mapOf(
-            1 to Lesson("데이터 과학과 인공지능", "컴퓨터실2"),
-            2 to Lesson("데이터 과학과 인공지능", "컴퓨터실2"),
-            3 to Lesson("미적분Ⅱ", "B303"),
-            4 to Lesson("미적분Ⅱ", "B303"),
-            5 to Lesson("AP일반물리Ⅰ", "A201"),
-            6 to Lesson.FREE,
-            7 to Lesson.FREE,
-        ),
     )
 
     val lunch: Pair<Int, Int> = (12 * 60 + 10) to (13 * 60 + 10)
@@ -564,8 +508,8 @@ object Timetable {
         } else {
 
             // ================= 평일 =================
-            // 그 요일 과목표 — 포털에서 받은 표가 있으면 그걸, 없으면 내장 기본 시간표를 씁니다.
-            val today = (week?.lessons ?: lessons)[weekday].orEmpty()
+            // 포털에서 받은 그 요일 과목표만 씁니다 — 없으면 수업 블록 없이 시간 기반 블록만 남깁니다.
+            val today = week?.lessons?.get(weekday).orEmpty()
             var cursor = 0
 
             for (p in today.keys.sorted()) {
