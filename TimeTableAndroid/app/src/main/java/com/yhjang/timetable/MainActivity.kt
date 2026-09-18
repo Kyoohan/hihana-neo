@@ -94,6 +94,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1262,6 +1263,10 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
     // 놓으면 가장 가까운 칸으로 스프링 스냅합니다.
     var dragIndex by remember { mutableStateOf<Float?>(null) }
     val dragging = dragIndex != null
+    // pointerInput 람다는 처음 시작할 때의 값을 붙잡고 있어서, 최신 selected/onSelect 를 여기로 받아 씁니다 —
+    // 안 그러면 홈이 아닌 탭에서 끌기 시작할 때 캡슐이 맨 왼쪽(초기 탭)으로 튀었다가 따라왔습니다.
+    val currentSelected by rememberUpdatedState(selected)
+    val currentOnSelect by rememberUpdatedState(onSelect)
     val capsuleIndex by animateFloatAsState(
         targetValue = dragIndex ?: selected.toFloat(),
         animationSpec = if (dragging) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f),
@@ -1273,8 +1278,8 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
         animationSpec = spring(dampingRatio = 0.7f, stiffness = 220f),
         label = "navLiquid",
     )
-    val stretchX = 1f + 0.08f * liquid
-    val squashY = 1f - 0.05f * liquid
+    val stretchX = 1f + 0.04f * liquid
+    val squashY = 1f - 0.025f * liquid
 
     // 굴절 렌즈 — Android 13+ 의 AGSL 런타임 셰이더로, 캡슐 아래의 아이콘·글자를 유리 너머로 보듯 휘어 그립니다.
     val lensShader = remember { LiquidLens.create() }
@@ -1318,15 +1323,15 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
                     .fillMaxSize()
                     .pointerInput(count) {
                         detectHorizontalDragGestures(
-                            onDragStart = { dragIndex = selected.toFloat() },
+                            onDragStart = { dragIndex = currentSelected.toFloat() },
                             onDragEnd = {
-                                dragIndex?.let { onSelect(it.roundToInt().coerceIn(0, count - 1)) }
+                                dragIndex?.let { currentOnSelect(it.roundToInt().coerceIn(0, count - 1)) }
                                 dragIndex = null
                             },
                             onDragCancel = { dragIndex = null },
                             onHorizontalDrag = { change, dx ->
                                 change.consume()
-                                dragIndex = ((dragIndex ?: selected.toFloat()) + dx / cellWidthPx).coerceIn(0f, (count - 1).toFloat())
+                                dragIndex = ((dragIndex ?: currentSelected.toFloat()) + dx / cellWidthPx).coerceIn(0f, (count - 1).toFloat())
                             },
                         )
                     }
@@ -1346,7 +1351,8 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
                             )
                             lensShader.setFloatUniform("rect", rect.left, rect.top, rect.right, rect.bottom)
                             lensShader.setFloatUniform("radius", capsuleRadiusPx)
-                            lensShader.setFloatUniform("strength", 0.55f + 0.45f * liquid)
+                            // 굴절·반사 세기 — 너무 과하지 않게 절반 수준으로 (끌 때 조금 더 세짐)
+                            lensShader.setFloatUniform("strength", 0.28f + 0.22f * liquid)
                             lensLayer.renderEffect = RenderEffect
                                 .createRuntimeShaderEffect(lensShader, "content")
                                 .asComposeRenderEffect()
