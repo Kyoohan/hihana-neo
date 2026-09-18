@@ -5,6 +5,10 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "6.18",
+        listOf("원복 + 상세 로그"),
+    ),
+    ChangelogEntry(
         "7.1",
         listOf(
             "홈 카드마다 아이콘 추가, 급식 카드는 메뉴를 쭉 이어 표시",
