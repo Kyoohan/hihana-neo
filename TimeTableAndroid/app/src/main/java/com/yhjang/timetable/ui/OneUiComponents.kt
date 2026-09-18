@@ -78,6 +78,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.view.Gravity
+import android.view.WindowManager
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.SideEffect
@@ -676,6 +678,16 @@ fun OneUiDialog(
     // 키트의 Dialog 프레임처럼 뒤 화면을 흐려 비추는 글래스 컨테이너 — 메인 화면의 Haze 상태를 다른
     // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
     val body: @Composable () -> Unit = {
+        // 일부 기기(One UI)는 다이얼로그 창의 기본 레이아웃/정렬을 자체 테마로 바꿔서, usePlatformDefaultWidth=false 만으로는
+        // 창이 화면 전체를 못 채우고 왼쪽에 붙었습니다. 창 자체를 화면 크기·가운데 정렬로 강제합니다.
+        val view = LocalView.current
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.let { window ->
+                window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                window.setGravity(Gravity.CENTER)
+                window.decorView.setPadding(0, 0, 0, 0)
+            }
+        }
         // 창 안에서 가운데 정렬 — 큰 화면에서도 왼쪽으로 쏠리지 않고 폭은 400dp 까지만 넓어집니다.
         // 창이 화면 전체라 바깥 탭 닫기를 직접 처리합니다 — 카드 자체는 탭을 삼켜 닫히지 않게 합니다.
         Box(

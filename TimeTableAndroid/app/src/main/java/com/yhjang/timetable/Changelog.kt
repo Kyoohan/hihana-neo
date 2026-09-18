@@ -8,6 +8,13 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "7.3",
+        listOf(
+            "다이얼로그(강조 색 선택 등)가 일부 기기에서 왼쪽으로 쏠리던 문제 수정",
+            "앱 내 업데이트 첫 배포 테스트",
+        ),
+    ),
+    ChangelogEntry(
         "7.2",
         listOf(
             "게시글을 두 번째부터 열면 로그인 페이지가 뜨던 문제 수정",
