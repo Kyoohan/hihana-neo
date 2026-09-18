@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.view.ViewGroup
@@ -136,20 +137,26 @@ fun AcademicTab(
     onOpenAccount: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
+    /** 헤더가 접혀 있는 만큼(dp) — "다 들어가는지"는 헤더가 펼쳐진 상태의 높이로 판단해야 합니다. */
+    headerCollapsedBy: Dp = 0.dp,
+    onFitsWithoutScroll: () -> Unit = {},
 ) {
     // 신청·내역은 카드 몇 장뿐이라 시간표 탭처럼 화면에 다 들어가면 스크롤(과 헤더 접힘)을 두지 않습니다 —
-    // 내용 높이를 재 보고 넘칠 때만 스크롤을 붙입니다.
+    // 내용 높이를 재 보고 넘칠 때만 스크롤을 켭니다. 높이는 항상 스크롤 컨테이너 안에서(제한 없이) 재야 합니다:
+    // 예전엔 안 넘친다고 보고 스크롤 없는 Column 에 넣어 재서 높이가 화면 크기로 잘려 보고됐고, 그래서 마지막
+    // 외출·외박 카드의 버튼이 화면 밖으로 잘린 채 스크롤도 안 됐습니다.
     if (subTab == 2) {
         BoxWithConstraints(modifier) {
             var contentHeightPx by remember { mutableIntStateOf(0) }
             val availablePx = with(LocalDensity.current) {
-                (maxHeight - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding()).roundToPx()
+                (maxHeight - headerCollapsedBy - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding()).roundToPx()
             }
-            val fits = contentHeightPx <= availablePx
+            val fits = contentHeightPx in 1..availablePx
+            LaunchedEffect(fits) { if (fits) onFitsWithoutScroll() }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
+                    .verticalScroll(rememberScrollState(), enabled = !fits)
                     .padding(contentPadding),
             ) {
                 Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {

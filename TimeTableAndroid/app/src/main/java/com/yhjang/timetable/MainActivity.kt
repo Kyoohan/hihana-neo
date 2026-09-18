@@ -987,6 +987,8 @@ private fun TimeTableAppContent(
                     onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
                     onOpenAccount = { showingAccountSheet = true },
                     contentPadding = tabContentPadding,
+                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
+                    onFitsWithoutScroll = { headerState.expand() },
                     modifier = Modifier.fillMaxSize(),
                 )
 
