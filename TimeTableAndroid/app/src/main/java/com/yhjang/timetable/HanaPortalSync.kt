@@ -149,7 +149,7 @@ class HanaPortalClient private constructor() {
         private const val BASE = "https://hh.hana.hs.kr"
         private val TOKEN_REGEX = Regex("hanaLoginRequestToken\\s*=\\s*\"([^\"]+)\"")
         private val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        private const val UA =
+        const val UA =
             "Mozilla/5.0 (Linux; Android 16; SM-S938N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
     }
 
@@ -158,12 +158,40 @@ class HanaPortalClient private constructor() {
     private val client = OkHttpClient.Builder()
         .cookieJar(object : CookieJar {
             override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                cookieStore[url.host] = cookies
+                // 응답이 준 쿠키로 같은 이름만 갈아끼웁니다 — 통째로 바꾸면 이번 응답에 없던 쿠키가 사라집니다.
+                mergeCookies(url.host, cookies)
             }
 
             override fun loadForRequest(url: HttpUrl): List<Cookie> = cookieStore[url.host] ?: emptyList()
         })
         .build()
+
+    private fun mergeCookies(host: String, incoming: List<Cookie>) {
+        if (incoming.isEmpty()) return
+        val names = incoming.map { it.name }.toSet()
+        val kept = cookieStore[host].orEmpty().filter { it.name !in names }
+        cookieStore[host] = kept + incoming
+    }
+
+    /**
+     * 웹뷰가 페이지를 읽고 난 뒤 웹뷰 쪽 쿠키를 OkHttp 항아리로 되가져옵니다. 포털은 웹뷰 요청에 새 세션
+     * 쿠키를 내려주며 이전 세션을 버릴 수 있어서, 이걸 안 하면 두 번째 게시글부터 OkHttp 의 낡은 세션이
+     * 웹뷰에 덮어씌워져 로그인 페이지가 떴습니다. 두 쪽이 항상 같은 세션을 쓰게 맞춥니다.
+     */
+    fun syncCookiesFromWebView() {
+        val host = BASE.toHttpUrl().host
+        val raw = CookieManager.getInstance().getCookie("https://$host") ?: return
+        // 같은 이름이 여러 개면(다른 path) 마지막 것을 씁니다.
+        val cookies = raw.split(';').mapNotNull { pair ->
+            val idx = pair.indexOf('=')
+            if (idx <= 0) return@mapNotNull null
+            val name = pair.substring(0, idx).trim()
+            val value = pair.substring(idx + 1).trim()
+            if (name.isEmpty()) null
+            else Cookie.Builder().name(name).value(value).domain(host).path("/").build()
+        }.associateBy { it.name }.values.toList()
+        mergeCookies(host, cookies)
+    }
 
     /**
      * WebView 로 포털 상세 페이지를 열 때 OkHttp 쿠키 항아리의 세션 쿠키를
@@ -173,9 +201,13 @@ class HanaPortalClient private constructor() {
     fun syncCookiesToWebView() {
         val manager = CookieManager.getInstance()
         manager.setAcceptCookie(true)
+        // 웹뷰 쿠키 저장소는 앱을 껐다 켜도 남아 있어서, 예전 세션의 JSESSIONID 가 다른 path 로 같이 붙어
+        // 있으면 브라우저가 둘 다 보내고 서버는 낡은 쪽을 골라 로그인 페이지를 돌려줬습니다(두 번째 게시글부터
+        // 로그인 화면이 뜨던 원인). 이 앱의 웹뷰는 포털 전용이므로 전부 지우고 OkHttp 의 현재 세션만 심습니다.
+        manager.removeAllCookies(null)
         cookieStore.forEach { (host, cookies) ->
             cookies.forEach { cookie ->
-                manager.setCookie("https://$host", cookie.toString())
+                manager.setCookie("https://$host", "${cookie.name}=${cookie.value}; path=/; domain=$host")
             }
         }
         manager.flush()

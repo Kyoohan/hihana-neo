@@ -552,6 +552,8 @@ fun BoardDetailScreen(
                         WebView(ctx).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
+                            // 포털이 세션을 UA 에 묶을 수 있어 OkHttp 와 같은 UA 로 맞춥니다.
+                            settings.userAgentString = HanaPortalClient.UA
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                     loading = true
@@ -559,6 +561,8 @@ fun BoardDetailScreen(
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     loading = false
+                                    // 웹뷰가 받은 최신 세션 쿠키를 앱 쪽으로 되가져와 다음 게시글도 같은 세션으로 엽니다.
+                                    HanaPortalClient.get().syncCookiesFromWebView()
                                 }
 
                                 override fun onReceivedError(

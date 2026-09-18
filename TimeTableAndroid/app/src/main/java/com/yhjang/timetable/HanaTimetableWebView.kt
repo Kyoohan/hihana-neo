@@ -204,6 +204,8 @@ fun HanaTimetableWebViewHost() {
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    // 포털이 세션을 UA 에 묶을 수 있어 OkHttp 와 같은 UA 로 맞춥니다 (게시글 웹뷰와 동일).
+                    settings.userAgentString = HanaPortalClient.UA
                     alpha = 0f
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     HanaTimetableWebView.attach(this)
