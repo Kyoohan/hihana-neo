@@ -9,5 +9,5 @@
     <color name="widget_subtext">#E2E8F0</color>
     <!-- 창 배경 — One UI 다크 페이지 배경(거의 검정). 첫 프레임 전 잠깐 보이는 색이라
          Compose 테마의 background 와 같은 값이어야 앱이 뜰 때 색이 튀지 않습니다. -->
-    <color name="app_window_background">#07101C</color>
+    <color name="app_window_background">#010102</color>
 </resources>

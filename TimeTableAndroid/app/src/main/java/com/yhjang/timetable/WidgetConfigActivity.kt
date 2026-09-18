@@ -48,8 +48,6 @@ import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiChip
 import com.yhjang.timetable.ui.OneUiSlider
 import com.yhjang.timetable.ui.TimeTableTheme
-import com.yhjang.timetable.ui.isDark
-import com.yhjang.timetable.ui.oneUiBackground
 import com.yhjang.timetable.widget.TimeTableWidget
 import kotlinx.coroutines.launch
 
@@ -107,10 +105,7 @@ fun WidgetConfigScreen(onConfirm: (Int, String) -> Unit) {
     }
 
     // One UI "Enlarged header" 처럼 가운데 큰 제목 + 회색 설명, 그 아래 카드 두 장(미리보기 / 설정)입니다.
-    Scaffold(
-        modifier = Modifier.oneUiBackground(MaterialTheme.colorScheme.isDark),
-        containerColor = Color.Transparent,
-    ) { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

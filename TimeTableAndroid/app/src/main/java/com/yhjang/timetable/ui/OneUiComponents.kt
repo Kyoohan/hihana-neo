@@ -89,13 +89,13 @@ import androidx.compose.ui.window.DialogProperties
 // MARK: - 컨테이너
 
 /**
- * One UI 컨테이너 — 28dp 둥근 반투명 글래스 카드(삼성 헬스 홈 타일). 그림자·테두리 없음, 뒤의
- * 그라디언트 배경이 살짝 비칩니다. 컨테이너 자체가 탭 가능하면 [onClick] 을 주면 됩니다.
+ * One UI 컨테이너 — 흰색(다크: #17171A) 28dp 둥근 카드, 그림자·테두리 없음.
+ * 컨테이너 자체가 탭 가능하면 [onClick] 을 주면 됩니다.
  */
 @Composable
 fun OneUiCard(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.glassCard,
+    color: Color = MaterialTheme.colorScheme.surface,
     shape: Shape = RoundedCornerShape(OneUi.CornerLarge),
     contentPadding: PaddingValues = PaddingValues(OneUi.CardPadding),
     onClick: (() -> Unit)? = null,
@@ -315,7 +315,7 @@ fun OneUiActionPill(
     Row(
         modifier = modifier
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.floatingPill.copy(alpha = MaterialTheme.colorScheme.floatingPill.alpha * pillAlpha))
+            .background(MaterialTheme.colorScheme.floatingPill.copy(alpha = pillAlpha))
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -686,8 +686,8 @@ fun OneUiFullScreen(
 ) {
     val scheme = MaterialTheme.colorScheme
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
-            Column(Modifier.fillMaxSize().oneUiBackground(scheme.isDark)) {
+        Surface(modifier = modifier.fillMaxSize(), color = scheme.background) {
+            Column(Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -786,8 +786,7 @@ fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneU
 
 /**
  * 삼성 헬스 홈 상단 — 펼치면 왼쪽에 큰 제목(+회색 부제목), 오른쪽에 배경 없는 아이콘들. 스크롤로
- * 접히면 제목은 사라지고 아이콘들만 진한 알약 안에 모여 콘텐츠 위에 떠 있습니다. 배경은 투명해서
- * 페이지의 그라디언트가 그대로 보입니다.
+ * 접히면 제목은 사라지고 아이콘들만 알약 안에 모여 콘텐츠 위에 떠 있습니다.
  */
 @Composable
 fun OneUiCollapsingHeader(
@@ -805,6 +804,7 @@ fun OneUiCollapsingHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
@@ -1077,7 +1077,7 @@ private fun NoticePillButton(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (dark) Color(0xFF0F1216).copy(alpha = 0.9f) else Color.White)
+            .background(if (dark) Color(0xFF17171A) else Color.White)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
     ) {

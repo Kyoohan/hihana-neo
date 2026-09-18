@@ -86,6 +86,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -94,6 +95,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.glance.appwidget.updateAll
 import com.yhjang.timetable.ui.AccentPresets
 import com.yhjang.timetable.ui.OneUi
@@ -116,8 +118,6 @@ import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.OneUiSlider
 import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.TimeTableTheme
-import com.yhjang.timetable.ui.isDark
-import com.yhjang.timetable.ui.oneUiBackground
 import com.yhjang.timetable.ui.rememberOneUiHeaderState
 import com.yhjang.timetable.widget.TimeTableWidget
 import kotlinx.coroutines.Dispatchers
@@ -207,6 +207,19 @@ fun TimeTableApp(
         PlanStore.THEME_DARK -> true
         PlanStore.THEME_LIGHT -> false
         else -> isSystemInDarkTheme()
+    }
+
+    // 앱 테마를 시스템과 다르게(라이트/다크 고정) 골랐을 때 상태바 아이콘 색도 따라가게 합니다 —
+    // 안 그러면 시스템 다크 + 앱 라이트 조합에서 흰 아이콘이 밝은 배경에 묻힙니다.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        LaunchedEffect(darkTheme) {
+            val window = (view.context as? android.app.Activity)?.window ?: return@LaunchedEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
     }
 
     TimeTableTheme(accentArgb = accentArgb, darkTheme = darkTheme) {
@@ -577,10 +590,10 @@ private fun TimeTableAppContent(
     val mealWeekDates = remember(today) { (0 until 7).map { today.plusDays(it.toLong()) } }
     val availableMealDays = mealDays.keys
 
-    // 페이지 배경은 Scaffold 뒤에서 그라디언트로 그리고, 헤더·콘텐츠는 그 위에 투명하게 얹습니다.
+    // 하단 바는 콘텐츠 위에 떠 있는 알약이라 Scaffold 의 bottomBar 슬롯에 넣지 않고 오버레이로 얹습니다.
+    // 대신 각 탭의 스크롤 끝에 바 높이만큼 여백을 줘서 마지막 카드가 바 위까지 올라올 수 있게 합니다.
     Scaffold(
-        modifier = Modifier.oneUiBackground(MaterialTheme.colorScheme.isDark),
-        containerColor = Color.Transparent,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             OneUiCollapsingHeader(
                 state = headerState,
@@ -627,14 +640,14 @@ private fun TimeTableAppContent(
                 },
             )
         },
-        bottomBar = {
-            AppNavBar(selected = tab, onSelect = { tab = it })
-        },
     ) { innerPadding ->
+        // bottomBar 슬롯이 비어 있으므로 innerPadding 의 아래 값은 시스템 내비게이션 인셋입니다 — 그 위에 바 높이를 더합니다.
+        val navBarSpace = innerPadding.calculateBottomPadding() + AppNavBarHeight + AppNavBarMargin * 2 + 8.dp
+        val tabContentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 8.dp, bottom = navBarSpace)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .nestedScroll(headerState.connection),
         ) {
             when (tab) {
@@ -645,7 +658,7 @@ private fun TimeTableAppContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 8.dp, bottom = 16.dp),
+                            .padding(tabContentPadding),
                     ) {
                         OneUiSectionTitle("주간 시간표", modifier = Modifier.padding(bottom = 2.dp))
                         OneUiCard(
@@ -705,7 +718,7 @@ private fun TimeTableAppContent(
                     selectedDate = selectedMealDate,
                     availableDays = availableMealDays,
                     onSelectDate = { selectedMealDay = PlanStore.dayKey(it) },
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    contentPadding = tabContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -730,7 +743,7 @@ private fun TimeTableAppContent(
                     onOpenPost = { openBoardPost(it) },
                     onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
                     onOpenAccount = { showingAccountSheet = true },
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    contentPadding = tabContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -776,12 +789,17 @@ private fun TimeTableAppContent(
                         tab = 3
                     },
                     onNavigateToTab = { tab = it },
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    contentPadding = tabContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             // 포털 시간표 페이지를 JS로 렌더링해 DOM을 읽어올 숨은 WebView — 모든 탭에서 동작하도록 앱 루트에 둡니다.
             HanaTimetableWebViewHost()
+            AppNavBar(
+                selected = tab,
+                onSelect = { tab = it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 
@@ -1090,8 +1108,12 @@ private fun SettingsScreen(
  * 하단 내비게이션 — 화면 가장자리와 여백을 두고 뜬 알약 모양 바. 선택된 탭의 아이콘만
  * 바 위로 살짝 올라온 동그란 배지로 떠오르고, 나머지는 옅은 색 아이콘+라벨로 가라앉습니다.
  */
+/** 하단 바 자체 높이와 화면 가장자리 여백 — 콘텐츠 하단 여백 계산에 씁니다. 시각 값은 바꾸지 않습니다. */
+private val AppNavBarHeight = 64.dp
+private val AppNavBarMargin = 10.dp
+
 @Composable
-private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit) {
+private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val isDark = isSystemInDarkTheme()
     // One UI "In-App Navigation" 스타일 — 반투명 알약 바 위에, 선택된 항목만 그 안에서
     // 자기 자리에 캡슐형 배경이 켜지는 형태입니다 (바 위로 아이콘이 떠오르지 않습니다).
@@ -1106,10 +1128,10 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit) {
         shape = RoundedCornerShape(32.dp),
         color = barColor,
         shadowElevation = 8.dp,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp)
-            .height(64.dp),
+            .padding(horizontal = 20.dp, vertical = AppNavBarMargin)
+            .height(AppNavBarHeight),
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),

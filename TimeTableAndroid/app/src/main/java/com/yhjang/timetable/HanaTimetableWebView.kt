@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -189,20 +190,26 @@ fun HanaTimetableWebViewHost() {
     DisposableEffect(Unit) {
         onDispose { HanaTimetableWebView.release() }
     }
+    // Compose 의 뷰 계층은 자식을 클리핑하지 않아, 일부 기기(삼성 WebView)에서는 1dp 웹뷰가 페이지 전체를
+    // 화면 위에 그려 버립니다 — 페이지 로딩 중엔 검은 면으로 보였습니다. 영역을 명시적으로 자르고
+    // 알파를 0 으로 둡니다 (visibility 를 INVISIBLE 로 하면 크로미움이 타이머를 죄어 JS 폴링이 느려지므로 안 씀).
     Box(
         modifier = Modifier
             .size(1.dp)
-            .offset(x = (-10).dp, y = (-10).dp),
+            .offset(x = (-10).dp, y = (-10).dp)
+            .clipToBounds(),
     ) {
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    alpha = 0f
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     HanaTimetableWebView.attach(this)
                 }
             },
-            modifier = Modifier.size(1.dp),
+            modifier = Modifier.size(1.dp).clipToBounds(),
         )
     }
 }
