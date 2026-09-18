@@ -134,8 +134,9 @@ fun AcademicTab(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
+                // 게시판이 기본 탭이라 맨 앞에 둡니다 (인덱스는 저장 호환을 위해 그대로: 0=학사일정, 1=게시판, 2=신청·내역).
                 OneUiChip(selected = subTab == 1, onClick = { onSubTabChange(1) }, label = "게시판")
+                OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
                 OneUiChip(selected = subTab == 2, onClick = { onSubTabChange(2) }, label = "신청·내역")
             }
         }

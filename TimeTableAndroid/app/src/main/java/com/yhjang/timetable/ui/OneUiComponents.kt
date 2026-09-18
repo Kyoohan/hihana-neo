@@ -1,6 +1,8 @@
 package com.yhjang.timetable.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -382,12 +384,13 @@ fun OneUiTextButton(
 fun OneUiActionPill(
     modifier: Modifier = Modifier,
     pillAlpha: Float = 1f,
+    state: HazeState? = LocalHazeState.current,
     content: @Composable RowScope.() -> Unit,
 ) {
     Row(
         modifier = modifier
             // 흰 카드 위에서도 알약이 읽히도록 카드보다 한 톤 진한 회색을 글래스 바탕으로 씁니다.
-            .oneUiGlassSurface(CircleShape, alpha = pillAlpha, container = MaterialTheme.colorScheme.floatingPill)
+            .oneUiGlassSurface(CircleShape, alpha = pillAlpha, container = MaterialTheme.colorScheme.floatingPill, state = state)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -762,10 +765,10 @@ fun OneUiAlertDialog(
 val OneUiToolbarHeight = 64.dp
 
 /**
- * 전체 화면 다이얼로그(설정·알리미·게시글·시험 정보)의 공통 뼈대 — 회색 페이지 배경 위에
- * 왼쪽 뒤로가기 화살표, 굵은 제목(+회색 부제목), 오른쪽 액션 캡슐이 있는 One UI 툴바.
- * 툴바는 콘텐츠 위에 떠 있는 글래스라, [content] 는 받은 패딩을 스크롤 contentPadding 에 넣어
- * 첫 항목은 툴바 아래에서 시작하고 스크롤하면 툴바 뒤로 흐리게 지나가게 합니다.
+ * 전체 화면 다이얼로그(설정·알리미·게시글·시험 정보)의 공통 뼈대 — 삼성 앱의 설정 화면과 같은 툴바 동작:
+ * 스크롤 전에는 배경 없이 "‹ 제목" 이 놓여 있고, 목록을 조금이라도 스크롤하면 뒤로가기가 글래스 원 안으로,
+ * 제목이 그 옆의 글래스 알약 안으로 들어가 콘텐츠 위에 떠 있습니다. [content] 는 받은 패딩을 스크롤
+ * contentPadding 에 넣어 첫 항목이 툴바 아래에서 시작하게 합니다.
  */
 @Composable
 fun OneUiFullScreen(
@@ -778,6 +781,19 @@ fun OneUiFullScreen(
 ) {
     val scheme = MaterialTheme.colorScheme
     val hazeState = remember { HazeState() }
+    // 콘텐츠가 위로 얼마나 스크롤됐는지(px) — 목록이 소비한 스크롤을 누적해서 셉니다.
+    var scrolledPx by remember { mutableFloatStateOf(0f) }
+    val scrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                scrolledPx = (scrolledPx - consumed.y).coerceAtLeast(0f)
+                return Offset.Zero
+            }
+        }
+    }
+    val thresholdPx = with(LocalDensity.current) { 10.dp.toPx() }
+    val glass by animateFloatAsState(if (scrolledPx > thresholdPx) 1f else 0f, label = "toolbarGlass")
+
     // 시스템 바 뒤까지 그려서(edge-to-edge) 상태바 영역이 어두운 딤으로 남지 않게 하고, 툴바가 그 여백을 품습니다.
     Dialog(
         onDismissRequest = onDismiss,
@@ -797,22 +813,40 @@ fun OneUiFullScreen(
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
             Box(Modifier.fillMaxSize().oneUiPageBackground()) {
-                Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .nestedScroll(scrollConnection)
+                        .hazeSource(hazeState),
+                ) {
                     content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(statusTop + OneUiToolbarHeight)
-                        .oneUiGlassSurface(RectangleShape, fallback = scheme.background, state = hazeState)
-                        .padding(start = 4.dp, end = 12.dp, top = statusTop),
+                        .padding(start = 10.dp, end = 12.dp, top = statusTop),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                    // 뒤로가기 — 스크롤하면 글래스 원이 켜집니다.
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .oneUiGlassSurface(CircleShape, alpha = glass, container = scheme.floatingPill, state = hazeState),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                        }
                     }
-                    Spacer(Modifier.width(4.dp))
-                    Column(Modifier.weight(1f)) {
+                    Spacer(Modifier.width(6.dp))
+                    // 제목 — 스크롤하면 글래스 알약 안으로 들어갑니다.
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .oneUiGlassSurface(CircleShape, alpha = glass, container = scheme.floatingPill, state = hazeState)
+                            .padding(horizontal = 6.dp + 10.dp * glass, vertical = 6.dp),
+                    ) {
                         Text(
                             title,
                             style = MaterialTheme.typography.titleLarge,
@@ -830,10 +864,10 @@ fun OneUiFullScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.weight(1f))
                     if (actions != null) {
                         Spacer(Modifier.width(8.dp))
-                        // 툴바 자체가 글래스라 액션 묶음은 배경 없이 아이콘만 둡니다.
-                        OneUiActionPill(pillAlpha = 0f, content = actions)
+                        OneUiActionPill(pillAlpha = glass, state = hazeState, content = actions)
                     }
                 }
             }

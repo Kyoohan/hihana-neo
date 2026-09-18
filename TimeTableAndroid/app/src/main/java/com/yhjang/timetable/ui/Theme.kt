@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import android.os.Build
 import com.yhjang.timetable.PlanStore
 
 /**
@@ -265,8 +267,17 @@ private fun ColorScheme.withAccent(accent: Color): ColorScheme = if (isDarkSchem
 }
 
 /**
- * One UI 테마 — 무채색 스킴을 기본으로 쓰고, [accentArgb] 가 [PlanStore.AUTO_ACCENT_COLOR](0) 이 아니면
- * 그 색을 강조색으로 얹습니다.
+ * 시스템(Material You) 테마 색 — 배경화면에서 뽑은 동적 색의 primary. Android 12 미만이면 null.
+ * '자동' 강조색은 이 색을 쓰고, 없으면 One UI 파란색으로 떨어집니다. 표면·배경은 여전히 무채색입니다.
+ */
+fun systemAccentColor(context: Context): Color? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+    return runCatching { Color(context.getColor(android.R.color.system_accent1_500)) }.getOrNull()
+}
+
+/**
+ * One UI 테마 — 무채색 스킴을 기본으로 쓰고, [accentArgb] 가 [PlanStore.AUTO_ACCENT_COLOR](0) 이면
+ * 시스템 테마 색(없으면 One UI 파란색)을, 아니면 고른 색을 강조색으로 얹습니다.
  */
 @Composable
 fun TimeTableTheme(
@@ -275,7 +286,9 @@ fun TimeTableTheme(
     content: @Composable () -> Unit,
 ) {
     val base = if (darkTheme) oneUiDarkScheme() else oneUiLightScheme()
-    val colorScheme = if (accentArgb == PlanStore.AUTO_ACCENT_COLOR) base else base.withAccent(Color(accentArgb))
+    val context = LocalContext.current
+    val accent = if (accentArgb == PlanStore.AUTO_ACCENT_COLOR) systemAccentColor(context) else Color(accentArgb)
+    val colorScheme = if (accent == null) base else base.withAccent(accent)
 
     CompositionLocalProvider(
         // Material3 의 MaterialTheme 은 LocalContentColor 를 내려주지 않아 색 미지정 Text 가

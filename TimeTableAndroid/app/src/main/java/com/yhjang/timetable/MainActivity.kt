@@ -12,6 +12,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -81,6 +91,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -110,6 +121,7 @@ import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiGlassSurface
 import com.yhjang.timetable.ui.oneUiPageBackground
+import com.yhjang.timetable.ui.systemAccentColor
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import com.yhjang.timetable.ui.OneUi
@@ -296,7 +308,8 @@ private fun TimeTableAppContent(
     if (tab !in tabTitles.indices) tab = 0
 
     // 학사 탭
-    var academicSubTab by rememberSaveable { mutableStateOf(0) }
+    // 게시판(1)을 기본으로 — 학사 탭에 들어오면 게시판이 먼저 보입니다.
+    var academicSubTab by rememberSaveable { mutableStateOf(1) }
     var scheduleEntries by remember { mutableStateOf<List<HanaScheduleEntry>>(emptyList()) }
     var scheduleLoading by remember { mutableStateOf(false) }
     var scheduleError by remember { mutableStateOf<String?>(null) }
@@ -1234,6 +1247,16 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
 
     val labels = listOf("홈", "주", "급식", "학사")
 
+    // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
+    // dragIndex 는 끄는 동안의 실수 위치(칸 단위), null 이면 selected 로 애니메이션합니다.
+    var dragIndex by remember { mutableStateOf<Float?>(null) }
+    val capsuleIndex by animateFloatAsState(
+        targetValue = dragIndex ?: selected.toFloat(),
+        animationSpec = if (dragIndex != null) snap() else spring(dampingRatio = 0.85f, stiffness = 400f),
+        label = "navCapsuleIndex",
+    )
+    val count = labels.size
+
     Surface(
         shape = RoundedCornerShape(32.dp),
         color = Color.Transparent,
@@ -1243,38 +1266,68 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
             .padding(horizontal = 20.dp, vertical = AppNavBarMargin)
             .height(AppNavBarHeight),
     ) {
-        // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .oneUiGlassSurface(RoundedCornerShape(32.dp), fallback = barColor)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            labels.indices.forEach { index ->
-                val isSelected = index == selected
-                val capsuleColor by animateColorAsState(
-                    targetValue = if (isSelected) selectedCapsuleColor else Color.Transparent,
-                    label = "navCapsuleColor",
-                )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(26.dp))
-                        .background(capsuleColor)
-                        .clickable(onClick = { onSelect(index) }),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    NavIcon(index, if (isSelected) activeTint else inactiveTint)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        labels[index],
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) activeTint else inactiveTint,
-                    )
+            val cellWidth = maxWidth / count
+            val cellWidthPx = with(LocalDensity.current) { cellWidth.toPx() }
+
+            // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
+                    .width(cellWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(selectedCapsuleColor),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(count) {
+                        // 옆으로 끌면 캡슐이 손가락을 따라오고, 놓으면 가장 가까운 칸으로 스냅합니다.
+                        detectHorizontalDragGestures(
+                            onDragStart = { pos -> dragIndex = (pos.x / cellWidthPx - 0.5f).coerceIn(0f, (count - 1).toFloat()) },
+                            onDragEnd = {
+                                dragIndex?.let { onSelect(it.roundToInt().coerceIn(0, count - 1)) }
+                                dragIndex = null
+                            },
+                            onDragCancel = { dragIndex = null },
+                            onHorizontalDrag = { change, dx ->
+                                change.consume()
+                                dragIndex = ((dragIndex ?: selected.toFloat()) + dx / cellWidthPx).coerceIn(0f, (count - 1).toFloat())
+                            },
+                        )
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                labels.indices.forEach { index ->
+                    val isSelected = index == selected
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(26.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onSelect(index) },
+                            ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        NavIcon(index, if (isSelected) activeTint else inactiveTint)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            labels[index],
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) activeTint else inactiveTint,
+                        )
+                    }
                 }
             }
         }
@@ -1651,6 +1704,7 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
  * 강조 색 프리셋을 원형 스와치로 고르는 그룹 행.
  * 맨 앞의 스와치는 "자동" — One UI 기본 파란색을 씁니다.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
     var showingPicker by remember { mutableStateOf(false) }
@@ -1661,7 +1715,8 @@ private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
         Text("강조 색", style = MaterialTheme.typography.bodyLarge)
         Text(
             when {
-                selectedArgb == PlanStore.AUTO_ACCENT_COLOR -> "자동 (One UI 파란색)"
+                selectedArgb == PlanStore.AUTO_ACCENT_COLOR ->
+                    if (systemAccentColor(LocalContext.current) != null) "자동 (시스템 테마 색)" else "자동 (One UI 파란색)"
                 isCustom -> "직접 선택 · #%06X".format(0xFFFFFF and selectedArgb)
                 else -> "프리셋"
             },
@@ -1670,10 +1725,11 @@ private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
             modifier = Modifier.padding(top = 2.dp),
         )
         Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        // 스크롤 없이 한눈에 — 폭에 맞춰 여러 줄로 흐릅니다.
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             AccentSwatch(
                 selected = selectedArgb == PlanStore.AUTO_ACCENT_COLOR,
@@ -1708,7 +1764,7 @@ private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
     }
 }
 
-/** 원형 색 스와치 — auto 면 One UI 파란색→흰색 그라디언트로 프리셋과 구분합니다. */
+/** 원형 색 스와치 — auto 면 자동 색(시스템 테마 색 또는 One UI 파란색)→흰색 그라디언트로 프리셋과 구분합니다. */
 @Composable
 private fun AccentSwatch(
     selected: Boolean,
@@ -1718,9 +1774,10 @@ private fun AccentSwatch(
 ) {
     val fill = when {
         color != null -> Modifier.background(color)
-        auto -> Modifier.background(
-            Brush.linearGradient(listOf(OneUi.Blue, Color(0xFF9EC1FF))),
-        )
+        auto -> {
+            val base = systemAccentColor(LocalContext.current) ?: OneUi.Blue
+            Modifier.background(Brush.linearGradient(listOf(base, lerp(base, Color.White, 0.55f))))
+        }
         else -> Modifier
     }
     val checkTint = when {
