@@ -83,6 +83,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -117,6 +121,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -124,6 +129,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.glance.appwidget.updateAll
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
@@ -300,6 +306,7 @@ fun TimeTableApp(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimeTableAppContent(
     accentArgb: Int,
@@ -318,6 +325,8 @@ private fun TimeTableAppContent(
     var today by remember { mutableStateOf(PlanStore.today()) }
     var places by remember { mutableStateOf<Map<PlanSlot, StudyPlace?>>(emptyMap()) }
     var isSyncing by remember { mutableStateOf(false) }
+    // 전체 새로고침(아이콘·당겨서) 진행 중 — 급식·알리미까지 포함하므로 isSyncing 보다 길게 켜져 있습니다.
+    var isRefreshingAll by remember { mutableStateOf(false) }
     var syncError by remember { mutableStateOf<String?>(null) }
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
@@ -694,6 +703,24 @@ private fun TimeTableAppContent(
         }
     }
 
+    /** 오른쪽 위 새로고침 아이콘과 아래로 당겨 새로고침이 같이 쓰는 전체 갱신 — 현재 탭의 학사 목록까지 새로 받습니다. */
+    suspend fun refreshAll() {
+        isRefreshingAll = true
+        try {
+            loadMealDay(today, force = true)
+            syncFromHana()
+            loadAlim(true)
+            if (tab == 3) {
+                when (academicSubTab) {
+                    0 -> loadSchedule(true)
+                    1 -> loadBoard(true)
+                }
+            }
+        } finally {
+            isRefreshingAll = false
+        }
+    }
+
     // 계정 연동 창을 닫으면 계정 상태를 다시 읽고, 방금 연동됐으면 바로 한 번 동기화합니다.
     LaunchedEffect(showingAccountSheet) {
         if (showingAccountSheet) return@LaunchedEffect
@@ -779,6 +806,28 @@ private fun TimeTableAppContent(
         // bottomBar 슬롯이 비어 있으므로 innerPadding 의 아래 값은 시스템 내비게이션 인셋입니다 — 그 위에 바 높이를 더합니다.
         val navBarSpace = innerPadding.calculateBottomPadding() + AppNavBarHeight + AppNavBarMargin * 2 + 8.dp
         val tabContentPadding = PaddingValues(start = OneUi.PagePadding, end = OneUi.PagePadding, top = 8.dp, bottom = navBarSpace)
+        // 아래로 당겨 새로고침 — 헤더의 nestedScroll 보다 바깥에 둬서, 접힌 헤더가 먼저 다 펼쳐진 뒤에야
+        // 남은 당김이 새로고침 인디케이터로 갑니다 (안 그러면 당길 때 헤더가 안 펼쳐지고 인디케이터만 내려옵니다).
+        val pullState = rememberPullToRefreshState()
+        PullToRefreshBox(
+            isRefreshing = isRefreshingAll,
+            onRefresh = { scope.launch { refreshAll() } },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = isRefreshingAll,
+                    // 카드와 같은 색이면 카드 위에서 구분이 안 되므로 카드보다 한 단계 밝은 면을 씁니다.
+                    containerColor = if (MaterialTheme.colorScheme.isDark) Color(0xFF2E2E33) else Color.White,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(1f)
+                        .padding(top = innerPadding.calculateTopPadding()),
+                )
+            },
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -857,11 +906,15 @@ private fun TimeTableAppContent(
                 }
 
                 2 -> MealTab(
-                    dayMeals = mealDays[selectedMealDay],
+                    dayMeals = mealDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)],
                     isLoading = isLoadingMeals,
                     allergyCodes = allergyCodes,
                     weekMode = mealWeekMode,
-                    onToggleWeek = { mealWeekMode = !mealWeekMode },
+                    onToggleWeek = {
+                        mealWeekMode = !mealWeekMode
+                        // 일간 보기로 돌아오면 주간에서 고른 날짜를 버리고 오늘로 돌아갑니다.
+                        if (!mealWeekMode) selectedMealDay = PlanStore.dayKey(PlanStore.today())
+                    },
                     weekDates = mealWeekDates,
                     selectedDate = selectedMealDate,
                     availableDays = availableMealDays,
@@ -948,6 +1001,7 @@ private fun TimeTableAppContent(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+        }
     }
     // 오른쪽 위 액션 아이콘 — 헤더가 펼쳐져 있을 땐 배경 없이, 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다.
     OneUiActionPill(
@@ -957,19 +1011,7 @@ private fun TimeTableAppContent(
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = 8.dp, end = 12.dp),
     ) {
-        IconButton(onClick = {
-            scope.launch {
-                loadMealDay(today, force = true)
-                syncFromHana()
-                loadAlim(true)
-                if (tab == 3) {
-                    when (academicSubTab) {
-                        0 -> loadSchedule(true)
-                        1 -> loadBoard(true)
-                    }
-                }
-            }
-        }, enabled = !isSyncing) {
+        IconButton(onClick = { scope.launch { refreshAll() } }, enabled = !isSyncing) {
             if (isSyncing) {
                 OneUiLoading(size = 20.dp, stroke = 2.dp)
             } else {
@@ -1423,6 +1465,8 @@ private fun AppNavBar(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
+            // 3버튼 내비게이션에서는 시스템 바가 48dp 가까이 되므로, 그 위로 올려야 바가 잘리지 않습니다.
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 20.dp, vertical = AppNavBarMargin)
             .height(AppNavBarHeight),
     ) {

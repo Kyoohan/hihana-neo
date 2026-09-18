@@ -120,9 +120,26 @@ data class HanaProgramEntry(
     val isAfterSchool: Boolean get() = otmGubun == "A"
 }
 
+/**
+ * 교과교실 신청 원본 — main/classroom/apply-list.json.
+ * 자기주도학습 배정 목록(study-only-req-list)은 교과교실 신청을 반영하지 않아, 늦게 교과교실을 신청한
+ * 학생은 포털 시간표엔 "교과교실"이 뜨는데 앱은 원래 배정(생활관 등)을 그대로 보여줬습니다.
+ * 응답 필드명은 확정된 스키마가 없어 후보를 넓게 받고, 원문 앞부분을 [HanaSyncApplier] 로그에 남깁니다.
+ */
+data class HanaClassroomEntry(
+    val stNm: String?,      // "평일2타임" 등 (없으면 타임을 찾지 못해 건너뜁니다)
+    val room: String?,      // 예: "A201" · "세미나실"
+    val date: String?,      // yyyy-MM-dd (없으면 조회한 날짜로 간주)
+    val status: String?,    // 사람이 읽는 상태명 — 취소·반려 등이면 적용하지 않습니다
+    val cancelled: Boolean, // del_yn/cancel_yn 등이 "Y"
+)
+
 data class HanaDailySync(
     val assignments: List<HanaStudyAssignment>,
     val programs: List<HanaProgramEntry>,
+    val classrooms: List<HanaClassroomEntry> = emptyList(),
+    /** 교과교실 응답 원문 앞부분 — 스키마 확인용 진단(로그에만 남깁니다). */
+    val classroomRawSample: String? = null,
 )
 
 private fun JSONObject.optStringOrNull(key: String): String? =
@@ -230,7 +247,56 @@ class HanaPortalClient private constructor() {
     private suspend fun requestDailySync(date: LocalDate): HanaDailySync = coroutineScope {
         val assignments = async { requestAssignments(date) }
         val programs = async { requestPrograms(date) }
-        HanaDailySync(assignments.await(), programs.await())
+        // 교과교실 신청은 응답 형식이 바뀌어도 나머지 동기화를 막지 않도록 실패를 삼킵니다.
+        val classrooms = async { runCatching { requestClassrooms(date) }.getOrElse { Pair(emptyList(), "실패: ${it.message}") } }
+        val (classroomList, classroomRaw) = classrooms.await()
+        HanaDailySync(assignments.await(), programs.await(), classroomList, classroomRaw)
+    }
+
+    // MARK: 교과교실 신청 조회
+
+    /**
+     * 포털 메인 JS 가 쓰는 GET /main/classroom/apply-list.json 을 그대로 재현합니다 (searchSDate/searchEDate 만).
+     * 배열 위치와 필드명은 확정되지 않아 `paging.result` · `list` · `itemList` 와 여러 이름 후보를 훑습니다.
+     */
+    private fun requestClassrooms(date: LocalDate): Pair<List<HanaClassroomEntry>, String> {
+        val day = date.format(DAY_FORMAT)
+        val request = browserLikeRequestBuilder(
+            "$BASE/main/classroom/apply-list.json?searchSDate=$day&searchEDate=$day",
+            referer = "$BASE/",
+        ).get().build()
+
+        client.newCall(request).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            val sample = "HTTP ${resp.code} " + text.take(600).replace('\n', ' ')
+            val json = runCatching { JSONObject(text) }.getOrNull()
+                ?: throw HanaPortalException.UnexpectedResponse("[classroom] $sample")
+            val array = json.optJSONObject("paging")?.optJSONArray("result")
+                ?: json.optJSONArray("list")
+                ?: json.optJSONArray("itemList")
+                ?: json.optJSONArray("result")
+                ?: return Pair(emptyList(), sample)
+
+            fun first(row: JSONObject, vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
+                if (!row.has(key) || row.isNull(key)) null
+                else row.opt(key)?.toString()?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
+            }
+            val entries = (0 until array.length()).mapNotNull { i ->
+                val row = array.optJSONObject(i) ?: return@mapNotNull null
+                HanaClassroomEntry(
+                    stNm = first(row, "st_nm", "stNm", "slot_nm", "time_nm", "st_time", "cc_time_nm"),
+                    room = first(
+                        row, "cc_place_nm", "room_nm", "slp_nm", "place_nm", "cr_nm", "classroom_nm",
+                        "ccr_nm", "slg_nm", "c_place_cd_name",
+                    ),
+                    date = first(row, "cc_date", "otb_date", "req_date", "apply_date", "use_date", "std_date", "ymd")
+                        ?.take(10),
+                    status = first(row, "cc_cd_name", "status_nm", "stat_nm", "appr_nm", "req_state", "state_nm"),
+                    cancelled = listOf("del_yn", "cancel_yn", "cncl_yn").any { first(row, it)?.uppercase() == "Y" },
+                )
+            }
+            return Pair(entries, sample)
+        }
     }
 
     // MARK: 로그인
@@ -630,6 +696,24 @@ object HanaSyncApplier {
         }
 
         val dayKey = PlanStore.dayKey(date)
+
+        // 교과교실 신청 — 배정(생활관·면학실·도서관)보다 뒤에, 1인2기·방과후보다 앞에 적용합니다.
+        // 포털 시간표가 이 신청을 우선해 "교과교실"로 보여주므로 앱도 같은 순서를 따릅니다.
+        sync.classroomRawSample?.let { Log.d(TAG, "classroom raw: $it") }
+        for (entry in sync.classrooms) {
+            Log.d(TAG, "classroom st_nm=${entry.stNm} room=${entry.room} date=${entry.date} status=${entry.status} cancelled=${entry.cancelled}")
+            if (entry.cancelled) continue
+            if (entry.date != null && entry.date != dayKey) continue
+            val status = entry.status.orEmpty()
+            if (listOf("취소", "반려", "거절", "미승인", "불가").any { it in status }) continue
+            val slot = entry.stNm?.let { HanaAssignmentMapper.slotFor(it) } ?: continue
+            val room = entry.room?.trim().orEmpty()
+            // 교실명이 없으면 칩 없이 "교과교실"만 보여줍니다.
+            val place = if (room.isEmpty()) StudyPlace.Other("교과교실", null) else StudyPlace.ClassroomPlace(Classroom.fromName(room))
+            PlanStore.set(context, place, slot, date)
+            Log.d(TAG, "applied $slot -> ${describe(place)}")
+        }
+
         for (program in sync.programs) {
             if (program.date != dayKey) continue
             val slot = HanaAssignmentMapper.slotFor(program.stNm) ?: continue
