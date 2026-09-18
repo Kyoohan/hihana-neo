@@ -156,6 +156,7 @@ import com.yhjang.timetable.ui.OneUiRadio
 import com.yhjang.timetable.ui.OneUiRadioRow
 import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.OneUiSlider
+import com.yhjang.timetable.ui.OneUiSwitch
 import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.TimeTableTheme
 import com.yhjang.timetable.ui.rememberOneUiHeaderState
@@ -181,6 +182,10 @@ class MainActivity : ComponentActivity() {
     /** 위젯 탭으로 들어온 탭 열기 요청 — onCreate/onNewIntent 모두에서 채웁니다. */
     private val openTabRequest = mutableStateOf<String?>(null)
 
+    /** 게시판 알림 탭으로 들어온 요청 — 게시판 카테고리(ordinal)와, 한 건이면 바로 열 글 주소. */
+    private val openBoardRequest = mutableStateOf<Int?>(null)
+    private val openPostRequest = mutableStateOf<String?>(null)
+
     /** 백그라운드/외부 브라우저에서 돌아올 때마다 증가 — 포털에서 장소를 바꾼 뒤 복귀 시 재동기화합니다. */
     private val resumeSyncRequest = mutableStateOf(0)
 
@@ -197,12 +202,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         openAlimRequest.value = intent?.getBooleanExtra(AlimNotifier.EXTRA_OPEN_ALIM, false) ?: false
         openTabRequest.value = intent?.getStringExtra(EXTRA_OPEN_TAB)
+        consumeBoardExtras(intent)
         // 한 번 소비한 뒤 제거해, 재구성 시 같은 탭 요청이 다시 적용되지 않게 합니다.
         intent?.removeExtra(EXTRA_OPEN_TAB)
         setContent {
             TimeTableApp(
                 openAlimRequest = openAlimRequest,
                 openTabRequest = openTabRequest,
+                openBoardRequest = openBoardRequest,
+                openPostRequest = openPostRequest,
                 resumeSyncRequest = resumeSyncRequest,
             )
         }
@@ -213,7 +221,20 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         openAlimRequest.value = intent.getBooleanExtra(AlimNotifier.EXTRA_OPEN_ALIM, false)
         openTabRequest.value = intent.getStringExtra(EXTRA_OPEN_TAB)
+        consumeBoardExtras(intent)
         intent.removeExtra(EXTRA_OPEN_TAB)
+    }
+
+    private fun consumeBoardExtras(intent: Intent?) {
+        if (intent == null) return
+        if (intent.hasExtra(BoardNotifier.EXTRA_OPEN_BOARD)) {
+            openBoardRequest.value = intent.getIntExtra(BoardNotifier.EXTRA_OPEN_BOARD, 0)
+            intent.removeExtra(BoardNotifier.EXTRA_OPEN_BOARD)
+        }
+        intent.getStringExtra(BoardNotifier.EXTRA_OPEN_POST_URL)?.let {
+            openPostRequest.value = it
+            intent.removeExtra(BoardNotifier.EXTRA_OPEN_POST_URL)
+        }
     }
 
     companion object {
@@ -232,6 +253,8 @@ class MainActivity : ComponentActivity() {
 fun TimeTableApp(
     openAlimRequest: MutableState<Boolean> = mutableStateOf(false),
     openTabRequest: MutableState<String?> = mutableStateOf<String?>(null),
+    openBoardRequest: MutableState<Int?> = mutableStateOf<Int?>(null),
+    openPostRequest: MutableState<String?> = mutableStateOf<String?>(null),
     resumeSyncRequest: MutableState<Int> = mutableStateOf(0),
 ) {
     val context = LocalContext.current
@@ -270,6 +293,8 @@ fun TimeTableApp(
             onAppThemeChange = { appTheme = it },
             openAlimRequest = openAlimRequest,
             openTabRequest = openTabRequest,
+            openBoardRequest = openBoardRequest,
+            openPostRequest = openPostRequest,
             resumeSyncRequest = resumeSyncRequest,
         )
     }
@@ -283,6 +308,8 @@ private fun TimeTableAppContent(
     onAppThemeChange: (String) -> Unit,
     openAlimRequest: MutableState<Boolean>,
     openTabRequest: MutableState<String?>,
+    openBoardRequest: MutableState<Int?>,
+    openPostRequest: MutableState<String?>,
     resumeSyncRequest: MutableState<Int>,
 ) {
     val context = LocalContext.current
@@ -394,7 +421,10 @@ private fun TimeTableAppContent(
         boardLoading = true
         boardError = null
         try {
-            boardPosts = HanaAcademicRepository.board(context, BoardCategory.entries[boardCategoryIndex], force)
+            val category = BoardCategory.entries[boardCategoryIndex]
+            boardPosts = HanaAcademicRepository.board(context, category, force)
+            // 앱에서 목록을 봤으면 그 글들은 새 글 알림 대상에서 제외합니다.
+            BoardNotifier.markSeen(context, category, boardPosts)
         } catch (e: HanaPortalException.MissingCredentials) {
             boardError = ACADEMIC_NEEDS_LOGIN
         } catch (e: HanaPortalException.LoginFailed) {
@@ -557,6 +587,22 @@ private fun TimeTableAppContent(
             MainActivity.TAB_TODAY -> tab = 0
         }
         openTabRequest.value = null
+    }
+
+    // 게시판 알림 탭 — 해당 게시판 목록으로 가고, 한 건이면 그 글을 바로 엽니다.
+    LaunchedEffect(openBoardRequest.value, openPostRequest.value) {
+        openBoardRequest.value?.let { ordinal ->
+            boardCategoryIndex = ordinal.coerceIn(0, BoardCategory.entries.lastIndex)
+            boardPosts = emptyList()
+            academicSubTab = 1
+            tab = 3
+            openBoardRequest.value = null
+            runCatching { loadBoard(false) }
+        }
+        openPostRequest.value?.let { url ->
+            openPostRequest.value = null
+            webPage = HanaWebPage(url, "게시글")
+        }
     }
 
     // 급식 탭에 들어오거나 주간 보기를 켜면 최신 식단으로 갱신
@@ -1167,6 +1213,40 @@ private fun SettingsScreen(
                             badgeDot = true,
                             onClick = { ExactAlarmPermission.openSettings(context) },
                         )
+                    }
+                }
+            }
+
+            item {
+                OneUiSectionTitle("알림")
+                // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
+                var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
+                OneUiGroupColumn {
+                    Text(
+                        "새 글이 올라오면 알립니다. 약 30분 간격으로 확인하며, 켠 직후에는 지금 있는 글을 기준으로 삼습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = OneUi.RowPadding, end = OneUi.RowPadding, top = 14.dp, bottom = 4.dp),
+                    )
+                    BoardCategory.entries.forEachIndexed { index, category ->
+                        OneUiListItem(
+                            title = category.label,
+                            trailing = {
+                                OneUiSwitch(
+                                    checked = category in boardNotify,
+                                    onCheckedChange = { on ->
+                                        BoardNotifier.setEnabled(context, category, on)
+                                        boardNotify = BoardNotifier.enabledCategories(context)
+                                    },
+                                )
+                            },
+                            onClick = {
+                                val on = category !in boardNotify
+                                BoardNotifier.setEnabled(context, category, on)
+                                boardNotify = BoardNotifier.enabledCategories(context)
+                            },
+                        )
+                        if (index != BoardCategory.entries.lastIndex) OneUiDivider()
                     }
                 }
             }

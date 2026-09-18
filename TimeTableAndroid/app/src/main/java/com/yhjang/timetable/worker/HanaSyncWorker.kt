@@ -5,6 +5,8 @@ import androidx.glance.appwidget.updateAll
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.yhjang.timetable.AlimNotifier
+import com.yhjang.timetable.BoardNotifier
+import com.yhjang.timetable.HanaAcademicRepository
 import com.yhjang.timetable.HanaAcademicApi
 import com.yhjang.timetable.HanaCredentialStore
 import com.yhjang.timetable.HanaMealSync
@@ -38,6 +40,14 @@ class HanaSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
         runCatching {
             val alims = HanaAcademicApi.fetchAlim(applicationContext)
             AlimNotifier.process(applicationContext, alims)
+        }
+
+        // 게시판 새 글 알림 — 설정에서 켠 게시판만 새로 받아 마지막으로 본 글 이후의 글을 알립니다.
+        BoardNotifier.enabledCategories(applicationContext).forEach { category ->
+            runCatching {
+                val posts = HanaAcademicRepository.board(applicationContext, category, force = true)
+                BoardNotifier.process(applicationContext, category, posts)
+            }
         }
 
         return try {
