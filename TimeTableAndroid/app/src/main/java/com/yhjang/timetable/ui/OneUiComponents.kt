@@ -1,6 +1,7 @@
 package com.yhjang.timetable.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,6 +61,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
@@ -84,13 +89,13 @@ import androidx.compose.ui.window.DialogProperties
 // MARK: - 컨테이너
 
 /**
- * One UI 컨테이너 — 흰색(다크: #17171A) 26dp 둥근 카드, 그림자·테두리 없음.
- * 컨테이너 자체가 탭 가능하면 [onClick] 을 주면 됩니다.
+ * One UI 컨테이너 — 28dp 둥근 반투명 글래스 카드(삼성 헬스 홈 타일). 그림자·테두리 없음, 뒤의
+ * 그라디언트 배경이 살짝 비칩니다. 컨테이너 자체가 탭 가능하면 [onClick] 을 주면 됩니다.
  */
 @Composable
 fun OneUiCard(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surface,
+    color: Color = MaterialTheme.colorScheme.glassCard,
     shape: Shape = RoundedCornerShape(OneUi.CornerLarge),
     contentPadding: PaddingValues = PaddingValues(OneUi.CardPadding),
     onClick: (() -> Unit)? = null,
@@ -232,7 +237,7 @@ fun OneUiButton(
     val scheme = MaterialTheme.colorScheme
     val container = when (style) {
         OneUiButtonStyle.Filled -> scheme.primary
-        OneUiButtonStyle.Neutral -> scheme.surfaceContainerHigh
+        OneUiButtonStyle.Neutral -> scheme.floatingPill
         OneUiButtonStyle.Outlined -> Color.Transparent
     }
     val content = when (style) {
@@ -297,14 +302,21 @@ fun OneUiTextButton(
     }
 }
 
-/** 상단 앱바 오른쪽의 동그란 아이콘 버튼 묶음 — 키트 "Top App Bar" 의 알약 캡슐. */
+/**
+ * 상단 오른쪽 아이콘 버튼 묶음 — 삼성 헬스처럼 펼친 상태에선 배경 없이 아이콘만, 스크롤로 접히면
+ * 진한 반투명 알약 안에 떠 있는 형태가 됩니다. [pillAlpha] 로 두 상태 사이를 잇습니다.
+ */
 @Composable
-fun OneUiActionPill(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
+fun OneUiActionPill(
+    modifier: Modifier = Modifier,
+    pillAlpha: Float = 1f,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
         modifier = modifier
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = 4.dp),
+            .background(MaterialTheme.colorScheme.floatingPill.copy(alpha = MaterialTheme.colorScheme.floatingPill.alpha * pillAlpha))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
@@ -325,7 +337,7 @@ fun OneUiChip(
 ) {
     val scheme = MaterialTheme.colorScheme
     val container by animateColorAsState(
-        if (selected) scheme.primary else scheme.surfaceContainerHigh,
+        if (selected) scheme.primary else scheme.floatingPill,
         label = "chipContainer",
     )
     val content by animateColorAsState(
@@ -674,8 +686,8 @@ fun OneUiFullScreen(
 ) {
     val scheme = MaterialTheme.colorScheme
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(modifier = modifier.fillMaxSize(), color = scheme.background) {
-            Column(Modifier.fillMaxSize()) {
+        Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
+            Column(Modifier.fillMaxSize().oneUiBackground(scheme.isDark)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -760,11 +772,11 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
     }
 }
 
-/** 툴바 한 줄 높이 — 접힌 상태의 헤더 높이입니다(상태바 제외). */
+/** 접힌 상태의 헤더 높이(상태바 제외) — 플로팅 아이콘 알약 한 줄. */
 val OneUiHeaderCollapsedHeight = 60.dp
 
-/** 펼쳤을 때 툴바 아래로 더해지는 큰 제목 영역 높이. */
-val OneUiHeaderExpandedExtra = 118.dp
+/** 펼쳤을 때 더해지는 높이 — 왼쪽 큰 제목 + 부제목이 들어갈 자리. */
+val OneUiHeaderExpandedExtra = 56.dp
 
 @Composable
 fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneUiHeaderState {
@@ -773,8 +785,9 @@ fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneU
 }
 
 /**
- * One UI 확장 헤더 — 펼치면 화면 가운데에 큰 제목과 회색 부제목이 놓이고, 접히면 툴바 왼쪽의
- * 작은 제목(+부제목)으로 바뀝니다. 액션 캡슐은 항상 툴바 오른쪽에 고정입니다.
+ * 삼성 헬스 홈 상단 — 펼치면 왼쪽에 큰 제목(+회색 부제목), 오른쪽에 배경 없는 아이콘들. 스크롤로
+ * 접히면 제목은 사라지고 아이콘들만 진한 알약 안에 모여 콘텐츠 위에 떠 있습니다. 배경은 투명해서
+ * 페이지의 그라디언트가 그대로 보입니다.
  */
 @Composable
 fun OneUiCollapsingHeader(
@@ -787,31 +800,28 @@ fun OneUiCollapsingHeader(
     val density = LocalDensity.current
     val fraction = state.fraction
     val extra = with(density) { (state.rangePx + state.offsetPx).toDp() }
-    // 큰 제목은 접힘 초반에 빨리 사라지고, 작은 제목은 접힘 후반에 나타나 서로 겹쳐 보이지 않게 합니다.
-    val bigAlpha = (1f - fraction * 1.8f).coerceIn(0f, 1f)
-    val smallAlpha = ((fraction - 0.55f) / 0.45f).coerceIn(0f, 1f)
+    val titleAlpha = (1f - fraction * 1.6f).coerceIn(0f, 1f)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(OneUiHeaderCollapsedHeight)
+                .height(OneUiHeaderCollapsedHeight + extra)
                 .padding(start = 24.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .alpha(smallAlpha),
+                    .alpha(titleAlpha),
             ) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -819,7 +829,7 @@ fun OneUiCollapsingHeader(
                 if (subtitle != null) {
                     Text(
                         subtitle,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -828,37 +838,249 @@ fun OneUiCollapsingHeader(
             }
             if (actions != null) {
                 Spacer(Modifier.width(8.dp))
-                OneUiActionPill(content = actions)
+                // 접히는 동안 알약 배경이 서서히 나타나 아이콘들이 한 덩어리로 묶입니다.
+                OneUiActionPill(
+                    pillAlpha = ((fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
+                    modifier = Modifier.align(Alignment.Top).padding(top = if (extra > 0.dp) 4.dp else 6.dp),
+                    content = actions,
+                )
             }
         }
-        if (extra > 0.dp) {
+    }
+}
+
+// MARK: - 삼성 헬스 홈 요소
+
+/**
+ * 지표 아이콘 배지 — 채도 높은 원 안에 흰 글리프 (삼성 헬스 "일일 활동"의 걸음·시간·칼로리 아이콘).
+ */
+@Composable
+fun OneUiMetricIcon(
+    painter: Painter,
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painter, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.5f))
+    }
+}
+
+/**
+ * 큰 숫자 + 작은 단위 한 줄 — "642 걸음" 처럼 값은 굵고 크게, 단위는 옆에 작게 붙입니다.
+ */
+@Composable
+fun OneUiBigValue(
+    value: String,
+    modifier: Modifier = Modifier,
+    unit: String? = null,
+    valueStyle: TextStyle = MaterialTheme.typography.headlineSmall,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.Bottom) {
+        Text(
+            value,
+            style = valueStyle,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (unit != null) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                unit,
+                style = MaterialTheme.typography.bodyLarge,
+                color = color.copy(alpha = 0.85f),
+                maxLines = 1,
+                modifier = Modifier.padding(bottom = 3.dp),
+            )
+        }
+    }
+}
+
+/** 얇은 둥근 진행바 — 회색 트랙 위에 색 채움 (삼성 헬스 걸음 타일의 막대). */
+@Composable
+fun OneUiProgressBar(
+    fraction: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+    height: Dp = 10.dp,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.progressTrack),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .clip(CircleShape)
+                .background(color),
+        )
+    }
+}
+
+/**
+ * 겹친 링 두 개 — 삼성 헬스 활동 링처럼 바깥은 하루 전체 진행, 안쪽은 지금 블록 진행을 보여줍니다.
+ * 값이 null 이면 그 링은 트랙만 그립니다.
+ */
+@Composable
+fun OneUiRings(
+    outer: Float?,
+    inner: Float?,
+    modifier: Modifier = Modifier,
+    outerColor: Color = OneUi.Lime,
+    innerColor: Color = OneUi.Sky,
+    size: Dp = 96.dp,
+    stroke: Dp = 11.dp,
+) {
+    val track = MaterialTheme.colorScheme.progressTrack
+    Canvas(modifier = modifier.size(size)) {
+        val strokePx = stroke.toPx()
+        val gap = strokePx * 0.55f
+        fun ring(value: Float?, color: Color, inset: Float) {
+            val rect = androidx.compose.ui.geometry.Rect(
+                inset, inset, this.size.width - inset, this.size.height - inset,
+            )
+            drawArc(
+                color = track,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = rect.topLeft,
+                size = rect.size,
+                style = Stroke(width = strokePx, cap = StrokeCap.Round),
+            )
+            if (value != null && value > 0f) {
+                drawArc(
+                    color = color,
+                    startAngle = -90f,
+                    sweepAngle = 360f * value.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = rect.topLeft,
+                    size = rect.size,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round),
+                )
+            }
+        }
+        ring(outer, outerColor, strokePx / 2f)
+        ring(inner, innerColor, strokePx / 2f + strokePx + gap)
+    }
+}
+
+/**
+ * 홈 타일 — 왼쪽 위 작은 제목, 오른쪽 위 주황 알림 점(선택), 그 아래 내용. 2열 그리드에 나란히 놓습니다.
+ */
+@Composable
+fun OneUiTile(
+    title: String,
+    modifier: Modifier = Modifier,
+    showDot: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    OneUiCard(
+        modifier = modifier,
+        contentPadding = PaddingValues(0.dp),
+        onClick = onClick,
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(14.dp))
+                content()
+            }
+            if (showDot) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 12.dp, end = 12.dp)
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(OneUi.NotifyDot),
+                )
+            }
+        }
+    }
+}
+
+/** 페이지 점 — 히어로 카드 아래 현재 페이지는 길쭉한 알약, 나머지는 작은 점. */
+@Composable
+fun OneUiPageDots(count: Int, current: Int, modifier: Modifier = Modifier) {
+    val on = MaterialTheme.colorScheme.onSurface
+    val off = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(count) { index ->
+            val selected = index == current
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(extra)
-                    .alpha(bigAlpha),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                    )
-                    if (subtitle != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
+                Modifier
+                    .height(8.dp)
+                    .width(if (selected) 26.dp else 8.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) on else off),
+            )
         }
+    }
+}
+
+/**
+ * 알림 카드 — 본문 한 단락과 오른쪽 아래 알약 버튼들 (삼성 헬스 "동기화되지 않았습니다" 카드).
+ * 카드 자체는 다른 카드보다 조금 더 불투명한 진한 톤입니다.
+ */
+@Composable
+fun OneUiNoticeCard(
+    text: String,
+    modifier: Modifier = Modifier,
+    secondaryText: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    primaryText: String,
+    onPrimary: () -> Unit,
+) {
+    OneUiCard(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.floatingPill,
+        contentPadding = PaddingValues(start = 22.dp, end = 16.dp, top = 22.dp, bottom = 14.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (secondaryText != null && onSecondary != null) {
+                NoticePillButton(secondaryText, onSecondary)
+                Spacer(Modifier.width(10.dp))
+            }
+            NoticePillButton(primaryText, onPrimary)
+        }
+    }
+}
+
+@Composable
+private fun NoticePillButton(text: String, onClick: () -> Unit) {
+    val dark = MaterialTheme.colorScheme.isDark
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (dark) Color(0xFF0F1216).copy(alpha = 0.9f) else Color.White)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
     }
 }

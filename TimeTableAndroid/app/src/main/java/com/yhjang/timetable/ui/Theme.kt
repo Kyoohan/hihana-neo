@@ -12,6 +12,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -27,8 +31,8 @@ import com.yhjang.timetable.PlanStore
  * 색은 키트 PNG 를 직접 샘플링한 값입니다: 배경 #F1F1F3/#010102, 카드 #FCFCFF/#17171A, 강조 #387AFF.
  */
 object OneUi {
-    /** 카드·다이얼로그·그룹 컨테이너 모서리 */
-    val CornerLarge = 26.dp
+    /** 카드·다이얼로그·그룹 컨테이너 모서리 — 삼성 헬스 홈 타일과 같은 28dp */
+    val CornerLarge = 28.dp
     /** 카드 안쪽 작은 컨테이너(썸네일, 행 하이라이트) */
     val CornerMedium = 18.dp
     val CornerSmall = 12.dp
@@ -47,7 +51,100 @@ object OneUi {
 
     /** 다이얼로그 뒷배경 스크림 */
     val Scrim = Color(0x66000000)
+
+    /**
+     * 삼성 헬스 홈의 지표 아이콘 배지 색 — 걸음(연두)·활동 시간(하늘)·칼로리(보라) 같은 원형 배지에 쓰는
+     * 채도 높은 색입니다. 다크 배경 위에서 흰 글리프와 잘 맞도록 골랐습니다.
+     */
+    val Lime = Color(0xFF7CC22F)
+    val Sky = Color(0xFF2FA8F0)
+    val Violet = Color(0xFF8C5BE8)
+    val Amber = Color(0xFFF2A11B)
+    val Coral = Color(0xFFF0625B)
+    val Mint = Color(0xFF2FBF9C)
+
+    /** 오른쪽 위 알림 점 — 삼성 헬스의 주황 점 */
+    val NotifyDot = Color(0xFFFF7A1A)
+
+    /** 카드 안 얇은 진행바의 회색 트랙 */
+    val TrackDark = Color(0xFF3A3D43)
+    val TrackLight = Color(0xFFDCDFE5)
 }
+
+/**
+ * 페이지 배경 — 삼성 헬스처럼 어두운 남색 바탕에 파랑·청록·금빛이 번지는 그라디언트(라이트는 옅은
+ * 파랑·민트·크림 톤). 카드가 반투명이라 이 배경이 카드 아래로 은은하게 비칩니다.
+ */
+fun Modifier.oneUiBackground(dark: Boolean): Modifier = drawBehind {
+    val w = size.width
+    val h = size.height
+    if (dark) {
+        drawRect(Color(0xFF07101C))
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF1F5A8E), Color.Transparent),
+                center = Offset(w * 0.95f, h * 0.02f),
+                radius = w * 1.05f,
+            ),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF0F5F5C).copy(alpha = 0.85f), Color.Transparent),
+                center = Offset(w * 0.1f, h * 0.35f),
+                radius = w * 0.75f,
+            ),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF8A6A12).copy(alpha = 0.55f), Color.Transparent),
+                center = Offset(-w * 0.05f, h * 0.62f),
+                radius = w * 0.55f,
+            ),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF16457A).copy(alpha = 0.8f), Color.Transparent),
+                center = Offset(w * 0.75f, h * 0.95f),
+                radius = w * 0.9f,
+            ),
+        )
+    } else {
+        drawRect(Color(0xFFEDF1F7))
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFFC9DDFF), Color.Transparent),
+                center = Offset(w * 0.95f, h * 0.02f),
+                radius = w * 1.0f,
+            ),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFFCDEFE9), Color.Transparent),
+                center = Offset(w * 0.05f, h * 0.4f),
+                radius = w * 0.7f,
+            ),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFFFFEFC7), Color.Transparent),
+                center = Offset(-w * 0.05f, h * 0.65f),
+                radius = w * 0.55f,
+            ),
+        )
+    }
+}
+
+/** 반투명 글래스 카드 색 — 그라디언트 배경이 카드 아래로 살짝 비칩니다. */
+val ColorScheme.glassCard: Color
+    @Composable @ReadOnlyComposable get() = if (isDarkScheme()) Color(0xFF15191F).copy(alpha = 0.84f) else Color.White.copy(alpha = 0.88f)
+
+/** 플로팅 알약(스크롤 시 액션 아이콘 묶음, 알림 카드 버튼 등)의 색 — 카드보다 한 톤 더 진하고 불투명합니다. */
+val ColorScheme.floatingPill: Color
+    @Composable @ReadOnlyComposable get() = if (isDarkScheme()) Color(0xFF2A2E35).copy(alpha = 0.92f) else Color(0xFFE2E6EC).copy(alpha = 0.95f)
+
+/** 얇은 진행바 트랙 색 */
+val ColorScheme.progressTrack: Color
+    @Composable @ReadOnlyComposable get() = if (isDarkScheme()) OneUi.TrackDark else OneUi.TrackLight
 
 /**
  * One UI 는 M3 기본보다 전반적으로 더 둥급니다 — Shapes 를 쓰는 M3 컴포넌트(TextField 등)에도 반영됩니다.
@@ -97,7 +194,7 @@ private fun oneUiLightScheme(): ColorScheme = lightColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFFFFE1E1),
     onErrorContainer = Color(0xFF8F1418),
-    background = Color(0xFFF1F1F3),
+    background = Color(0xFFEDF1F7),
     onBackground = Color(0xFF111114),
     surface = Color(0xFFFCFCFF),
     onSurface = Color(0xFF111114),
@@ -130,17 +227,17 @@ private fun oneUiDarkScheme(): ColorScheme = darkColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFF5A1D1F),
     onErrorContainer = Color(0xFFFFDAD8),
-    background = Color(0xFF010102),
+    background = Color(0xFF07101C),
     onBackground = Color(0xFFF4F4F6),
-    surface = Color(0xFF17171A),
+    surface = Color(0xFF15191F),
     onSurface = Color(0xFFF4F4F6),
     surfaceVariant = Color(0xFF2C2C30),
     onSurfaceVariant = Color(0xFFA0A0A6),
     surfaceContainerLowest = Color(0xFF000000),
-    surfaceContainerLow = Color(0xFF0E0E10),
-    surfaceContainer = Color(0xFF17171A),
-    surfaceContainerHigh = Color(0xFF252528),
-    surfaceContainerHighest = Color(0xFF343437),
+    surfaceContainerLow = Color(0xFF0E1218),
+    surfaceContainer = Color(0xFF15191F),
+    surfaceContainerHigh = Color(0xFF262B33),
+    surfaceContainerHighest = Color(0xFF353B45),
     outline = Color(0xFF5C5C62),
     outlineVariant = Color(0xFF2C2C30),
     inverseSurface = Color(0xFFFCFCFF),

@@ -8,5 +8,5 @@
     <color name="widget_title">#0F172A</color>
     <color name="widget_subtext">#475569</color>
     <!-- 창 배경 — One UI 라이트 페이지 배경 (Compose 테마의 background 와 동일) -->
-    <color name="app_window_background">#F1F1F3</color>
+    <color name="app_window_background">#EDF1F7</color>
 </resources>

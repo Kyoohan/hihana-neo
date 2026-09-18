@@ -109,12 +109,15 @@ import com.yhjang.timetable.ui.OneUiFullScreen
 import com.yhjang.timetable.ui.OneUiGroupColumn
 import com.yhjang.timetable.ui.OneUiListItem
 import com.yhjang.timetable.ui.OneUiLoading
+import com.yhjang.timetable.ui.OneUiMetricIcon
 import com.yhjang.timetable.ui.OneUiRadio
 import com.yhjang.timetable.ui.OneUiRadioRow
 import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.OneUiSlider
 import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.TimeTableTheme
+import com.yhjang.timetable.ui.isDark
+import com.yhjang.timetable.ui.oneUiBackground
 import com.yhjang.timetable.ui.rememberOneUiHeaderState
 import com.yhjang.timetable.widget.TimeTableWidget
 import kotlinx.coroutines.Dispatchers
@@ -551,6 +554,19 @@ private fun TimeTableAppContent(
     val remainingMinutes = currentBlock
         ?.takeUnless { it.isBlank }
         ?.let { Duration.between(now, it.end).toMinutes().coerceAtLeast(0) }
+    // 삼성 헬스 활동 링용 진행률 — 바깥 링은 오늘 첫 일정 시작~마지막 일정 끝 사이에서 지금이 어디쯤인지,
+    // 안쪽 링은 현재 블록 안에서 얼마나 지났는지입니다. 일정이 없으면 null(트랙만 그림).
+    val dayProgress = remember(todayBlocks, now) {
+        val real = todayBlocks.filter { !it.isBlank }
+        val first = real.minOfOrNull { it.start }
+        val last = real.maxOfOrNull { it.end }
+        if (first == null || last == null || !last.isAfter(first)) null
+        else (Duration.between(first, now).toMillis().toFloat() / Duration.between(first, last).toMillis()).coerceIn(0f, 1f)
+    }
+    val blockProgress = currentBlock?.takeUnless { it.isBlank }?.let { block ->
+        val total = Duration.between(block.start, block.end).toMillis()
+        if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
+    }
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작
     val headerState = rememberOneUiHeaderState()
@@ -561,8 +577,10 @@ private fun TimeTableAppContent(
     val mealWeekDates = remember(today) { (0 until 7).map { today.plusDays(it.toLong()) } }
     val availableMealDays = mealDays.keys
 
+    // 페이지 배경은 Scaffold 뒤에서 그라디언트로 그리고, 헤더·콘텐츠는 그 위에 투명하게 얹습니다.
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        modifier = Modifier.oneUiBackground(MaterialTheme.colorScheme.isDark),
+        containerColor = Color.Transparent,
         topBar = {
             OneUiCollapsingHeader(
                 state = headerState,
@@ -723,6 +741,8 @@ private fun TimeTableAppContent(
                     remainingMinutes = remainingMinutes,
                     nextTitle = nextBlock?.title,
                     nextRoom = nextBlock?.room,
+                    dayProgress = dayProgress,
+                    blockProgress = blockProgress,
                     slots = slots,
                     places = places,
                     supervisor = weekday1Supervisor,
@@ -741,6 +761,8 @@ private fun TimeTableAppContent(
                         .getOrElse(boardCategoryIndex) { BoardCategory.STUDENT_NOTICE }
                         .label,
                     studentGrade = studentGrade,
+                    needsAccount = !HanaCredentialStore.hasCredentials(context),
+                    onConnectAccount = { showingAccountSheet = true },
                     onEditSlot = { editingSlot = it },
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
@@ -1330,12 +1352,17 @@ private fun MealCard(
     allergyCodes: Set<Int>,
 ) {
     OneUiCard(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(
-            meal.label,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        // 끼니마다 색이 다른 원형 배지 — 아침 연두 / 점심 하늘 / 저녁 보라 (삼성 헬스 지표 아이콘 톤).
+        val badge = when (meal) {
+            Meal.entries.first() -> OneUi.Lime
+            Meal.entries.last() -> OneUi.Violet
+            else -> OneUi.Sky
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OneUiMetricIcon(painterResource(R.drawable.ic_meal), badge, size = 36.dp)
+            Spacer(Modifier.width(12.dp))
+            Text(meal.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
         val thumbUrl = HanaMealClient.mealPhotoThumbUrl(photoFile)
         if (thumbUrl != null) {
             var showViewer by remember { mutableStateOf(false) }
