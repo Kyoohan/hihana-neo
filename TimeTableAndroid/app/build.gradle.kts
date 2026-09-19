@@ -37,7 +37,17 @@ android {
     }
 
     buildTypes {
+        // 디버그 빌드는 패키지 이름을 달리 해 릴리스 앱과 나란히 설치됩니다 ("하이하나 Neo (dev)") —
+        // 서명이 달라 매번 지우고 다시 깔던 불편을 없애기 위함. 데이터(로그인·설정·위젯)는 서로 따로이고,
+        // 앱 내 업데이트는 끕니다 (릴리스 APK 를 dev 위에 덮을 수 없으므로).
+        debug {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "하이하나 Neo (dev)")
+            buildConfigField("String", "UPDATE_REPO", "\"\"")
+        }
         release {
+            resValue("string", "app_name", "하이하나 Neo")
             isMinifyEnabled = false
             signingConfig = if (System.getenv("RELEASE_KEYSTORE").isNullOrBlank()) {
                 signingConfigs.getByName("debug")
@@ -50,6 +60,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {
