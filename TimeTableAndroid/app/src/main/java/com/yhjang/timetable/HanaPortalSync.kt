@@ -99,6 +99,8 @@ sealed class HanaPortalException(message: String) : Exception(message) {
     data object TokenNotFound : HanaPortalException("로그인 페이지를 불러오지 못했습니다")
     class LoginFailed(message: String) : HanaPortalException(message)
     class UnexpectedResponse(detail: String) : HanaPortalException("학사시스템 응답을 해석하지 못했습니다\n$detail")
+    /** 서버가 이유를 문장으로 돌려준 실패 ("이미 신청된 좌석입니다" 등) — 문구를 그대로 보여줍니다. */
+    class Rejected(message: String) : HanaPortalException(message)
 
     /** 세션 만료로 로그인 페이지가 내려온 경우 — [authenticatedRaw] 가 재로그인을 결정하는 내부 신호. */
     internal data object LoginPage : HanaPortalException("로그인 페이지가 내려왔습니다")

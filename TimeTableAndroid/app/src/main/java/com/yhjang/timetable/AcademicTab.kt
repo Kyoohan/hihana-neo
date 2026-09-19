@@ -134,6 +134,7 @@ fun AcademicTab(
     onRetryBoard: () -> Unit,
     onOpenPost: (HanaBoardPost) -> Unit,
     onOpenWeb: (String, String) -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenAccount: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
@@ -161,7 +162,7 @@ fun AcademicTab(
             ) {
                 Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {
                     AcademicSubTabs(subTab, onSubTabChange)
-                    ApplyHistorySection(onOpenWeb = onOpenWeb)
+                    ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenLibrary = onOpenLibrary)
                 }
             }
         }
