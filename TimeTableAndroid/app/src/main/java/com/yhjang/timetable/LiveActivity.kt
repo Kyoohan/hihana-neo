@@ -45,6 +45,35 @@ object LiveActivity {
         CoroutineScope(Dispatchers.Default).launch { update(context) }
     }
 
+    /** 시스템 설정 때문에 실시간 알림이 안 보이는 이유 — 없으면 null. */
+    class BlockedReason(val title: String, val steps: String)
+
+    fun blockedReason(context: Context): BlockedReason? {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!manager.areNotificationsEnabled()) {
+            return BlockedReason("알림이 꺼져 있습니다", "눌러서 하이하나 Neo의 알림을 허용해 주세요.")
+        }
+        val channel = manager.getNotificationChannel(CHANNEL_ID)
+        if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+            return BlockedReason("'실시간 일정' 알림 카테고리가 꺼져 있습니다", "눌러서 알림 카테고리 → 실시간 일정을 켜 주세요.")
+        }
+        if (Build.VERSION.SDK_INT >= 36 && !manager.canPostPromotedNotifications()) {
+            return BlockedReason(
+                "Now Bar 표시가 허용되지 않았습니다",
+                "설정 → 알림 → 고급 설정 → 실시간 정보에서 하이하나 Neo를 켜 주세요. (눌러서 알림 설정 열기)",
+            )
+        }
+        return null
+    }
+
+    /** 이 앱의 시스템 알림 설정 화면을 엽니다. */
+    fun openNotificationSettings(context: Context) {
+        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+    }
+
     /** 지금 상태로 알림을 새로 그리고 다음 갱신을 예약합니다. 꺼져 있으면 알림·예약을 모두 지웁니다. */
     suspend fun update(context: Context) {
         val app = context.applicationContext

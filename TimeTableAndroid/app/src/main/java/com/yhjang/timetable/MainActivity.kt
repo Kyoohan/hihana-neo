@@ -1597,6 +1597,17 @@ private fun SettingsScreen(
                     LiveActivity.setEnabled(context, on)
                     liveOn = on
                 }
+                // 켜져 있는데 시스템이 실시간 알림을 막고 있으면(알림 꺼짐 / Android 16 실시간 정보 거부) 안내 줄을 보여주고,
+                // 누르면 이 앱의 알림 설정으로 보냅니다. 설정에서 돌아올 때(ON_RESUME) 다시 확인합니다.
+                var liveBlocked by remember { mutableStateOf(LiveActivity.blockedReason(context)) }
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner, liveOn) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) liveBlocked = LiveActivity.blockedReason(context)
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
                 OneUiGroupColumn {
                     OneUiListItem(
                         title = "Now Bar에 지금 일정 표시",
@@ -1604,6 +1615,23 @@ private fun SettingsScreen(
                         trailing = { OneUiSwitch(checked = liveOn, onCheckedChange = { setLive(it) }) },
                         onClick = { setLive(!liveOn) },
                     )
+                    val reason = liveBlocked
+                    if (liveOn && reason != null) {
+                        OneUiDivider()
+                        OneUiListItem(
+                            title = reason.title,
+                            subtitle = reason.steps,
+                            titleColor = MaterialTheme.colorScheme.error,
+                            trailing = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = { LiveActivity.openNotificationSettings(context) },
+                        )
+                    }
                 }
             }
 
