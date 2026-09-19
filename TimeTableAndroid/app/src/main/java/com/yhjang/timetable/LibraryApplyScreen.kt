@@ -40,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -244,6 +245,13 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
     }
 }
 
+/** "#efefef" 같은 CSS 16진수 색 → Compose Color (못 읽으면 null). */
+private fun parseHexColor(text: String): Color? {
+    val body = text.trim().removePrefix("#")
+    if (body.length != 6 || body.any { it.lowercaseChar() !in "0123456789abcdef" }) return null
+    return Color(0xFF000000.toInt() or body.toInt(16))
+}
+
 private data class SeatPalette(val free: Color, val taken: Color, val mine: Color, val blocked: Color, val label: Color, val labelOnDark: Color)
 
 @Composable
@@ -291,7 +299,10 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
             label = area.label,
             gridX = (maxX - minX + 1).coerceAtLeast(1),
             gridY = (maxY - minY + 1).coerceAtLeast(1),
-            seats = real.map { it.copy(x = it.x - minX, y = it.y - minY) },
+            // 좌석 범위 안에 있는 벽·기둥 칸(색이 있는 블록)도 함께 — 2-34 와 2-35 사이의 칸막이 같은 구조가 보이게.
+            seats = area.seats
+                .filter { it.x in minX..maxX && it.y in minY..maxY }
+                .map { it.copy(x = it.x - minX, y = it.y - minY) },
         )
     }
     val palette = seatPalette()
@@ -312,7 +323,7 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                 textAlign = android.graphics.Paint.Align.CENTER
             }
         }
-        Box(Modifier.horizontalScroll(rememberScrollState())) {
+        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
             Canvas(
                 Modifier
                     .width(cell * map.gridX)
@@ -328,11 +339,16 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
             ) {
                 map.seats.forEach { seat ->
                     if (seat.x < 0 || seat.y < 0) return@forEach
-                    // 실제 좌석(srt_type 1)만 그립니다 — 표지·통로 칸(2·3)은 격자에 "2, 3, 4…" 같은 숫자만 남겨 어지러웠습니다.
-                    if (!seat.isSeat) return@forEach
                     val left = seat.x * cellPx + gap
                     val top = seat.y * cellPx + gap
                     val size = Size(cellPx - gap * 2, cellPx - gap * 2)
+                    if (!seat.isSeat) {
+                        // 표지·통로 칸(2·3): 글자("2, 3, 4…")는 안 쓰고, 바닥색(#efefef 같은 밝은 회색)이 아닌 색이 있는
+                        // 칸만 — 벽·기둥·칸막이 — 옅게 칠해 실제 도서관 구조가 보이게 합니다.
+                        val wall = seat.color?.let(::parseHexColor)?.takeIf { it.luminance() < 0.85f } ?: return@forEach
+                        drawRoundRect(wall.copy(alpha = 0.45f), Offset(left, top), size, CornerRadius(with(density) { 4.dp.toPx() }))
+                        return@forEach
+                    }
                     val fill = when {
                         seat.mine -> palette.mine
                         seat.available -> palette.free
