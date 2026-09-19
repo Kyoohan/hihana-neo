@@ -88,12 +88,13 @@ object LiquidLens {
             float2 n = normalize(grad + float2(0.0001, 0.0));
 
             // 굴절 — 가운데 살짝 확대, 경사면에서는 법선 방향(바깥)으로 크게 밀어 캡슐 바깥의 화면을 끌어옵니다.
+            // strength 0 이면 굴절·확대 없음 (하단 바 캡슐이 놓여 있을 때) — 아이콘·글자가 찌그러지지 않게.
             float magnify = 1.0 + 0.08 * strength;
             float2 base = c + (p - c) / magnify;
             // dir = +1: 바깥 화면을 끌어옴(하단 바 캡슐, 상자에 여유가 있을 때) / -1: 안쪽을 당겨 두꺼운 유리 가장자리처럼.
-            float2 disp = n * dir * bend * bevelW * (0.9 + 0.35 * strength);
+            float2 disp = n * dir * bend * bevelW * 1.25 * strength;
             // 분산 — 빨강은 더 멀리, 파랑은 덜 굴절되어 대비가 큰 가장자리마다 무지개 테가 생깁니다.
-            float ab = 0.03 + 0.15 * bend;
+            float ab = (0.03 + 0.15 * bend) * strength;
             half r = content.eval(base + disp * (1.0 + ab)).r;
             half4 g = content.eval(base + disp);
             half b = content.eval(base + disp * (1.0 - ab)).b;

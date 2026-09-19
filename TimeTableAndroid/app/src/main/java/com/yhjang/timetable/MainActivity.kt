@@ -933,7 +933,9 @@ private fun TimeTableAppContent(
                 .nestedScroll(headerState.connection),
         ) {
             // 글래스 요소(하단 바·알약)는 소스 바깥에 둬야 자기 자신을 다시 흐리지 않습니다.
-            Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+            // 배경(사진·그레인)도 이 소스 안에 그려야 하단 바·섬 유리가 배경 이미지를 비춥니다 — 루트에만 그리면
+            // 유리 뒤가 비어 검은 바탕색으로 채워졌습니다.
+            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(hazeState)) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -1906,7 +1908,8 @@ private fun AppNavBar(
                                     lensMarginPx, lensMarginPx, size.width - lensMarginPx, size.height - lensMarginPx,
                                 )
                                 lensShader.setFloatUniform("radius", capsuleRadiusPx)
-                                lensShader.setFloatUniform("strength", 0.75f + 0.25f * liquid)
+                                // 놓여 있을 땐 0(굴절 없음), 끌 때만 1로 — 스프링으로 부드럽게.
+                                lensShader.setFloatUniform("strength", liquid)
                                 lensShader.setFloatUniform("lightDir", light.x, light.y)
                                 lensShader.setFloatUniform("time", light.time)
                                 lensShader.setFloatUniform("tint", 1f, 1f, 1f)
