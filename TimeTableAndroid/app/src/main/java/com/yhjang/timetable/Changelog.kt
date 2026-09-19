@@ -8,6 +8,16 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "9.0",
+        listOf(
+            "실시간 일정: 설정에서 켜면 Now Bar·상태 바에 지금 구간과 남은 시간 (평일 아침시간~2타임, 주말 1~4타임)",
+            "교과교실 신청이 시간표에 반영되지 않던 문제 수정 (포털이 GET 조회를 거부해 POST 로 변경)",
+            "배경 이미지: 고른 뒤 화면 비율 틀에서 이동·확대해 자르기, 세로 사진이 눕혀지던 문제 수정",
+            "헤더가 접히면 제목·날짜 섬과 버튼 섬이 각각 액체 유리로 떠 있음",
+            "하단 바 캡슐이 탭 아이콘·글자도 굴절, 처음 켰을 때 캡슐이 비어 보이거나 뒤 본문이 선명하게 비치던 문제 수정",
+        ),
+    ),
+    ChangelogEntry(
         "8.5",
         listOf(
             "하단 바가 진짜 액체 유리로 — 뒤 화면을 흐려 비추는 바, 뒤 화면을 굴절·확대하며 무지개 테가 도는 선택 캡슐 (Android 13+)",
