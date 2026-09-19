@@ -74,6 +74,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -592,6 +593,7 @@ fun OneUiTextField(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val scheme = MaterialTheme.colorScheme
     TextField(
@@ -600,6 +602,7 @@ fun OneUiTextField(
         label = { Text(label) },
         singleLine = singleLine,
         visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
         modifier = modifier,
         textStyle = MaterialTheme.typography.bodyLarge,
         shape = RoundedCornerShape(topStart = OneUi.CornerSmall, topEnd = OneUi.CornerSmall),

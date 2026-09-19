@@ -143,6 +143,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -2799,6 +2801,7 @@ private fun HanaAccountDialog(onDismiss: () -> Unit) {
             value = memId,
             onValueChange = { memId = it },
             label = "아이디",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(4.dp))
@@ -2807,6 +2810,9 @@ private fun HanaAccountDialog(onDismiss: () -> Unit) {
             onValueChange = { memPwd = it },
             label = "비밀번호",
             visualTransformation = PasswordVisualTransformation(),
+            // 키보드에 비밀번호 칸임을 알립니다 — 안 그러면 삼성 키보드가 추천 단어 줄에 입력 중인 비밀번호를
+            // 그대로 보여주고 학습까지 합니다.
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(14.dp))
