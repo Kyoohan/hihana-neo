@@ -1093,12 +1093,11 @@ fun OneUiCollapsingHeader(
                 }
             }
         }
-        // 펼친 상태의 큰 제목 — 오른쪽 액션 버튼 줄과 같은 높이에서 시작합니다 (그 아래에 두면 버튼보다 처져 보였습니다).
-        // 접힐수록 위로 밀려 올라가며 사라지고, 같은 자리에 접힌 제목 섬이 나타납니다.
+        // 펼친 상태의 큰 제목 — 영역 아래쪽에 붙어 있어 접힐수록 툴바 뒤로 밀려 올라가며 사라집니다.
         Column(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 24.dp, top = 4.dp, end = 120.dp)
+                .align(Alignment.BottomStart)
+                .padding(start = 24.dp, end = 120.dp, bottom = 10.dp)
                 .alpha(titleAlpha),
         ) {
             Text(

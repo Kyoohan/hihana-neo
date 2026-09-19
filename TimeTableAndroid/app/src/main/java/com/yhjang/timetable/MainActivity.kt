@@ -111,6 +111,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -838,10 +839,14 @@ private fun TimeTableAppContent(
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작 — 탭을 바꾸면 펼친 상태에서 시작합니다.
     val headerState = rememberOneUiHeaderState()
-    // 탭마다 헤더 접힘 상태를 따로 기억합니다 — 목록을 내린 탭은 접힌 툴바로, 맨 위인 탭은 펼친 제목으로 돌아옵니다.
-    // 예전엔 탭을 바꿀 때마다 무조건 펼쳐서, 내려 둔 목록이 투명한 큰 제목 뒤로 겹쳐 보였습니다.
-    val headerOffsets = remember { mutableStateMapOf<Int, Float>() }
-    LaunchedEffect(tab) { headerState.restore(headerOffsets[tab] ?: 0f) }
+    // 탭을 바꾸면 그 탭은 항상 맨 위에서 다시 시작합니다 — 헤더를 펼치고, 페이지 내용의 스크롤도 초기화합니다
+    // (탭마다 접힘을 기억하는 방식은 스와이프 중 옆 페이지가 먼저 그려지며 꼬여 제목과 목록이 겹쳐 보였습니다).
+    // 페이지 스크롤 초기화는 방문 횟수를 key 로 써서 그 페이지의 저장 상태(LazyListState 등)를 새로 만드는 식입니다.
+    val pageVisits = remember { mutableStateMapOf<Int, Int>() }
+    LaunchedEffect(tab) {
+        headerState.expand()
+        pageVisits[tab] = (pageVisits[tab] ?: 0) + 1
+    }
 
     val selectedMealDate = remember(selectedMealDay) {
         runCatching { LocalDate.parse(selectedMealDay) }.getOrDefault(PlanStore.today())
@@ -929,12 +934,6 @@ private fun TimeTableAppContent(
             // 배경(사진·그레인)도 이 소스 안에 그려야 하단 바·섬 유리가 배경 이미지를 비춥니다 — 루트에만 그리면
             // 유리 뒤가 비어 검은 바탕색으로 채워졌습니다.
             Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(hazeState)) {
-            // 현재 탭의 접힘 상태를 계속 기록합니다 (페이지가 넘어가는 중엔 기록하지 않음). 예전엔 탭이 바뀌는 순간에
-            // 한 번만 저장했는데, 스와이프 중 옆 페이지가 먼저 그려지며 expand() 를 불러 0 이 저장돼 돌아오면 펼쳐졌습니다.
-            LaunchedEffect(Unit) {
-                snapshotFlow { Triple(headerState.offsetPx, pagerState.isScrollInProgress, tab) }
-                    .collect { (offset, scrolling, current) -> if (!scrolling) headerOffsets[current] = offset }
-            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -942,6 +941,7 @@ private fun TimeTableAppContent(
             ) { page ->
             // 이 페이지가 실제로 보이는 탭일 때만 헤더를 건드립니다 — 옆 페이지가 미리 그려질 때 펼치면 안 됩니다.
             val isActivePage = page == tab && !pagerState.isScrollInProgress
+            key(pageVisits[page] ?: 0) {
             when (page) {
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
                 1 -> BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1100,6 +1100,7 @@ private fun TimeTableAppContent(
                     contentPadding = tabContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
             }
             }
             // 포털 시간표 페이지를 JS로 렌더링해 DOM을 읽어올 숨은 WebView — 모든 탭에서 동작하도록 앱 루트에 둡니다.
