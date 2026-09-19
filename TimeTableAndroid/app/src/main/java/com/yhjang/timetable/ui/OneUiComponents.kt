@@ -1093,12 +1093,15 @@ fun OneUiCollapsingHeader(
                 }
             }
         }
-        // 펼친 상태의 큰 제목 — 영역 아래쪽에 붙어 있어 접힐수록 툴바 뒤로 밀려 올라가며 사라집니다.
+        // 펼친 상태의 큰 제목 — 툴바 줄 아래 남은 영역의 세로 가운데 (바닥에 붙이면 아래로 치우쳐 보였습니다).
+        // 접힐수록 영역이 줄어 툴바 뒤로 올라가며 사라집니다.
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 24.dp, end = 120.dp, bottom = 10.dp)
+                .fillMaxHeight()
+                .padding(top = OneUiCompactBarHeight)
+                .padding(start = 24.dp, end = 120.dp)
                 .alpha(titleAlpha),
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 title,
