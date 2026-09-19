@@ -8,6 +8,13 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "9.1",
+        listOf(
+            "실시간 일정이 삼성 Now Bar·상태 바에 뜨도록 (One UI 의 '실시간 정보' 목록에 앱이 올라가지 않던 문제)",
+            "설정 → 실시간 일정: 알림이나 Now Bar 허용이 꺼져 있으면 켜는 방법을 안내하고 바로 설정으로 이동",
+        ),
+    ),
+    ChangelogEntry(
         "9.0",
         listOf(
             "실시간 일정: 설정에서 켜면 Now Bar·상태 바에 지금 구간과 남은 시간 (평일 아침시간~2타임, 주말 1~4타임)",
