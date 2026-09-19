@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 자동 백업(Android 11 이하) 제외 목록 — 암호화된 학사시스템 계정 파일은 기기별 키스토어 키로 잠겨 있어
+     다른 설치로 복원되면 열 수 없으므로 백업하지 않습니다. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="hana_credentials.xml" />
+</full-backup-content>

@@ -43,19 +43,30 @@ object HanaCredentialStore {
         synchronized(this) {
             cached?.let { return it }
             val appContext = context.applicationContext
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val created = EncryptedSharedPreferences.create(
-                appContext,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
+            val created = runCatching { open(appContext) }.getOrElse { first ->
+                // 앱을 지웠다 다시 깔면 자동 백업이 예전 암호화 파일을 되살리는데, 키스토어의 마스터 키는 새로 만들어져
+                // 복호화가 실패합니다(AEADBadTagException) — 예전엔 이게 실행마다 크래시로 이어졌습니다.
+                // 되살릴 방법이 없으니 그 파일을 지우고 새로 만듭니다 (다시 로그인하면 됩니다).
+                Log.w("HanaCredential", "encrypted prefs unreadable, resetting", first)
+                appContext.deleteSharedPreferences(PREFS_NAME)
+                open(appContext)
+            }
             cached = created
             return created
         }
+    }
+
+    private fun open(appContext: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(appContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            appContext,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
     }
 
     fun memId(context: Context): String? = prefs(context).getString(KEY_ID, null)
