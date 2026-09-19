@@ -122,17 +122,20 @@ object HanaLibraryApi {
                 holiday = row.optString("holidayYn") == "Y",
             )
         }
-        // 격자 크기(sro_x × sro_y) 한 장에 구역 하나. 목록은 구역 순서대로 격자 칸 수만큼 이어져 오므로
-        // (10×16 격자에 320칸 = 2구역) 그 크기로 잘라 구역을 나누고, 이름은 그 구역의 좌석에 적힌 clr_area_nm 으로.
+        // 격자 크기(sro_x × sro_y)는 한 장(층) 기준이고, 다른 층은 y 가 그만큼 더해져 이어집니다(10×16 격자에 320칸).
+        // 그래서 y 를 격자 높이로 나눠 층을 가르고, 층 안에서는 y 를 다시 0부터 셉니다.
         val gridX = open?.optInt("sro_x", 0)?.takeIf { it > 0 } ?: ((seats.maxOfOrNull { it.x } ?: 0) + 1)
         val gridY = open?.optInt("sro_y", 0)?.takeIf { it > 0 } ?: ((seats.maxOfOrNull { it.y } ?: 0) + 1)
-        val perArea = (gridX * gridY).coerceAtLeast(1)
-        val areas = seats.chunked(perArea).mapIndexed { index, chunk ->
-            val label = chunk.firstNotNullOfOrNull { it.area } ?: "구역 ${index + 1}"
-            LibraryArea(label, gridX, gridY, chunk)
+        val byFloor = seats.filter { it.x >= 0 && it.y >= 0 }.groupBy { it.y / gridY }.toSortedMap()
+        val areas = byFloor.map { (floor, items) ->
+            val local = items.map { it.copy(y = it.y % gridY) }
+            val label = items.firstNotNullOfOrNull { it.area } ?: if (byFloor.size > 1) "구역 ${floor + 1}" else "좌석"
+            LibraryArea(label, gridX, gridY, local)
         }
         if (seats.isNotEmpty()) {
-            Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
+            Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} x=${seats.minOf { it.x }}..${seats.maxOf { it.x }} y=${seats.minOf { it.y }}..${seats.maxOf { it.y }} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
+            val sample = list?.let { l -> (0 until l.length()).map { l.optJSONObject(it) }.firstOrNull { it?.optString("srt_type") == "1" } }
+            Log.d(TAG, "seat sample: ${sample?.toString()?.take(500)}")
         }
         LibrarySeatMap(areas, null)
     }

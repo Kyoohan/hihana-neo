@@ -182,7 +182,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "빈 자리를 누르면 신청하고, 내 자리를 누르면 취소합니다. 3-x·4-x 는 토의실입니다.",
+                        "빈 자리를 누르면 신청하고, 내 자리를 누르면 취소합니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
@@ -313,16 +313,18 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
             ) {
                 map.seats.forEach { seat ->
                     if (seat.x < 0 || seat.y < 0) return@forEach
+                    // 빈 칸·통로(srt_type 3, 이름 없음)는 아무것도 그리지 않고, 표지(2)는 글자만 씁니다.
+                    if (!seat.isSeat && seat.cont.isBlank()) return@forEach
                     val left = seat.x * cellPx + gap
                     val top = seat.y * cellPx + gap
                     val size = Size(cellPx - gap * 2, cellPx - gap * 2)
                     val fill = when {
-                        !seat.isSeat -> palette.blocked
+                        !seat.isSeat -> null
                         seat.mine -> palette.mine
                         seat.available -> palette.free
                         else -> palette.taken
                     }
-                    drawRoundRect(fill, Offset(left, top), size, CornerRadius(with(density) { 6.dp.toPx() }))
+                    if (fill != null) drawRoundRect(fill, Offset(left, top), size, CornerRadius(with(density) { 6.dp.toPx() }))
                     if (seat.available) {
                         drawRoundRect(
                             palette.mine.copy(alpha = 0.35f), Offset(left, top), size,
