@@ -313,18 +313,17 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
             ) {
                 map.seats.forEach { seat ->
                     if (seat.x < 0 || seat.y < 0) return@forEach
-                    // 빈 칸·통로(srt_type 3, 이름 없음)는 아무것도 그리지 않고, 표지(2)는 글자만 씁니다.
-                    if (!seat.isSeat && seat.cont.isBlank()) return@forEach
+                    // 실제 좌석(srt_type 1)만 그립니다 — 표지·통로 칸(2·3)은 격자에 "2, 3, 4…" 같은 숫자만 남겨 어지러웠습니다.
+                    if (!seat.isSeat) return@forEach
                     val left = seat.x * cellPx + gap
                     val top = seat.y * cellPx + gap
                     val size = Size(cellPx - gap * 2, cellPx - gap * 2)
                     val fill = when {
-                        !seat.isSeat -> null
                         seat.mine -> palette.mine
                         seat.available -> palette.free
                         else -> palette.taken
                     }
-                    if (fill != null) drawRoundRect(fill, Offset(left, top), size, CornerRadius(with(density) { 6.dp.toPx() }))
+                    drawRoundRect(fill, Offset(left, top), size, CornerRadius(with(density) { 6.dp.toPx() }))
                     if (seat.available) {
                         drawRoundRect(
                             palette.mine.copy(alpha = 0.35f), Offset(left, top), size,
@@ -335,7 +334,7 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                     textPaint.color = (if (seat.mine) palette.labelOnDark else palette.label).let { c ->
                         android.graphics.Color.argb((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt())
                     }
-                    textPaint.alpha = if (!seat.isSeat || (!seat.available && !seat.mine)) 140 else 255
+                    textPaint.alpha = if (!seat.available && !seat.mine) 140 else 255
                     drawContext.canvas.nativeCanvas.drawText(
                         label,
                         left + size.width / 2f,
