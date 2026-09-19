@@ -279,7 +279,21 @@ private fun SeatLegend(modifier: Modifier = Modifier) {
  */
 @Composable
 private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier) {
-    val map = area
+    // 좌석이 하나도 없는 행·열은 빼고 촘촘히 — 표지·통로 칸을 안 그리니 빈 공간이 너무 많았습니다.
+    // 남은 행·열의 앞뒤 순서는 그대로라 자리 배치의 상대 위치는 유지됩니다.
+    val map = remember(area) {
+        val real = area.seats.filter { it.isSeat && it.x >= 0 && it.y >= 0 }
+        val xs = real.map { it.x }.distinct().sorted()
+        val ys = real.map { it.y }.distinct().sorted()
+        val xIndex = xs.withIndex().associate { (i, x) -> x to i }
+        val yIndex = ys.withIndex().associate { (i, y) -> y to i }
+        LibraryArea(
+            label = area.label,
+            gridX = xs.size.coerceAtLeast(1),
+            gridY = ys.size.coerceAtLeast(1),
+            seats = real.map { it.copy(x = xIndex.getValue(it.x), y = yIndex.getValue(it.y)) },
+        )
+    }
     val palette = seatPalette()
     val density = LocalDensity.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
