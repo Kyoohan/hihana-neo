@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +77,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     var pending by remember { mutableStateOf<LibrarySeat?>(null) }
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var favoriteArea by remember { mutableStateOf(SeatFavoriteStore.get(context, service)) }
 
     suspend fun loadMap() {
         val id = slotId ?: return
@@ -164,17 +166,38 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     Spacer(Modifier.height(8.dp))
                     SeatLegend(Modifier.padding(horizontal = OneUi.PagePadding))
                     Spacer(Modifier.height(12.dp))
-                    current.areas.forEachIndexed { index, area ->
+                    // 즐겨찾기한 구역이 맨 위로 — 별을 누르면 그 구역이 즐겨찾기가 되고(하나만), 다시 누르면 해제.
+                    val ordered = current.areas.sortedByDescending { it.label == favoriteArea }
+                    ordered.forEachIndexed { index, area ->
                         if (index > 0) Spacer(Modifier.height(18.dp))
-                        if (current.areas.size > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = OneUi.PagePadding, end = OneUi.PagePadding - 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
                                 area.label,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                                modifier = Modifier.weight(1f),
                             )
-                            Spacer(Modifier.height(6.dp))
+                            val starred = area.label == favoriteArea
+                            IconButton(
+                                onClick = {
+                                    favoriteArea = if (starred) null else area.label
+                                    SeatFavoriteStore.set(context, service, favoriteArea)
+                                },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                // 아이콘 코어 세트에는 채운 별만 있어, 즐겨찾기 아니면 옅게 그립니다.
+                                Icon(
+                                    Icons.Filled.Star,
+                                    contentDescription = if (starred) "즐겨찾기 해제" else "즐겨찾기",
+                                    tint = if (starred) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                )
+                            }
                         }
+                        Spacer(Modifier.height(2.dp))
                         SeatGrid(
                             area = area,
                             onSeatTap = { seat -> if (!busy) pending = seat },
@@ -380,5 +403,18 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                 }
             }
         }
+    }
+}
+
+/** 서비스별 즐겨찾기 구역(하나) — 구역 이름으로 저장합니다. */
+object SeatFavoriteStore {
+    private const val PREFS = "seat_favorites"
+    private fun prefs(context: android.content.Context) =
+        context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    fun get(context: android.content.Context, service: SeatService): String? = prefs(context).getString(service.name, null)
+
+    fun set(context: android.content.Context, service: SeatService, area: String?) {
+        prefs(context).edit().apply { if (area == null) remove(service.name) else putString(service.name, area) }.apply()
     }
 }
