@@ -8,6 +8,15 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "8.5",
+        listOf(
+            "하단 바가 진짜 액체 유리로 — 뒤 화면을 흐려 비추는 바, 뒤 화면을 굴절·확대하며 무지개 테가 도는 선택 캡슐 (Android 13+)",
+            "캡슐 반사광을 기울기 센서로 실시간 계산",
+            "설정 → 화면 → '배경 이미지': 사진을 골라 앱 배경으로",
+            "스크롤한 탭에서 다른 탭을 갔다 돌아오면 제목이 겹쳐 보이던 문제, 하단 바 캡슐을 놓을 때 떨리던 문제 수정",
+        ),
+    ),
+    ChangelogEntry(
         "8.4",
         listOf(
             "주말 면학 1~4타임: 포털 타임 이름이 예상과 달라도 날짜 기준으로 해석해 위치를 반영",
