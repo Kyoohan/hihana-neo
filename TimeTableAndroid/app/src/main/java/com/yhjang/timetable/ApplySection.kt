@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,29 +44,32 @@ private sealed interface ApplyHistoryState {
 
 /**
  * 신청·내역 — 서비스마다 "내역"과 "신청하기" 두 동작을 제공합니다.
- * 교과교실은 확인된 GET JSON 으로 앱 안에서 목록을 그리고, JSON 이 아니면 조용히
- * 포털 내역 페이지를 웹뷰로 엽니다. 면학실·도서관은 JSON 스키마를 모르므로 웹뷰로 바로 엽니다.
- * "신청하기"는 세 서비스 모두 실제 신청 페이지를 웹뷰로 엽니다.
+ * 내역은 포털 목록 JSON 으로 앱 안에서 그리고(교과교실·면학실 확인됨), JSON 엔드포인트를 아직 모르는 서비스는
+ * 조용히 포털 내역 페이지를 웹뷰로 엽니다. "신청하기"는 아직 모두 포털 신청 페이지를 웹뷰로 엽니다
+ * (교과교실·외출외박은 계속 웹뷰, 면학실·도서관은 API 를 알아내면 앱 안 화면으로).
  */
 @Composable
 internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var classroomState by remember { mutableStateOf<ApplyHistoryState>(ApplyHistoryState.Idle) }
+    val states = remember { mutableStateMapOf<ApplyService, ApplyHistoryState>() }
+
+    // 아직 API 를 모르는 페이지의 엔드포인트를 로그로 조사합니다 (프로세스당 한 번, 실패해도 조용히).
+    LaunchedEffect(Unit) { runCatching { HanaApplyApi.discoverEndpoints(context) } }
 
     fun openHistory(service: ApplyService) {
         onOpenWeb("$PORTAL_BASE${service.historyPath}", "${service.label} 내역")
     }
 
-    fun loadClassroom() {
-        classroomState = ApplyHistoryState.Loading
+    fun loadHistory(service: ApplyService) {
+        states[service] = ApplyHistoryState.Loading
         scope.launch {
-            classroomState = try {
-                when (val result = HanaApplyApi.fetchClassroomHistory(context)) {
+            states[service] = try {
+                when (val result = HanaApplyApi.fetchHistory(context, service)) {
                     is ClassroomHistory.Rows -> ApplyHistoryState.Rows(result.rows)
                     ClassroomHistory.Unsupported -> {
-                        // JSON 스키마가 아니면 오류를 띄우는 대신 포털 내역 페이지로 넘깁니다.
-                        openHistory(ApplyService.CLASSROOM)
+                        // JSON 엔드포인트를 아직 모르면 오류를 띄우는 대신 포털 내역 페이지로 넘깁니다.
+                        openHistory(service)
                         ApplyHistoryState.Idle
                     }
                 }
@@ -81,10 +86,8 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
         ApplyService.entries.forEach { service ->
             ApplyServiceCard(
                 service = service,
-                state = if (service == ApplyService.CLASSROOM) classroomState else null,
-                onHistory = {
-                    if (service == ApplyService.CLASSROOM) loadClassroom() else openHistory(service)
-                },
+                state = states[service] ?: ApplyHistoryState.Idle,
+                onHistory = { loadHistory(service) },
                 onApply = { onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label) },
             )
         }

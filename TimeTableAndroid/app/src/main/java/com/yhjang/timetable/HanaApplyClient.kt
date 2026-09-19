@@ -53,41 +53,92 @@ object HanaApplyApi {
     /** 진단용 — JSON 이 아닐 때 사용자가 원문을 신고할 수 있게 앞부분만 남깁니다. */
     private const val TAG = "HanaApply"
 
-    suspend fun fetchClassroomHistory(context: Context): ClassroomHistory = withContext(Dispatchers.IO) {
-        val today = PlanStore.today().toString()
-        val response = HanaPortalClient.get().authenticatedRaw(
-            context,
-            "/main/classroom/apply-list.json",
-            params = listOf("searchSDate" to today, "searchEDate" to today),
-            method = "GET",
-            referer = "$BASE/",
+    /** 서비스별 내역 JSON 엔드포인트 후보 — 확인된 것은 하나, 아직 모르는 서비스는 있을 법한 이름을 차례로 시도합니다. */
+    private fun historyEndpoints(service: ApplyService): List<String> = when (service) {
+        ApplyService.CLASSROOM -> listOf("/main/classroom/apply-list.json")
+        ApplyService.STUDY_ROOM -> listOf("/main/studyroom/study-only-req-list.json")
+        ApplyService.LIBRARY -> listOf(
+            "/main/library/library-req-list.json", "/main/library/library-apply-list.json",
+            "/main/library/apply-list.json", "/main/library/library-list.json",
         )
+        ApplyService.OUTING -> listOf(
+            "/main/outing/apply-list.json", "/main/outing/history-list.json",
+            "/main/outing/outing-list.json", "/main/outing/req-list.json",
+        )
+    }
 
-        val json = runCatching { JSONObject(response.body) }.getOrNull()
-        if (json == null) {
-            Log.d(TAG, "[교과교실] JSON 아님 HTTP ${response.code}: ${response.body.take(300)}")
-            return@withContext ClassroomHistory.Unsupported
+    /**
+     * 신청 내역 조회 — 포털 목록 JSON 은 전부 POST 폼(cp/searchSDate/searchEDate/listType)입니다 (GET 은 405).
+     * 최근 7일~앞으로 14일. 어느 후보도 JSON 을 주지 않으면 원문 일부를 로그로 남기고 [ClassroomHistory.Unsupported].
+     */
+    suspend fun fetchHistory(context: Context, service: ApplyService): ClassroomHistory = withContext(Dispatchers.IO) {
+        val today = PlanStore.today()
+        val params = listOf(
+            "cp" to "1",
+            "searchSDate" to today.minusDays(7).toString(),
+            "searchEDate" to today.plusDays(14).toString(),
+            "listType" to "list",
+        )
+        for (path in historyEndpoints(service)) {
+            val response = HanaPortalClient.get().authenticatedRaw(context, path, params, method = "POST", referer = "$BASE/")
+            val json = runCatching { JSONObject(response.body) }.getOrNull()
+            if (json == null) {
+                Log.d(TAG, "[${service.label}] $path JSON 아님 HTTP ${response.code}: ${response.body.take(200).replace('\n', ' ')}")
+                continue
+            }
+            val array = arrayAt(json, "paging.result")
+                ?: json.optJSONArray("list")
+                ?: json.optJSONArray("itemList")
+                ?: json.optJSONArray("result")
+            if (array == null) {
+                Log.d(TAG, "[${service.label}] $path result 배열 없음: ${response.body.take(300)}")
+                continue
+            }
+            if (array.length() > 0) Log.d(TAG, "[${service.label}] $path 첫 행: ${array.optJSONObject(0)?.toString()?.take(600)}")
+            return@withContext ClassroomHistory.Rows(parseRows(array))
         }
+        ClassroomHistory.Unsupported
+    }
 
-        val array = arrayAt(json, "paging.result")
-            ?: json.optJSONArray("list")
-            ?: json.optJSONArray("itemList")
-        if (array == null) {
-            Log.d(TAG, "[교과교실] result 배열 없음 HTTP ${response.code}: ${response.body.take(300)}")
-            return@withContext ClassroomHistory.Unsupported
+    suspend fun fetchClassroomHistory(context: Context): ClassroomHistory = fetchHistory(context, ApplyService.CLASSROOM)
+
+    /**
+     * 진단 — 서비스별 내역·신청 페이지(.do)를 세션으로 받아, 페이지 JS 가 부르는 엔드포인트(.json/.do)와 폼 필드 이름을
+     * 로그로 남깁니다 (`adb logcat -s HanaDiscover`). 아직 API 를 모르는 도서관·외출외박 내역과 면학실·도서관 신청을
+     * 앱 안에서 그리기 위한 사전 조사용이며, 프로세스당 한 번만 돕니다.
+     */
+    @Volatile private var discovered = false
+    suspend fun discoverEndpoints(context: Context) = withContext(Dispatchers.IO) {
+        if (discovered) return@withContext
+        discovered = true
+        val client = HanaPortalClient.get()
+        val urlRegex = Regex("""["'](/main/[A-Za-z0-9_\-/.]+?\.(?:json|do))["']""")
+        val nameRegex = Regex("""name=["']([A-Za-z0-9_\-]+)["']""")
+        val dataRegex = Regex("""data\s*:\s*\{([^}]{0,400})\}""")
+        for (service in ApplyService.entries) {
+            for (path in listOf(service.historyPath, service.applyPath)) {
+                val html = runCatching { client.authenticatedText(context, path) }.getOrNull() ?: continue
+                val urls = urlRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
+                val names = nameRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
+                val datas = dataRegex.findAll(html).map { it.groupValues[1].replace(Regex("\\s+"), " ").take(300) }.distinct().toList()
+                Log.d("HanaDiscover", "== ${service.label} $path (${html.length} chars)")
+                Log.d("HanaDiscover", "urls: $urls")
+                Log.d("HanaDiscover", "names: $names")
+                datas.forEach { Log.d("HanaDiscover", "data: $it") }
+            }
         }
-        ClassroomHistory.Rows(parseRows(array))
     }
 
     private fun parseRows(array: JSONArray): List<HanaApplyRow> =
         (0 until array.length()).mapNotNull { index ->
             array.optJSONObject(index)?.let { row ->
+                // 면학실은 장소(c_place_cd_name) + 층(clr_area_nm) + 자리(srt_cont)를 한 칸에 이어 붙입니다.
+                val place = firstString(row, "room_nm", "slp_nm", "cc_place_nm", "place_nm", "lib_nm", "c_place_cd_name")
+                val seat = listOfNotNull(firstString(row, "clr_area_nm"), firstString(row, "srt_cont", "seat"))
+                    .joinToString(" ").takeIf { it.isNotBlank() }
                 HanaApplyRow(
                     slot = firstString(row, "st_nm", "stNm", "slot_nm", "time_nm", "st_time"),
-                    place = firstString(
-                        row, "room_nm", "slp_nm", "cc_place_nm", "place_nm", "lib_nm",
-                        "c_place_cd_name", "seat", "srt_cont",
-                    ),
+                    place = listOfNotNull(place, seat).joinToString(" ").takeIf { it.isNotBlank() },
                     // cc_cd 같은 원문 상태 코드는 사람이 읽을 수 없어 후보에서 뺐습니다 —
                     // 읽을 수 있는 이름 필드가 하나도 없으면 이 줄은 그냥 표시에서 빠집니다
                     // (ApplySection 의 listOfNotNull 이 null 을 알아서 걸러냅니다).
