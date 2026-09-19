@@ -13,6 +13,8 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.yhjang.timetable.widget.WidgetKindColors
+import com.yhjang.timetable.widget.iconResFor
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -60,7 +62,8 @@ object LiveActivity {
         if (Build.VERSION.SDK_INT >= 36 && !manager.canPostPromotedNotifications()) {
             return BlockedReason(
                 "Now Bar 표시가 허용되지 않았습니다",
-                "설정 → 알림 → 고급 설정 → 실시간 정보에서 하이하나 Neo를 켜 주세요. (눌러서 알림 설정 열기)",
+                "삼성 폰: 설정 → 개발자 옵션 → '모든 앱의 실시간 정보 보기'를 켠 뒤, 설정 → 알림 → 고급 설정 → 실시간 정보에서 " +
+                    "하이하나 Neo가 켜져 있는지 확인해 주세요. (눌러서 알림 설정 열기)",
             )
         }
         return null
@@ -104,7 +107,8 @@ object LiveActivity {
         val block = Timetable.blockAt(today, now) { places[it] }
         val next = Timetable.nextEvent(blocks, block, now)
         ensureChannel(manager)
-        manager.notify(NOTIFICATION_ID, build(app, block, next, now))
+        val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(app) }.getOrDefault(emptyMap()))
+        manager.notify(NOTIFICATION_ID, build(app, block, next, now, kindColors))
 
         // 1분 틱 + 구간 경계엔 정확히 (권한 없으면 틱만).
         val boundary = toMillis(block.end) + 1_000
@@ -117,31 +121,47 @@ object LiveActivity {
         return Timetable.blocks(date) { places[it] }.filter { !it.isBlank }.minOfOrNull { it.start }
     }
 
-    private fun build(context: Context, block: Block, next: Block?, now: LocalDateTime): Notification {
+    private fun build(context: Context, block: Block, next: Block?, now: LocalDateTime, kindColors: Map<Accent, Int>): Notification {
         val remaining = Duration.between(now, block.end).coerceAtLeast(Duration.ZERO)
         val total = Duration.between(block.start, block.end).toMillis().coerceAtLeast(1L)
         val elapsed = Duration.between(block.start, now).toMillis().coerceIn(0L, total)
         val minutes = (remaining.toMillis() / 60_000L).toInt()
         val remainingText = if (minutes >= 60) "${minutes / 60}시간 ${minutes % 60}분 남음" else "${minutes}분 남음"
         val shortText = if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}분"
-        val title = listOfNotNull(block.statusLabel.takeIf { it.isNotBlank() }, block.title.takeIf { it.isNotBlank() })
-            .joinToString(" · ")
-        val room = block.room?.takeIf { it.isNotBlank() }
         val range = "${block.start.format(timeFormat)} – ${block.end.format(timeFormat)}"
-        val text = listOfNotNull(room, range, remainingText).joinToString(" · ")
-        val nextText = next?.let { "다음 · " + listOfNotNull(it.title.takeIf { t -> t.isNotBlank() }, it.room).joinToString(" ") }
+        val nextPlace = next?.let { listOfNotNull(it.title.takeIf { t -> t.isNotBlank() }, it.room).joinToString(" ") }
+            ?.takeIf { it.isNotBlank() }
+        // 제목은 "지금 있어야 할 장소" — 면학이면 장소+자리, 수업이면 과목+교실. 쉬는 시간·식사 같은 대기 구간에는
+        // 다음에 가야 할 장소를 제목에 같이 붙입니다 ("쉬는 시간 → 교과교실 A201").
+        val kind = block.kind
+        val title = when (kind) {
+            is BlockKind.GapKind -> listOfNotNull(kind.gap.label, nextPlace?.let { "→ $it" }).joinToString(" ")
+            else -> listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() }).joinToString(" ")
+                .ifBlank { block.statusLabel }
+        }
+        val text = listOfNotNull(
+            block.statusLabel.takeIf { it.isNotBlank() && kind !is BlockKind.GapKind },
+            range,
+            remainingText,
+        ).joinToString(" · ")
+        val nextText = if (kind is BlockKind.GapKind) null else nextPlace?.let { "다음 · $it" }
+        // 아이콘·색은 위젯과 같은 상황별 아이콘·종류별 색.
+        val icon = iconResFor(block.iconKey)
+        val color = kindColors[block.accent] ?: 0xFF3B82F6.toInt()
 
         val open = PendingIntent.getActivity(
             context, 0, Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         if (Build.VERSION.SDK_INT >= 36) {
+            // 진행률은 0~1000 으로 — 밀리초 그대로(수백만) 넘기면 삼성 Now Bar 가 막대 오른쪽 끝을 잘라 그렸습니다.
+            val permille = (elapsed * 1000L / total).toInt().coerceIn(0, 1000)
             val style = Notification.ProgressStyle()
-                .setProgress(elapsed.toInt())
-                .setProgressSegments(listOf(Notification.ProgressStyle.Segment(total.toInt())))
+                .setProgress(permille)
+                .setProgressSegments(listOf(Notification.ProgressStyle.Segment(1000)))
                 .setProgressTrackerIcon(null)
             return Notification.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_place)
+                .setSmallIcon(icon)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSubText(nextText)
@@ -152,12 +172,13 @@ object LiveActivity {
                 .setContentIntent(open)
                 .setRequestPromotedOngoing(true)
                 .setShortCriticalText(shortText)
-                // 상태 바 칩·Now Bar 가 아이콘 바탕색으로 쓰는 색 (없으면 0x00000000 으로 나갔습니다).
-                .setColor(0xFF3B82F6.toInt())
+                // 상태 바 칩·Now Bar 가 아이콘 바탕색으로 쓰는 색 — 위젯의 종류별 색.
+                .setColor(color)
                 .build()
         }
         return NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_place)
+            .setSmallIcon(icon)
+            .setColor(color)
             .setContentTitle(title)
             .setContentText(text)
             .setSubText(nextText)
