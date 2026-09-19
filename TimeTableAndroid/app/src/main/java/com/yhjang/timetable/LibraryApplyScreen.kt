@@ -55,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yhjang.timetable.ui.OneUi
+import com.yhjang.timetable.ui.OneUiButton
+import com.yhjang.timetable.ui.OneUiButtonStyle
 import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiChip
 import com.yhjang.timetable.ui.OneUiFullScreen
@@ -90,6 +92,10 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         if (notice == current) notice = null
     }
     var favoriteArea by remember { mutableStateOf(SeatFavoriteStore.get(context, service)) }
+    // 신청 기기 — 포털은 마지막으로 등록한 기기에서만 신청을 받습니다. 상태를 보여주고 버튼으로 이 기기를 등록합니다.
+    var deviceRegistered by remember { mutableStateOf<Boolean?>(null) }
+    var registering by remember { mutableStateOf(false) }
+    suspend fun refreshDevice() { deviceRegistered = HanaLibraryApi.isDeviceRegistered(context, service) }
 
     suspend fun loadMap() {
         val id = slotId ?: return
@@ -118,12 +124,14 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             }
             busy = false
             loadMap()
+            runCatching { refreshDevice() }
             onChanged()
         }
     }
 
     LaunchedEffect(Unit) {
         slots = runCatching { HanaLibraryApi.slots(context, service) }.getOrDefault(emptyList())
+        runCatching { refreshDevice() }
         // 오늘이 주말이면 주말 타임을, 아니면 평일 타임을 먼저 고릅니다.
         val weekend = PlanStore.today().dayOfWeek.value >= 6
         slotId = slots.firstOrNull { it.label.contains("휴일") == weekend }?.id
@@ -187,7 +195,46 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     OneUiChip(selected = slot.id == slotId, onClick = { slotId = slot.id }, label = slot.label)
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
+            // 신청 기기 상태 줄.
+            Row(
+                Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    when (deviceRegistered) {
+                        true -> "신청 기기: 이 기기로 등록됨"
+                        false -> "신청 기기: 다른 기기로 등록되어 있음"
+                        null -> "신청 기기: 확인 중"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (deviceRegistered == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (deviceRegistered != true) {
+                    OneUiButton(
+                        text = if (registering) "등록 중" else "이 기기로 등록",
+                        onClick = {
+                            if (registering) return@OneUiButton
+                            registering = true
+                            scope.launch {
+                                notice = try {
+                                    HanaLibraryApi.registerDevice(context, service)
+                                    "이 기기를 신청 기기로 등록했습니다"
+                                } catch (e: Exception) {
+                                    e.message ?: "등록하지 못했습니다"
+                                }
+                                runCatching { refreshDevice() }
+                                registering = false
+                            }
+                        },
+                        style = OneUiButtonStyle.Neutral,
+                        compact = true,
+                        enabled = !registering,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             val current = map
             when {
                 loading && current == null -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {

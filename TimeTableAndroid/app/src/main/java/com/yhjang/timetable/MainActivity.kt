@@ -1793,7 +1793,7 @@ private fun AppNavBar(
     // 캡슐 속 뒤 화면 — 바와 같은 흐림에 살짝 더 밝은 틴트.
     val capsuleFrostStyle = HazeStyle(
         backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
-        tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.06f else 0.16f))),
+        tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.03f else 0.10f))),
         blurRadius = 26.dp,
         noiseFactor = 0.04f,
     )
@@ -1910,7 +1910,7 @@ private fun AppNavBar(
                                 lensShader.setFloatUniform("lightDir", light.x, light.y)
                                 lensShader.setFloatUniform("time", light.time)
                                 lensShader.setFloatUniform("tint", 1f, 1f, 1f)
-                                lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
+                                lensShader.setFloatUniform("tintAlpha", if (isDark) 0.03f else 0.08f)
                                 lensShader.setFloatUniform("dir", 1f)
                                 lensShader.setFloatUniform("rainbow", 0f)
                                 renderEffect = RenderEffect

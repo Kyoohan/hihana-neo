@@ -210,8 +210,15 @@ object HanaLibraryApi {
         LibrarySeatMap(areas, null)
     }
 
-    /** 이 기기를 "마지막 등록 기기"로 만듭니다 — 신청 전에 한 번. */
-    private suspend fun registerDevice(context: Context, service: SeatService) {
+    /** 신청 페이지 JSON 의 deviceChk — 이 기기(세션)가 "마지막 등록 기기"인지. 못 읽으면 null. */
+    suspend fun isDeviceRegistered(context: Context, service: SeatService): Boolean? = withContext(Dispatchers.IO) {
+        val body = runCatching { HanaPortalClient.get().authenticatedText(context, service.applyPage) }.getOrNull()
+            ?: return@withContext null
+        runCatching { JSONObject(body) }.getOrNull()?.takeIf { it.has("deviceChk") }?.optBoolean("deviceChk")
+    }
+
+    /** 이 기기를 "마지막 등록 기기"로 만듭니다 — 신청이 기기 때문에 거절될 때, 또는 사용자가 버튼으로. */
+    suspend fun registerDevice(context: Context, service: SeatService) {
         val json = HanaPortalClient.get().authenticatedJson(
             context, "/main/member/updateDiviceInfo.json", listOf("usegubun" to "L"), referer = BASE + service.applyPage,
         )

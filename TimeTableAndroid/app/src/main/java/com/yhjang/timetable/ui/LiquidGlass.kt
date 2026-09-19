@@ -212,9 +212,9 @@ fun liquidFrostStyle(isDark: Boolean): HazeStyle = HazeStyle(
 fun liquidLensStyle(isDark: Boolean): HazeStyle = HazeStyle(
     backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
     // 틴트는 하단 바 캡슐 속과 같은 옅기 — 그 정도 투명함이 보기 좋았음.
-    tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.06f else 0.16f))),
-    blurRadius = 6.dp,
-    noiseFactor = 0.02f,
+    tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.03f else 0.10f))),
+    blurRadius = 4.dp,
+    noiseFactor = 0.0f,
 )
 
 /**
@@ -252,7 +252,7 @@ fun OneUiLiquidGlassBox(
                             shader.setFloatUniform("lightDir", light.x, light.y)
                             shader.setFloatUniform("time", light.time)
                             shader.setFloatUniform("tint", 1f, 1f, 1f)
-                            shader.setFloatUniform("tintAlpha", if (isDark) 0.06f else 0.14f)
+                            shader.setFloatUniform("tintAlpha", if (isDark) 0.03f else 0.08f)
                             shader.setFloatUniform("dir", -1f)
                             shader.setFloatUniform("rainbow", 0f)
                             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
