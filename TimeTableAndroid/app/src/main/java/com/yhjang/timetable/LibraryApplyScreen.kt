@@ -191,58 +191,61 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 }
             }
         }
-    }
-
-    pending?.let { seat ->
-        val id = slotId ?: return@let
-        val cancelling = seat.mine && seat.sreIdx != null
-        OneUiDialog(
-            onDismissRequest = { if (!busy) pending = null },
-            title = if (cancelling) "${seat.cont} 취소" else "${seat.cont} 신청",
-            buttons = listOf(
-                OneUiDialogButton("닫기", { if (!busy) pending = null }),
-                OneUiDialogButton(if (cancelling) "취소하기" else "신청하기", {
-                    if (busy) return@OneUiDialogButton
-                    busy = true
-                    scope.launch {
-                        notice = try {
-                            if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
-                            else HanaLibraryApi.reserve(context, seat, id, service)
-                        } catch (e: Exception) {
-                            e.message ?: "실패했습니다"
+        // 다이얼로그는 전체 화면(별도 창) 안에서 띄워야 그 화면을 흐린 아크릴 배경이 됩니다 — 밖에 두면 뒤 창을
+        // 잡을 수 없어 흐림이 전혀 없었습니다.
+        pending?.let { seat ->
+            val id = slotId ?: return@let
+            val cancelling = seat.mine && seat.sreIdx != null
+            OneUiDialog(
+                onDismissRequest = { if (!busy) pending = null },
+                title = if (cancelling) "${seat.cont} 취소" else "${seat.cont} 신청",
+                buttons = listOf(
+                    OneUiDialogButton("닫기", { if (!busy) pending = null }),
+                    OneUiDialogButton(if (cancelling) "취소하기" else "신청하기", {
+                        if (busy) return@OneUiDialogButton
+                        busy = true
+                        scope.launch {
+                            notice = try {
+                                if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
+                                else HanaLibraryApi.reserve(context, seat, id, service)
+                            } catch (e: Exception) {
+                                e.message ?: "실패했습니다"
+                            }
+                            busy = false
+                            pending = null
+                            loadMap()
+                            onChanged()
                         }
-                        busy = false
-                        pending = null
-                        loadMap()
-                        onChanged()
+                    }),
+                ),
+            ) {
+                Text(
+                    if (cancelling) "이 타임의 ${service.label} 자리를 취소합니다." else "${slots.firstOrNull { it.id == id }?.label ?: ""} ${service.label} ${seat.cont} 자리를 신청합니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (busy) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OneUiLoading(size = 16.dp, stroke = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("처리 중", style = MaterialTheme.typography.bodySmall)
                     }
-                }),
-            ),
-        ) {
-            Text(
-                if (cancelling) "이 타임의 ${service.label} 자리를 취소합니다." else "${slots.firstOrNull { it.id == id }?.label ?: ""} ${service.label} ${seat.cont} 자리를 신청합니다.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (busy) {
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OneUiLoading(size = 16.dp, stroke = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("처리 중", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
+
+        notice?.let { message ->
+            OneUiDialog(
+                onDismissRequest = { notice = null },
+                title = "${service.label} 신청",
+                buttons = listOf(OneUiDialogButton("확인", { notice = null })),
+            ) {
+                Text(message, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
     }
 
-    notice?.let { message ->
-        OneUiDialog(
-            onDismissRequest = { notice = null },
-            title = "${service.label} 신청",
-            buttons = listOf(OneUiDialogButton("확인", { notice = null })),
-        ) {
-            Text(message, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
 }
 
 /** "#efefef" 같은 CSS 16진수 색 → Compose Color (못 읽으면 null). */
