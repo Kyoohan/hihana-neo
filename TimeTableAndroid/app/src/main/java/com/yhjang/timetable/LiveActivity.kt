@@ -123,6 +123,8 @@ object LiveActivity {
                 .setContentIntent(open)
                 .setRequestPromotedOngoing(true)
                 .setShortCriticalText(shortText)
+                // 상태 바 칩·Now Bar 가 아이콘 바탕색으로 쓰는 색 (없으면 0x00000000 으로 나갔습니다).
+                .setColor(0xFF3B82F6.toInt())
                 .build()
         }
         return NotificationCompat.Builder(context, CHANNEL_ID)
