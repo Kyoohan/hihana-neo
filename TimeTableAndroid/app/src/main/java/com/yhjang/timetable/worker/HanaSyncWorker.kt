@@ -58,6 +58,7 @@ class HanaSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
             HanaSyncGate.clear(applicationContext)
             PlanStore.markSynced(applicationContext)
             TimeTableWidget().updateAll(applicationContext)
+            runCatching { com.yhjang.timetable.LiveActivity.update(applicationContext) }
             Result.success()
         } catch (e: HanaPortalException.LoginFailed) {
             // 비밀번호가 틀렸는데 계속 재시도하면 5회 실패 잠금 위험 — 사용자가 앱을 열어

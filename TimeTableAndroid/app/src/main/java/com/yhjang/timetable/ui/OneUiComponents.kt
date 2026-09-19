@@ -61,8 +61,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -398,14 +400,14 @@ fun OneUiActionPill(
     state: HazeState? = LocalHazeState.current,
     content: @Composable RowScope.() -> Unit,
 ) {
-    Row(
-        modifier = modifier
-            // 흰 카드 위에서도 알약이 읽히도록 카드보다 한 톤 진한 회색을 글래스 바탕으로 씁니다.
-            .oneUiGlassSurface(CircleShape, alpha = pillAlpha, container = MaterialTheme.colorScheme.floatingPill, state = state)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
-    )
+    // 접히면 액체 유리 섬(서리 유리 + 무지개 림)으로 떠오릅니다.
+    OneUiLiquidGlassBox(modifier = modifier, cornerRadius = 24.dp, alpha = pillAlpha) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
 }
 
 // MARK: - 선택 컨트롤
@@ -1032,46 +1034,57 @@ fun OneUiCollapsingHeader(
     val extra = with(density) { (state.rangePx + state.offsetPx).toDp() }
     val titleAlpha = (1f - fraction * 1.6f).coerceIn(0f, 1f)
     val barAlpha = ((fraction - 0.4f) / 0.6f).coerceIn(0f, 1f)
-    // 툴바 글래스 — 라이트는 밝은 반투명, 다크는 짙은 반투명 (키트 Top App Bar 의 1·2번째 변형).
-    val barColor = if (scheme.isDark) Color(0xFF151517) else Color(0xFFF3F4F6)
 
+    // 접히면 가로 전체 바가 아니라, 제목·날짜 섬(왼쪽)과 액션 알약(오른쪽, 호출부)이 각각 액체 유리로 떠 있습니다.
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .oneUiGlassSurface(
-                RectangleShape,
-                alpha = barAlpha,
-                container = barColor,
-                fallback = barColor.copy(alpha = 0.92f),
-            )
+            // 접히면 상태 바 뒤로 지나가는 본문이 시계·배터리를 가리지 않도록 위쪽에 옅은 그라디언트 스크림.
+            .drawBehind {
+                if (barAlpha > 0f) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to scheme.background.copy(alpha = 0.9f * barAlpha),
+                            1f to scheme.background.copy(alpha = 0f),
+                        ),
+                    )
+                }
+            }
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(OneUiCompactBarHeight + extra)
             .clipToBounds(),
     ) {
-        // 접힌 툴바의 작은 제목·부제목 — 오른쪽 액션 알약 자리는 비워 둡니다.
-        Column(
+        // 접힌 제목·날짜 섬 — 오른쪽 액션 알약 자리는 비워 둡니다.
+        OneUiLiquidGlassBox(
             modifier = Modifier
                 .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 4.dp, end = 200.dp)
                 .height(OneUiCompactBarHeight)
-                .padding(start = 24.dp, end = 200.dp)
                 .alpha(barAlpha),
-            verticalArrangement = Arrangement.Center,
+            cornerRadius = 24.dp,
+            alpha = barAlpha,
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         // 펼친 상태의 큰 제목 — 영역 아래쪽에 붙어 있어 접힐수록 툴바 뒤로 밀려 올라가며 사라집니다.

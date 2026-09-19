@@ -261,10 +261,16 @@ class HanaPortalClient private constructor() {
      */
     private fun requestClassrooms(date: LocalDate): Pair<List<HanaClassroomEntry>, String> {
         val day = date.format(DAY_FORMAT)
-        val request = browserLikeRequestBuilder(
-            "$BASE/main/classroom/apply-list.json?searchSDate=$day&searchEDate=$day",
-            referer = "$BASE/",
-        ).get().build()
+        // 면학실 목록과 같은 방식 — 포털은 GET 을 405 로 거부하므로 POST 폼으로 보냅니다.
+        val body = FormBody.Builder()
+            .add("cp", "1")
+            .add("searchSDate", day)
+            .add("searchEDate", day)
+            .add("listType", "list")
+            .build()
+        val request = browserLikeRequestBuilder("$BASE/main/classroom/apply-list.json", referer = "$BASE/")
+            .post(body)
+            .build()
 
         client.newCall(request).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
