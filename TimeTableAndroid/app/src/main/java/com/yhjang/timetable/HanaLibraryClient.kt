@@ -24,6 +24,8 @@ data class LibrarySeat(
     val cont: String,
     val x: Int,
     val y: Int,
+    /** 구역 이름 ("2F" 등) — 빈 칸·블록은 null. */
+    val area: String?,
     val type: String,
     val color: String?,
     val usable: Boolean,
@@ -37,13 +39,16 @@ data class LibrarySeat(
     val available: Boolean get() = isSeat && usable && sreIdx == null && !holiday
 }
 
+/** 구역 하나의 배치도 — 격자 한 장(gridX × gridY)에 놓인 칸들. */
+data class LibraryArea(val label: String, val gridX: Int, val gridY: Int, val seats: List<LibrarySeat>)
+
 data class LibrarySeatMap(
-    val gridX: Int,
-    val gridY: Int,
-    val seats: List<LibrarySeat>,
+    val areas: List<LibraryArea>,
     /** 휴관이면 안내 문구, 아니면 null. */
     val closedMessage: String?,
-)
+) {
+    val seats: List<LibrarySeat> get() = areas.flatMap { it.seats }
+}
 
 object HanaLibraryApi {
 
@@ -51,29 +56,37 @@ object HanaLibraryApi {
     private const val BASE = "https://hh.hana.hs.kr"
     private const val REFERER = "$BASE/main/library/library-apply.do"
 
-    /** 신청 페이지의 타임 선택 옵션이 안 읽힐 때의 기본값 — hhlibres 설정에서 확인된 값. */
+    /** 신청 페이지 응답이 안 읽힐 때의 기본값 — 포털 timeList 에서 확인된 값 (4 = 휴일A 그룹, 1 = 평일 그룹). */
     private val fallbackSlots = listOf(
-        LibrarySlot("1_9", "평일 1타임"),
-        LibrarySlot("1_10", "평일 2타임"),
-        LibrarySlot("4_12", "주말 3타임"),
-        LibrarySlot("4_13", "주말 4타임"),
+        LibrarySlot("1_9", "평일1타임"),
+        LibrarySlot("1_10", "평일2타임"),
+        LibrarySlot("4_12", "휴일1타임"),
+        LibrarySlot("4_13", "휴일2타임"),
     )
 
-    /** 신청 페이지(.do)의 `<option value="1_9">…</option>` 을 읽어 타임 목록을 만듭니다. 못 읽으면 기본값. */
+    /**
+     * 타임 목록 — 신청 페이지(library-apply.do)는 Accept: json 으로 부르면 HTML 대신
+     * `{"deviceChk":…, "timeList":[{stg_idx, stg_nm, st_idx, st_nm, st_time, …}]}` 를 줍니다.
+     * 좌석 API 의 stIdxFull 은 `stg_idx_st_idx` ("4_12") 입니다.
+     */
     suspend fun slots(context: Context): List<LibrarySlot> = withContext(Dispatchers.IO) {
-        val html = runCatching { HanaPortalClient.get().authenticatedText(context, "/main/library/library-apply.do") }
+        val body = runCatching { HanaPortalClient.get().authenticatedText(context, "/main/library/library-apply.do") }
             .getOrNull() ?: return@withContext fallbackSlots
-        val regex = Regex("""<option[^>]*value=["'](\d+_\d+)["'][^>]*>([^<]*)</option>""")
-        val found = regex.findAll(html)
-            .map { LibrarySlot(it.groupValues[1], it.groupValues[2].trim().replace(Regex("\\s+"), " ")) }
-            .distinctBy { it.id }
-            .toList()
-        if (found.isEmpty()) {
-            Log.d(TAG, "slot options not found; html=${html.length} chars, sample=${html.take(200).replace('\n', ' ')}")
-            fallbackSlots
-        } else {
-            found
+        val json = runCatching { JSONObject(body) }.getOrNull()
+        val list = json?.optJSONArray("timeList")
+        if (list == null || list.length() == 0) {
+            Log.d(TAG, "timeList not found; sample=${body.take(300).replace('\n', ' ')}")
+            return@withContext fallbackSlots
         }
+        (0 until list.length()).mapNotNull { i ->
+            val row = list.optJSONObject(i) ?: return@mapNotNull null
+            val group = row.optInt("stg_idx", -1)
+            val idx = row.optInt("st_idx", -1)
+            if (group < 0 || idx < 0) return@mapNotNull null
+            val name = row.optString("st_nm").ifBlank { "타임 $idx" }
+            val time = row.optString("st_time").takeIf { it.isNotBlank() && it != "null" }
+            LibrarySlot("${group}_$idx", if (time != null) "$name $time" else name)
+        }.distinctBy { it.id }.ifEmpty { fallbackSlots }
     }
 
     suspend fun seatMap(context: Context, slotId: String): LibrarySeatMap = withContext(Dispatchers.IO) {
@@ -87,7 +100,7 @@ object HanaLibraryApi {
             throw HanaPortalException.Rejected(json.optString("resMsg").ifBlank { "좌석을 불러오지 못했습니다" })
         }
         if (json.optString("hYn") == "Y") {
-            return@withContext LibrarySeatMap(0, 0, emptyList(), json.optString("hMsg").ifBlank { "휴관일" })
+            return@withContext LibrarySeatMap(emptyList(), json.optString("hMsg").ifBlank { "휴관일" })
         }
         val open = json.optJSONObject("studyRoomOpenVo")
         val list = json.optJSONArray("list")
@@ -95,8 +108,10 @@ object HanaLibraryApi {
             val row = list?.optJSONObject(i) ?: return@mapNotNull null
             LibrarySeat(
                 cont = row.optString("srt_cont"),
-                x = row.optInt("srt_x", -1),
-                y = row.optInt("srt_y", -1),
+                // 포털 좌표는 1부터 시작합니다.
+                x = row.optInt("srt_x", 0) - 1,
+                y = row.optInt("srt_y", 0) - 1,
+                area = row.optString("clr_area_nm").takeIf { it.isNotBlank() && it != "null" },
                 type = row.optString("srt_type"),
                 color = row.optString("srt_color").takeIf { it.isNotBlank() && it != "null" },
                 usable = row.optString("srt_use_yn") == "Y",
@@ -107,11 +122,19 @@ object HanaLibraryApi {
                 holiday = row.optString("holidayYn") == "Y",
             )
         }
-        // 격자 크기가 없으면 좌표 최댓값으로.
+        // 격자 크기(sro_x × sro_y) 한 장에 구역 하나. 목록은 구역 순서대로 격자 칸 수만큼 이어져 오므로
+        // (10×16 격자에 320칸 = 2구역) 그 크기로 잘라 구역을 나누고, 이름은 그 구역의 좌석에 적힌 clr_area_nm 으로.
         val gridX = open?.optInt("sro_x", 0)?.takeIf { it > 0 } ?: ((seats.maxOfOrNull { it.x } ?: 0) + 1)
         val gridY = open?.optInt("sro_y", 0)?.takeIf { it > 0 } ?: ((seats.maxOfOrNull { it.y } ?: 0) + 1)
-        if (seats.isNotEmpty()) Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY seats=${seats.size} first=${list?.optJSONObject(0)?.toString()?.take(300)}")
-        LibrarySeatMap(gridX, gridY, seats, null)
+        val perArea = (gridX * gridY).coerceAtLeast(1)
+        val areas = seats.chunked(perArea).mapIndexed { index, chunk ->
+            val label = chunk.firstNotNullOfOrNull { it.area } ?: "구역 ${index + 1}"
+            LibraryArea(label, gridX, gridY, chunk)
+        }
+        if (seats.isNotEmpty()) {
+            Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
+        }
+        LibrarySeatMap(areas, null)
     }
 
     /** 이 기기를 "마지막 등록 기기"로 만듭니다 — 신청 전에 한 번. */

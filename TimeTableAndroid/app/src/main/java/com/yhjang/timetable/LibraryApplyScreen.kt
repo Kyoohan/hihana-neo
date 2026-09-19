@@ -93,7 +93,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
         slots = runCatching { HanaLibraryApi.slots(context) }.getOrDefault(emptyList())
         // 오늘이 주말이면 주말 타임을, 아니면 평일 타임을 먼저 고릅니다.
         val weekend = PlanStore.today().dayOfWeek.value >= 6
-        slotId = slots.firstOrNull { (it.label.contains("주말") || it.label.contains("휴일")) == weekend }?.id
+        slotId = slots.firstOrNull { it.label.contains("휴일") == weekend }?.id
             ?: slots.firstOrNull()?.id
         if (slotId == null) {
             error = "타임 목록을 불러오지 못했습니다"
@@ -163,11 +163,23 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     SeatLegend(Modifier.padding(horizontal = OneUi.PagePadding))
                     Spacer(Modifier.height(12.dp))
-                    SeatGrid(
-                        map = current,
-                        onSeatTap = { seat -> if (!busy) pending = seat },
-                        modifier = Modifier.padding(horizontal = OneUi.PagePadding),
-                    )
+                    current.areas.forEachIndexed { index, area ->
+                        if (index > 0) Spacer(Modifier.height(18.dp))
+                        if (current.areas.size > 1) {
+                            Text(
+                                area.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        SeatGrid(
+                            area = area,
+                            onSeatTap = { seat -> if (!busy) pending = seat },
+                            modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "빈 자리를 누르면 신청하고, 내 자리를 누르면 취소합니다. 3-x·4-x 는 토의실입니다.",
@@ -266,7 +278,8 @@ private fun SeatLegend(modifier: Modifier = Modifier) {
  * 그보다 넓어지면 가로로 스크롤합니다. 표지·블록(srt_type 2·3)은 연한 칸에 이름만 적습니다.
  */
 @Composable
-private fun SeatGrid(map: LibrarySeatMap, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier) {
+private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier) {
+    val map = area
     val palette = seatPalette()
     val density = LocalDensity.current
     BoxWithConstraints(modifier.fillMaxWidth()) {

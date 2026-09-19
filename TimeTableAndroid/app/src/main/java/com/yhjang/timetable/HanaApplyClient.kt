@@ -118,6 +118,11 @@ object HanaApplyApi {
         for (service in ApplyService.entries) {
             for (path in listOf(service.historyPath, service.applyPath)) {
                 val html = runCatching { client.authenticatedText(context, path) }.getOrNull() ?: continue
+                // Accept: json 으로 부르면 .do 도 HTML 대신 페이지 데이터 JSON 을 주는 경우가 많습니다 — 통째로 남깁니다.
+                if (html.trimStart().startsWith("{") || html.trimStart().startsWith("[")) {
+                    Log.d("HanaDiscover", "== ${service.label} $path JSON: ${html.take(2500)}")
+                    continue
+                }
                 val urls = urlRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
                 val names = nameRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
                 val datas = dataRegex.findAll(html).map { it.groupValues[1].replace(Regex("\\s+"), " ").take(300) }.distinct().toList()
