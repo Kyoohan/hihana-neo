@@ -157,6 +157,10 @@ import com.yhjang.timetable.ui.OneUiCompactBarHeight
 import com.yhjang.timetable.ui.floatingPill
 import androidx.compose.animation.core.animateFloat
 import com.yhjang.timetable.ui.oneUiPageBackground
+import com.yhjang.timetable.ui.PageBackgroundStore
+import com.yhjang.timetable.ui.LocalPageBackground
+import com.yhjang.timetable.ui.rememberPageBackground
+import androidx.activity.result.PickVisualMediaRequest
 import com.yhjang.timetable.ui.systemAccentColor
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -309,18 +313,26 @@ fun TimeTableApp(
         }
     }
 
+    // 배경 사진 — 파일이 바뀔 때마다 버전이 올라가고, 그 키로 비트맵을 다시 읽어 전체 화면에 제공합니다.
+    var backgroundVersion by remember { mutableStateOf(PageBackgroundStore.version(context)) }
+    val pageBackground = rememberPageBackground(backgroundVersion)
+
     TimeTableTheme(accentArgb = accentArgb, darkTheme = darkTheme) {
+        CompositionLocalProvider(LocalPageBackground provides pageBackground) {
         TimeTableAppContent(
             accentArgb = accentArgb,
             onAccentChange = { accentArgb = it },
             appTheme = appTheme,
             onAppThemeChange = { appTheme = it },
+            hasBackgroundPhoto = pageBackground != null,
+            onBackgroundChanged = { backgroundVersion = PageBackgroundStore.version(context) },
             openAlimRequest = openAlimRequest,
             openTabRequest = openTabRequest,
             openBoardRequest = openBoardRequest,
             openPostRequest = openPostRequest,
             resumeSyncRequest = resumeSyncRequest,
         )
+        }
     }
 }
 
@@ -331,6 +343,8 @@ private fun TimeTableAppContent(
     onAccentChange: (Int) -> Unit,
     appTheme: String,
     onAppThemeChange: (String) -> Unit,
+    hasBackgroundPhoto: Boolean,
+    onBackgroundChanged: () -> Unit,
     openAlimRequest: MutableState<Boolean>,
     openTabRequest: MutableState<String?>,
     openBoardRequest: MutableState<Int?>,
@@ -1227,6 +1241,8 @@ private fun TimeTableAppContent(
                 onAppThemeChange(option)
                 scope.launch { PlanStore.setAppTheme(context, option) }
             },
+            hasBackgroundPhoto = hasBackgroundPhoto,
+            onBackgroundChanged = onBackgroundChanged,
             studentGrade = studentGrade,
             onStudentGradeChange = { grade ->
                 studentGrade = grade
@@ -1353,6 +1369,8 @@ private fun SettingsScreen(
     onAccentChange: (Int) -> Unit,
     appTheme: String,
     onAppThemeChange: (String) -> Unit,
+    hasBackgroundPhoto: Boolean,
+    onBackgroundChanged: () -> Unit,
     studentGrade: Int,
     onStudentGradeChange: (Int) -> Unit,
     allergyCodes: Set<Int>,
@@ -1372,6 +1390,7 @@ private fun SettingsScreen(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val connected = remember { HanaCredentialStore.hasCredentials(context) }
     // 설정에서 돌아올 때 권한 상태가 바뀌었을 수 있어 매 그리기마다 다시 읽습니다 (가벼운 시스템 조회).
     val exactAlarmGranted = ExactAlarmPermission.isGranted(context)
@@ -1396,6 +1415,39 @@ private fun SettingsScreen(
                             selected = appTheme == option,
                             label = PlanStore.themeLabel(option),
                             onClick = { onAppThemeChange(option) },
+                        )
+                    }
+                    OneUiDivider()
+                    // 배경 사진 — 시스템 사진 선택기로 한 장 고르면 줄여서 앱 안에 저장합니다.
+                    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                        if (uri != null) {
+                            scope.launch {
+                                if (PageBackgroundStore.save(context, uri)) onBackgroundChanged()
+                            }
+                        }
+                    }
+                    OneUiListItem(
+                        title = "배경 이미지",
+                        subtitle = if (hasBackgroundPhoto) "사진" else "기본",
+                        trailing = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        onClick = {
+                            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    )
+                    if (hasBackgroundPhoto) {
+                        OneUiDivider()
+                        OneUiListItem(
+                            title = "기본 배경으로 되돌리기",
+                            onClick = {
+                                PageBackgroundStore.clear(context)
+                                onBackgroundChanged()
+                            },
                         )
                     }
                 }

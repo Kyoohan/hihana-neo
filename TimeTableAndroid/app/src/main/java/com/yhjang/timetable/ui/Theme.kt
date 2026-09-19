@@ -31,6 +31,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import android.content.Context
 import android.os.Build
@@ -82,9 +84,24 @@ fun Modifier.oneUiPageBackground(): Modifier {
     val dark = MaterialTheme.colorScheme.isDark
     val grain = ImageBitmap.imageResource(LocalContext.current.resources, R.drawable.page_grain_tile)
     val grainBrush = remember(grain) { ShaderBrush(ImageShader(grain, TileMode.Repeated, TileMode.Repeated)) }
+    val photo = LocalPageBackground.current
     return drawBehind {
         val w = size.width
         val h = size.height
+        if (photo != null) {
+            // 사용자가 고른 사진 — 화면을 꽉 채우도록 잘라 그리고, 카드·글자가 읽히도록 테마에 맞는 스크림을 얹습니다.
+            val scale = maxOf(w / photo.width, h / photo.height)
+            val dw = (photo.width * scale).toInt()
+            val dh = (photo.height * scale).toInt()
+            drawImage(
+                photo,
+                dstOffset = IntOffset(((w - dw) / 2f).toInt(), ((h - dh) / 2f).toInt()),
+                dstSize = IntSize(dw, dh),
+            )
+            drawRect(if (dark) Color.Black.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.32f))
+            drawRect(brush = grainBrush, alpha = 0.04f)
+            return@drawBehind
+        }
         if (dark) {
             drawRect(Color(0xFF0B1512))
             drawRect(
