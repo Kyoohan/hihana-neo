@@ -1751,7 +1751,8 @@ private fun AppNavBar(
             // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
             // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
             // 받고 실제 캡슐 모양은 셰이더 안에서 잘라냅니다 (안 그러면 가장자리가 검게 비었습니다).
-            val lensMargin = if (liquidEnabled) 14.dp else 0.dp
+            // margin 은 셰이더 최대 굴절 거리(짧은 반지름 × 0.75 × 1.25 × 1.18 ≈ 28dp)보다 커야 합니다.
+            val lensMargin = if (liquidEnabled) 30.dp else 0.dp
             val lensMarginPx = with(density) { lensMargin.toPx() }
             Box(
                 modifier = Modifier
@@ -1847,9 +1848,10 @@ private fun AppNavBar(
 
 /**
  * 하단 바 캡슐의 "액체 유리" 렌즈 셰이더 (AGSL, Android 13+) — liquidGL 의 개념을 옮긴 것입니다.
- * `content` 는 바 뒤의 실제 화면. 가운데는 살짝 확대(magnify)하고, 가장자리 경사(bevel)에서는 SDF 법선 방향으로
- * 샘플을 밀어 빛이 휘어 들어오는 것처럼 보이게 하며(refraction, 약한 색수차), 얇은 유리 림과 광원을 향한
- * 경사면의 반사광(specular), 천천히 흐르는 광택 띠를 얹습니다. Android 12 이하에서는 null.
+ * `content` 는 바 뒤의 실제 화면. 가운데는 살짝 확대(magnify)하고, 둥글게 깎인 두꺼운 유리 가장자리(원호 단면)에서는
+ * SDF 법선 방향으로 샘플을 크게 밀어 캡슐 바깥 화면이 림 안쪽 띠에 눌려 들어오게 하며(refraction), 빨강·파랑을 다른
+ * 거리로 굴절시켜 무지개 테(dispersion)를 만들고, 테를 따라 색이 도는 분광 림과 광원을 향한 경사면의 반사광(specular),
+ * 천천히 흐르는 광택 띠를 얹습니다. Android 12 이하에서는 null.
  */
 private object LiquidLens {
     private const val AGSL = """
@@ -1867,17 +1869,26 @@ private object LiquidLens {
             return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
         }
 
+        // 코사인 팔레트 — 0..1 위상을 빨→노→초→파→보로 돌려 분광(무지개) 색을 만듭니다.
+        half3 spectrum(float t) {
+            return half3(0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67))));
+        }
+
         half4 main(float2 p) {
             float2 c = (rect.xy + rect.zw) * 0.5;
             float2 halfSize = (rect.zw - rect.xy) * 0.5;
             float d = sdRoundRect(p, c, halfSize, radius);
-            if (d > 0.5) return half4(0.0);
+            float aa = 1.0 - smoothstep(-0.6, 0.6, d);
+            if (aa <= 0.0) return half4(0.0);
 
-            // 경사면 — 짧은 변의 절반 정도 폭. 가운데는 평평, 가장자리로 갈수록 급해집니다.
-            float bevelW = min(halfSize.x, halfSize.y) * 0.62;
-            float edge = clamp(1.0 + d / bevelW, 0.0, 1.0);
-            float profile = edge * edge * (3.0 - 2.0 * edge);
-            profile = profile * profile;
+            // 유리 두께 단면 — 가운데는 평평, 가장자리는 둥글게 깎인 두꺼운 유리(원호). 림에서 기울기가 무한대라
+            // 림 바로 안쪽의 얇은 띠에 바깥 화면이 강하게 눌려 들어오고(iOS 탭 바처럼 아이콘이 겹쳐 보임),
+            // 안쪽으로 갈수록 빠르게 평평해집니다.
+            float minHalf = min(halfSize.x, halfSize.y);
+            float bevelW = minHalf * (0.55 + 0.20 * strength);
+            float u = clamp(1.0 + d / bevelW, 0.0, 1.0);   // 0 = 평평한 안쪽, 1 = 림
+            float h = sqrt(max(1.0 - u * u, 0.0));         // 원호 높이
+            float bend = 1.0 - h;                          // 굴절량: 림에서 1 로 급격히
 
             float eps = 1.0;
             float2 grad = float2(
@@ -1886,14 +1897,15 @@ private object LiquidLens {
             );
             float2 n = normalize(grad + float2(0.0001, 0.0));
 
-            // 굴절 — 가운데 확대 + 경사면에서 바깥으로 크게 밀어, 캡슐 가장자리에 뒤 화면이 늘어져 비칩니다.
-            float magnify = 1.0 + 0.10 * strength;
+            // 굴절 — 가운데 살짝 확대, 경사면에서는 법선 방향(바깥)으로 크게 밀어 캡슐 바깥의 화면을 끌어옵니다.
+            float magnify = 1.0 + 0.08 * strength;
             float2 base = c + (p - c) / magnify;
-            float2 disp = n * profile * bevelW * (0.55 + 0.45 * strength);
-            float ab = 1.0 + 0.045 * profile;
-            half r = content.eval(base + disp * ab).r;
+            float2 disp = n * bend * bevelW * (0.9 + 0.35 * strength);
+            // 분산 — 빨강은 더 멀리, 파랑은 덜 굴절되어 대비가 큰 가장자리마다 무지개 테가 생깁니다.
+            float ab = 0.03 + 0.15 * bend;
+            half r = content.eval(base + disp * (1.0 + ab)).r;
             half4 g = content.eval(base + disp);
-            half b = content.eval(base + disp / ab).b;
+            half b = content.eval(base + disp * (1.0 - ab)).b;
             half3 col = half3(r, g.g, b);
 
             // 서리 틴트 (맑은 유리라 옅게).
@@ -1902,19 +1914,28 @@ private object LiquidLens {
             // 반사광 — 광원을 향한 경사면은 밝고, 반대편은 살짝 그늘.
             float2 l = normalize(lightDir + float2(0.0001, 0.0));
             float facing = dot(n, l);
-            float bevelLight = pow(clamp(facing, 0.0, 1.0), 3.0) * profile;
-            float shade = clamp(-facing, 0.0, 1.0) * profile;
-            // 얇은 유리 림 — 가장자리 1.5px 안쪽에 밝은 선, 광원 쪽이 더 밝음.
-            float rim = (1.0 - smoothstep(0.0, 1.8, -d)) * (0.35 + 0.65 * clamp(facing, 0.0, 1.0));
+            float lit = clamp(facing, 0.0, 1.0);
+            float bevelLight = pow(lit, 2.0) * bend;
+            float shade = clamp(-facing, 0.0, 1.0) * bend;
+
+            // 무지개 림 — 유리 가장자리에서 빛이 분광되어 색이 갈라집니다. 테를 따라 돌면서 색이 바뀌고,
+            // 광원(기울기)과 시간에 따라 천천히 흐릅니다. 림 3px 는 진하게, 경사 띠 전체엔 옅게.
+            float angle = atan(n.y, n.x) / 6.28318;
+            float phase = angle * 1.6 + u * 0.9 + facing * 0.25 + time * 0.05;
+            half3 irid = mix(half3(1.0), spectrum(phase), 0.7);
+            float rim = (1.0 - smoothstep(0.0, 3.0, -d)) * (0.45 + 0.55 * lit);
+            float band = bend * bend * (0.35 + 0.65 * lit);
             // 광택 띠 — 광원에 수직으로 가로지르는 넓은 하이라이트가 천천히 지나갑니다.
             float2 perp = float2(-l.y, l.x);
-            float band = dot(p - c, perp) / max(halfSize.x, 1.0);
+            float across = dot(p - c, perp) / max(halfSize.x, 1.0);
             float sweep = sin(time * 0.5) * 0.9;
-            float sheen = exp(-pow((band - sweep) * 2.6, 2.0)) * (1.0 - profile);
+            float sheen = exp(-pow((across - sweep) * 2.6, 2.0)) * (1.0 - bend);
 
-            col += half3(rim * 0.55 + bevelLight * 0.32 + sheen * 0.10 + 0.02);
-            col -= half3(shade * 0.10);
-            return half4(col, 1.0);
+            // 더하기가 아니라 섞기: 밝은 화면 위에서도 흰색으로 날아가지 않고 색 테가 보입니다.
+            col = mix(col, irid, half(clamp(rim * 0.8 + band * 0.28, 0.0, 1.0)));
+            col += half3(bevelLight * 0.18 + sheen * 0.08 + 0.02);
+            col -= half3(shade * 0.08);
+            return half4(clamp(col, 0.0, 1.0), 1.0) * half(aa);
         }
     """
 
