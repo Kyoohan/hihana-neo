@@ -1923,19 +1923,19 @@ private fun AppNavBar(
                                     .asComposeRenderEffect()
                             }
                         }
-                        .then(if (liquidEnabled) Modifier else Modifier.background(selectedCapsuleColor)),
+                        // 렌즈 속 그림 = 바와 똑같이 서리 유리로 흐린 뒤 화면 + 그 위에 또렷한 탭 아이콘·글자 층.
+                        // 서리 유리는 렌즈 graphicsLayer 와 같은 노드에 겁니다 — 자식 Box 에 걸면 삼성 기기에서 자식의
+                        // 블러가 적용되지 않아 캡슐 속 본문이 거의 선명하게 비쳤습니다 (에뮬레이터에선 멀쩡).
+                        // 매 프레임 다시 그립니다(light.time 읽기) — 처음 켰을 때 캡슐이 비어 보이던 문제를 막습니다.
+                        .then(
+                            if (liquidEnabled && hazeState != null) {
+                                Modifier.drawBehind { light.time }.hazeEffect(hazeState, capsuleFrostStyle)
+                            } else {
+                                Modifier.background(selectedCapsuleColor)
+                            },
+                        ),
                 ) {
                     if (liquidEnabled && hazeState != null) {
-                        // 렌즈 속 그림 = 바와 똑같이 서리 유리로 흐린 뒤 화면 + 그 위에 또렷한 탭 아이콘·글자 층.
-                        // 뒤 화면을 그대로 비추면 본문 글자가 캡슐 안에 선명하게 보여 "본문까지 유리가 씌워진" 것처럼 보였습니다.
-                        // 두 층 모두 매 프레임 다시 그립니다(light.time 읽기) — Haze 가 아이콘 층의 변화를 못 알아채
-                        // 처음 켰을 때 캡슐이 비어 보이거나 이전 그림이 남는 문제를 막습니다.
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .drawBehind { light.time }
-                                .hazeEffect(hazeState, capsuleFrostStyle),
-                        )
                         // 그 위에 탭 아이콘·글자를 한 번 더 — 아래 Row 와 같은 자리에 겹치게 놓아 렌즈가 굴절합니다.
                         // (Row 를 haze 소스로 등록해 가져오는 방식은 첫 프레임에 비거나 뒤 화면이 새어 나와 버렸습니다.)
                         Box(
