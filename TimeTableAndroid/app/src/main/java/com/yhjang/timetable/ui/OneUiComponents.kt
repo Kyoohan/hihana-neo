@@ -849,6 +849,8 @@ fun OneUiFullScreen(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
+    /** 콘텐츠 위에 뜨는 것(팝업 등) — 콘텐츠의 haze 소스 밖에 놓여 액체 유리로 콘텐츠를 흐려 비출 수 있습니다. */
+    overlay: (@Composable BoxScope.(PaddingValues) -> Unit)? = null,
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -947,6 +949,7 @@ fun OneUiFullScreen(
                         OneUiActionPill(pillAlpha = glass, state = hazeState, content = actions)
                     }
                 }
+                overlay?.invoke(this, PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
             }
         }
         }

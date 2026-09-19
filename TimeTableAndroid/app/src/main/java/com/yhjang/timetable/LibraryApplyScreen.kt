@@ -145,6 +145,30 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 Icon(Icons.Default.Refresh, contentDescription = "새로고침")
             }
         },
+        // 팝업은 콘텐츠의 haze 소스 안에 두면 유리가 아무것도 못 비춰(자기 소스 안의 효과는 제외됨) 글자만 떴습니다.
+        overlay = { toolbar ->
+        // 결과는 아래쪽 알약 팝업으로 잠깐 보여줍니다 (다이얼로그 없이).
+        AnimatedVisibility(
+            visible = notice != null,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = toolbar.calculateBottomPadding() + 24.dp)
+                .padding(horizontal = OneUi.PagePadding),
+        ) {
+            // 헤더 섬과 같은 액체 유리(서리 + 무지개 림 + 반사광) 알약.
+            OneUiLiquidGlassBox(cornerRadius = 22.dp, strength = 0.8f) {
+                Text(
+                    noticeShown,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 13.dp),
+                )
+            }
+        }
+        },
     ) { toolbar ->
         Column(
             Modifier
@@ -238,27 +262,6 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                     )
                 }
-            }
-        }
-        // 결과는 아래쪽 알약 팝업으로 잠깐 보여줍니다 (다이얼로그 없이).
-        AnimatedVisibility(
-            visible = notice != null,
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { it / 2 },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = toolbar.calculateBottomPadding() + 24.dp)
-                .padding(horizontal = OneUi.PagePadding),
-        ) {
-            // 헤더 섬과 같은 액체 유리(서리 + 무지개 림 + 반사광) 알약.
-            OneUiLiquidGlassBox(cornerRadius = 22.dp, strength = 0.8f) {
-                Text(
-                    noticeShown,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 13.dp),
-                )
             }
         }
     }
