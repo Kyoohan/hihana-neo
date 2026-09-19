@@ -52,6 +52,7 @@ object LiquidLens {
         uniform float3 tint;
         uniform float tintAlpha;
         uniform float dir;
+        uniform float rainbow;
 
         float sdRoundRect(float2 p, float2 c, float2 halfSize, float r) {
             float2 q = abs(p - c) - (halfSize - r);
@@ -112,7 +113,8 @@ object LiquidLens {
             // 광원(기울기)과 시간에 따라 천천히 흐릅니다. 림 3px 는 진하게, 경사 띠 전체엔 옅게.
             float angle = atan(n.y, n.x) / 6.28318;
             float phase = angle * 1.6 + u * 0.9 + facing * 0.25 + time * 0.05;
-            half3 irid = mix(half3(1.0), spectrum(phase), 0.7);
+            // rainbow 0 이면 흰 림만, 1 이면 분광 림.
+            half3 irid = mix(half3(1.0), spectrum(phase), half(rainbow));
             float rim = (1.0 - smoothstep(0.0, 3.0, -d)) * (0.45 + 0.55 * lit);
             float band = bend * bend * (0.35 + 0.65 * lit);
             // 광택 띠 — 광원에 수직으로 가로지르는 넓은 하이라이트가 천천히 지나갑니다.
@@ -122,7 +124,7 @@ object LiquidLens {
             float sheen = exp(-pow((across - sweep) * 2.6, 2.0)) * (1.0 - bend);
 
             // 더하기가 아니라 섞기: 밝은 화면 위에서도 흰색으로 날아가지 않고 색 테가 보입니다.
-            col = mix(col, irid, half(clamp(rim * 0.8 + band * 0.28, 0.0, 1.0)));
+            col = mix(col, irid, half(clamp(rim * 0.6 + band * 0.18, 0.0, 1.0)));
             col += half3(bevelLight * 0.18 + sheen * 0.08 + 0.02);
             col -= half3(shade * 0.08);
             return half4(clamp(col, 0.0, 1.0), 1.0) * half(aa);
@@ -209,7 +211,8 @@ fun liquidFrostStyle(isDark: Boolean): HazeStyle = HazeStyle(
  */
 fun liquidLensStyle(isDark: Boolean): HazeStyle = HazeStyle(
     backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
-    tints = listOf(HazeTint(if (isDark) Color(0xFF16181B).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f))),
+    // 틴트는 하단 바 캡슐 속과 같은 옅기 — 그 정도 투명함이 보기 좋았음.
+    tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.06f else 0.16f))),
     blurRadius = 6.dp,
     noiseFactor = 0.02f,
 )
@@ -251,6 +254,7 @@ fun OneUiLiquidGlassBox(
                             shader.setFloatUniform("tint", 1f, 1f, 1f)
                             shader.setFloatUniform("tintAlpha", if (isDark) 0.06f else 0.14f)
                             shader.setFloatUniform("dir", -1f)
+                            shader.setFloatUniform("rainbow", 0f)
                             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
                         }
                         .hazeEffect(hazeState, liquidLensStyle(isDark)) { inputScale = HazeInputScale.None },

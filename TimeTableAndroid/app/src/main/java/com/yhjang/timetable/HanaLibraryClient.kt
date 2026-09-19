@@ -219,13 +219,18 @@ object HanaLibraryApi {
     }
 
     /** 좌석 신청 — 성공하면 서버 문구(없으면 "신청되었습니다"), 실패하면 예외 메시지에 서버 문구. */
+    /**
+     * 좌석 신청 — 포털은 "마지막으로 등록한 기기"에서만 신청을 받습니다. 매번 등록하면 다른 기기(브라우저·예약 봇)의
+     * 등록을 계속 빼앗으므로, 먼저 그냥 신청해 보고 기기 때문에 거절될 때만 이 기기를 등록하고 한 번 더 시도합니다.
+     */
     suspend fun reserve(context: Context, seat: LibrarySeat, slotId: String, service: SeatService = SeatService.LIBRARY): String = withContext(Dispatchers.IO) {
-        registerDevice(context, service)
-        val json = firstJson(
-            context, service.reservePaths,
-            listOf("clrIdx" to seat.clrIdx.toString(), "srtIdx" to seat.srtIdx.toString(), "stIdxFull" to slotId),
-            referer = BASE + service.applyPage,
-        )
+        val params = listOf("clrIdx" to seat.clrIdx.toString(), "srtIdx" to seat.srtIdx.toString(), "stIdxFull" to slotId)
+        var json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage)
+        if (json.optString("result") != "success" && json.optString("resMsg").contains("기기")) {
+            Log.d(TAG, "device not registered here — registering and retrying")
+            registerDevice(context, service)
+            json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage)
+        }
         val message = json.optString("resMsg").ifBlank { null }
         if (json.optString("result") != "success") {
             throw HanaPortalException.Rejected(message ?: "신청하지 못했습니다")

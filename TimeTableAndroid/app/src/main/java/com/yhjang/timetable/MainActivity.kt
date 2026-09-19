@@ -1912,6 +1912,7 @@ private fun AppNavBar(
                                 lensShader.setFloatUniform("tint", 1f, 1f, 1f)
                                 lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
                                 lensShader.setFloatUniform("dir", 1f)
+                                lensShader.setFloatUniform("rainbow", 0f)
                                 renderEffect = RenderEffect
                                     .createRuntimeShaderEffect(lensShader, "content")
                                     .asComposeRenderEffect()
