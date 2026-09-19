@@ -59,6 +59,7 @@ import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiChip
 import com.yhjang.timetable.ui.OneUiFullScreen
 import com.yhjang.timetable.ui.OneUiLoading
+import com.yhjang.timetable.ui.OneUiLiquidGlassBox
 import com.yhjang.timetable.ui.isDark
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -249,14 +250,15 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 .padding(bottom = toolbar.calculateBottomPadding() + 24.dp)
                 .padding(horizontal = OneUi.PagePadding),
         ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(if (MaterialTheme.colorScheme.isDark) Color(0xFF2A2A2E) else Color(0xFF1F2937))
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(noticeShown, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+            // 헤더 섬과 같은 액체 유리(서리 + 무지개 림 + 반사광) 알약.
+            OneUiLiquidGlassBox(cornerRadius = 22.dp, strength = 0.8f) {
+                Text(
+                    noticeShown,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 13.dp),
+                )
             }
         }
     }
