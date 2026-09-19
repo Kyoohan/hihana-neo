@@ -49,7 +49,7 @@ private sealed interface ApplyHistoryState {
  * (교과교실·외출외박은 계속 웹뷰, 면학실·도서관은 API 를 알아내면 앱 안 화면으로).
  */
 @Composable
-internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit, onOpenLibrary: () -> Unit) {
+internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit, onOpenSeats: (SeatService) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val states = remember { mutableStateMapOf<ApplyService, ApplyHistoryState>() }
@@ -88,10 +88,13 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
                 service = service,
                 state = states[service] ?: ApplyHistoryState.Idle,
                 onHistory = { loadHistory(service) },
-                // 도서관은 앱 안 좌석 화면, 나머지(교과교실·면학실·외출외박)는 포털 신청 페이지.
+                // 도서관·면학실은 앱 안 좌석 화면, 교과교실·외출외박은 포털 신청 페이지.
                 onApply = {
-                    if (service == ApplyService.LIBRARY) onOpenLibrary()
-                    else onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label)
+                    when (service) {
+                        ApplyService.LIBRARY -> onOpenSeats(SeatService.LIBRARY)
+                        ApplyService.STUDY_ROOM -> onOpenSeats(SeatService.STUDY_ROOM)
+                        else -> onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label)
+                    }
                 },
             )
         }

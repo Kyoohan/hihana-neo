@@ -65,7 +65,7 @@ import kotlin.math.floor
  * 신청 규칙(같은 저녁에 면학실을 잡았으면 도서관 불가 등)은 서버 문구를 그대로 보여줍니다.
  */
 @Composable
-fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
+fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var slots by remember { mutableStateOf<List<LibrarySlot>>(emptyList()) }
@@ -82,7 +82,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
         loading = true
         error = null
         map = try {
-            HanaLibraryApi.seatMap(context, id)
+            HanaLibraryApi.seatMap(context, id, service)
         } catch (e: Exception) {
             error = e.message ?: "좌석을 불러오지 못했습니다"
             null
@@ -91,7 +91,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        slots = runCatching { HanaLibraryApi.slots(context) }.getOrDefault(emptyList())
+        slots = runCatching { HanaLibraryApi.slots(context, service) }.getOrDefault(emptyList())
         // 오늘이 주말이면 주말 타임을, 아니면 평일 타임을 먼저 고릅니다.
         val weekend = PlanStore.today().dayOfWeek.value >= 6
         slotId = slots.firstOrNull { it.label.contains("휴일") == weekend }?.id
@@ -105,7 +105,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
     LaunchedEffect(slotId) { if (slotId != null) loadMap() }
 
     OneUiFullScreen(
-        title = "도서관 신청",
+        title = "${service.label} 신청",
         subtitle = slots.firstOrNull { it.id == slotId }?.label,
         onDismiss = onDismiss,
         actions = {
@@ -206,8 +206,8 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
                     busy = true
                     scope.launch {
                         notice = try {
-                            if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!)
-                            else HanaLibraryApi.reserve(context, seat, id)
+                            if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
+                            else HanaLibraryApi.reserve(context, seat, id, service)
                         } catch (e: Exception) {
                             e.message ?: "실패했습니다"
                         }
@@ -220,7 +220,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
             ),
         ) {
             Text(
-                if (cancelling) "이 타임의 도서관 자리를 취소합니다." else "${slots.firstOrNull { it.id == id }?.label ?: ""} 도서관 ${seat.cont} 자리를 신청합니다.",
+                if (cancelling) "이 타임의 ${service.label} 자리를 취소합니다." else "${slots.firstOrNull { it.id == id }?.label ?: ""} ${service.label} ${seat.cont} 자리를 신청합니다.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (busy) {
@@ -237,7 +237,7 @@ fun LibraryApplyScreen(onDismiss: () -> Unit, onChanged: () -> Unit) {
     notice?.let { message ->
         OneUiDialog(
             onDismissRequest = { notice = null },
-            title = "도서관 신청",
+            title = "${service.label} 신청",
             buttons = listOf(OneUiDialogButton("확인", { notice = null })),
         ) {
             Text(message, style = MaterialTheme.typography.bodyMedium)
@@ -343,10 +343,12 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                     val top = seat.y * cellPx + gap
                     val size = Size(cellPx - gap * 2, cellPx - gap * 2)
                     if (!seat.isSeat) {
-                        // 표지·통로 칸(2·3): 글자("2, 3, 4…")는 안 쓰고, 바닥색(#efefef 같은 밝은 회색)이 아닌 색이 있는
-                        // 칸만 — 벽·기둥·칸막이 — 옅게 칠해 실제 도서관 구조가 보이게 합니다.
-                        val wall = seat.color?.let(::parseHexColor)?.takeIf { it.luminance() < 0.85f } ?: return@forEach
-                        drawRoundRect(wall.copy(alpha = 0.45f), Offset(left, top), size, CornerRadius(with(density) { 4.dp.toPx() }))
+                        // 통로 칸(3)은 비워 두고, 표지(2: "입구", "토의실 A", "2F입구")는 글자만 씁니다.
+                        if (seat.type == "2" && seat.cont.isNotBlank()) {
+                            textPaint.color = android.graphics.Color.argb(160, (palette.label.red * 255).toInt(), (palette.label.green * 255).toInt(), (palette.label.blue * 255).toInt())
+                            textPaint.alpha = 160
+                            drawContext.canvas.nativeCanvas.drawText(seat.cont, left + size.width / 2f, top + size.height / 2f + labelPx * 0.35f, textPaint)
+                        }
                         return@forEach
                     }
                     val fill = when {

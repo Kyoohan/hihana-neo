@@ -433,7 +433,7 @@ private fun TimeTableAppContent(
     var boardError by remember { mutableStateOf<String?>(null) }
     // 앱 내 웹뷰로 띄울 페이지 (null 이면 닫힘) — 게시글·신청·내역 페이지 공용
     var webPage by remember { mutableStateOf<HanaWebPage?>(null) }
-    var showingLibraryApply by remember { mutableStateOf(false) }
+    var seatService by remember { mutableStateOf<SeatService?>(null) }
 
     // 알리미
     var alimList by remember { mutableStateOf<List<HanaAlim>>(emptyList()) }
@@ -1046,7 +1046,7 @@ private fun TimeTableAppContent(
                     onRetryBoard = { scope.launch { loadBoard(true) } },
                     onOpenPost = { openBoardPost(it) },
                     onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
-                    onOpenLibrary = { showingLibraryApply = true },
+                    onOpenSeats = { seatService = it },
                     onOpenAccount = { showingAccountSheet = true },
                     contentPadding = tabContentPadding,
                     headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
@@ -1255,9 +1255,10 @@ private fun TimeTableAppContent(
         )
     }
 
-    if (showingLibraryApply) {
+    seatService?.let { service ->
         LibraryApplyScreen(
-            onDismiss = { showingLibraryApply = false },
+            service = service,
+            onDismiss = { seatService = null },
             // 자리를 잡거나 취소하면 오늘·주·위젯의 면학 위치를 바로 새로 받습니다.
             onChanged = { scope.launch { syncFromHana() } },
         )
