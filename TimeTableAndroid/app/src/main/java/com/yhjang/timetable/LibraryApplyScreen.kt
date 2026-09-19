@@ -1,5 +1,10 @@
 package com.yhjang.timetable
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -52,11 +57,10 @@ import androidx.compose.ui.unit.sp
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiChip
-import com.yhjang.timetable.ui.OneUiDialog
-import com.yhjang.timetable.ui.OneUiDialogButton
 import com.yhjang.timetable.ui.OneUiFullScreen
 import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.isDark
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.floor
 
@@ -74,9 +78,16 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     var map by remember { mutableStateOf<LibrarySeatMap?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var pending by remember { mutableStateOf<LibrarySeat?>(null) }
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    // 팝업이 사라지는 애니메이션 동안에도 글자가 남아 있도록 마지막 문구를 따로 둡니다.
+    var noticeShown by remember { mutableStateOf("") }
+    LaunchedEffect(notice) {
+        val current = notice ?: return@LaunchedEffect
+        noticeShown = current
+        delay(2600)
+        if (notice == current) notice = null
+    }
     var favoriteArea by remember { mutableStateOf(SeatFavoriteStore.get(context, service)) }
 
     suspend fun loadMap() {
@@ -87,9 +98,27 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             HanaLibraryApi.seatMap(context, id, service)
         } catch (e: Exception) {
             error = e.message ?: "좌석을 불러오지 못했습니다"
-            null
+            map
         }
         loading = false
+    }
+
+    /** 좌석을 누르면 확인 없이 바로 — 빈 자리는 신청, 내 자리는 취소. 결과 문구는 아래 팝업으로. */
+    fun act(seat: LibrarySeat) {
+        val id = slotId ?: return
+        val cancelling = seat.mine && seat.sreIdx != null
+        busy = true
+        scope.launch {
+            notice = try {
+                if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
+                else HanaLibraryApi.reserve(context, seat, id, service)
+            } catch (e: Exception) {
+                e.message ?: "실패했습니다"
+            }
+            busy = false
+            loadMap()
+            onChanged()
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -136,7 +165,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             Spacer(Modifier.height(12.dp))
             val current = map
             when {
-                loading -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
+                loading && current == null -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
                     OneUiLoading(size = 18.dp, stroke = 2.dp)
                     Spacer(Modifier.width(10.dp))
                     Text("좌석을 불러오는 중", style = MaterialTheme.typography.bodyMedium)
@@ -196,13 +225,13 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         Spacer(Modifier.height(2.dp))
                         SeatGrid(
                             area = area,
-                            onSeatTap = { seat -> if (!busy) pending = seat },
+                            onSeatTap = { seat -> if (!busy) act(seat) },
                             modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                         )
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "빈 자리를 누르면 신청하고, 내 자리를 누르면 취소합니다.",
+                        "빈 자리를 누르면 바로 신청되고, 내 자리를 누르면 취소됩니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
@@ -210,61 +239,27 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 }
             }
         }
-        // 다이얼로그는 전체 화면(별도 창) 안에서 띄워야 그 화면을 흐린 아크릴 배경이 됩니다 — 밖에 두면 뒤 창을
-        // 잡을 수 없어 흐림이 전혀 없었습니다.
-        pending?.let { seat ->
-            val id = slotId ?: return@let
-            val cancelling = seat.mine && seat.sreIdx != null
-            OneUiDialog(
-                onDismissRequest = { if (!busy) pending = null },
-                title = if (cancelling) "${seat.cont} 취소" else "${seat.cont} 신청",
-                buttons = listOf(
-                    OneUiDialogButton("닫기", { if (!busy) pending = null }),
-                    OneUiDialogButton(if (cancelling) "취소하기" else "신청하기", {
-                        if (busy) return@OneUiDialogButton
-                        busy = true
-                        scope.launch {
-                            notice = try {
-                                if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
-                                else HanaLibraryApi.reserve(context, seat, id, service)
-                            } catch (e: Exception) {
-                                e.message ?: "실패했습니다"
-                            }
-                            busy = false
-                            pending = null
-                            loadMap()
-                            onChanged()
-                        }
-                    }),
-                ),
+        // 결과는 아래쪽 알약 팝업으로 잠깐 보여줍니다 (다이얼로그 없이).
+        AnimatedVisibility(
+            visible = notice != null,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = toolbar.calculateBottomPadding() + 24.dp)
+                .padding(horizontal = OneUi.PagePadding),
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(if (MaterialTheme.colorScheme.isDark) Color(0xFF2A2A2E) else Color(0xFF1F2937))
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (cancelling) "이 타임의 ${service.label} 자리를 취소합니다." else "${slots.firstOrNull { it.id == id }?.label ?: ""} ${service.label} ${seat.cont} 자리를 신청합니다.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (busy) {
-                    Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OneUiLoading(size = 16.dp, stroke = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("처리 중", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+                Text(noticeShown, style = MaterialTheme.typography.bodyMedium, color = Color.White)
             }
         }
-
-        notice?.let { message ->
-            OneUiDialog(
-                onDismissRequest = { notice = null },
-                title = "${service.label} 신청",
-                buttons = listOf(OneUiDialogButton("확인", { notice = null })),
-            ) {
-                Text(message, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
     }
-
 }
 
 /** "#efefef" 같은 CSS 16진수 색 → Compose Color (못 읽으면 null). */
