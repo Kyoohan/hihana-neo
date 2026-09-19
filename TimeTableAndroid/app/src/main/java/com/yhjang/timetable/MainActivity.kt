@@ -173,7 +173,6 @@ import com.yhjang.timetable.ui.rememberPageBackground
 import androidx.activity.result.PickVisualMediaRequest
 import com.yhjang.timetable.ui.systemAccentColor
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.HazeTint
@@ -1702,8 +1701,7 @@ private fun AppNavBar(
     val lensStyle = HazeStyle(
         backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
         tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.06f else 0.16f))),
-        // 렌즈는 흐리지 않습니다 — 아이콘·글자가 캡슐 안에서 또렷해야 하므로. 입력도 축소하지 않음.
-        blurRadius = 0.dp,
+        blurRadius = 2.dp,
         noiseFactor = 0f,
     )
 
@@ -1723,7 +1721,7 @@ private fun AppNavBar(
                 .fillMaxSize()
                 .clip(barShape)
                 .then(
-                    if (hazeState != null) Modifier.hazeEffect(hazeState, frostStyle) { canDrawArea = { it.key != NavItemsHazeKey } }
+                    if (hazeState != null) Modifier.hazeEffect(hazeState, frostStyle)
                     else Modifier.background(barColor),
                 )
                 .drawWithContent {
@@ -1750,55 +1748,50 @@ private fun AppNavBar(
             val capsuleRadiusPx = with(density) { 26.dp.toPx() }
             val capsuleShape = RoundedCornerShape(26.dp)
 
-            if (!liquidEnabled) {
-                // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
-                // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
-                // 받고 실제 캡슐 모양은 셰이더 안에서 잘라냅니다 (안 그러면 가장자리가 검게 비었습니다).
-                // margin 은 셰이더 최대 굴절 거리(짧은 반지름 × 0.75 × 1.25 × 1.18 ≈ 28dp)보다 커야 합니다.
-                val lensMargin = if (liquidEnabled) 30.dp else 0.dp
-                val lensMarginPx = with(density) { lensMargin.toPx() }
-                Box(
-                    modifier = Modifier
-                        // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
-                        .offset { IntOffset((capsuleIndex * cellWidthPx - lensMarginPx).roundToInt(), 0) }
-                        // 부모 제약보다 커야 하므로 required 크기로 (height 는 부모 최대 높이에 눌려 절반만 보였습니다).
-                        .requiredWidth(cellWidth + lensMargin * 2)
-                        .requiredHeight(maxHeight + lensMargin * 2)
-                        .graphicsLayer {
-                            scaleX = stretchX
-                            scaleY = squashY
-                            if (!liquidEnabled) {
-                                clip = true
-                                shape = capsuleShape
-                            }
-                            if (liquidEnabled && lensShader != null) {
-                                lensShader.setFloatUniform(
-                                    "rect",
-                                    lensMarginPx, lensMarginPx, size.width - lensMarginPx, size.height - lensMarginPx,
-                                )
-                                lensShader.setFloatUniform("radius", capsuleRadiusPx)
-                                lensShader.setFloatUniform("strength", 0.75f + 0.25f * liquid)
-                                lensShader.setFloatUniform("lightDir", light.x, light.y)
-                                lensShader.setFloatUniform("time", light.time)
-                                lensShader.setFloatUniform("tint", 1f, 1f, 1f)
-                                lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
-                                renderEffect = RenderEffect
-                                    .createRuntimeShaderEffect(lensShader, "content")
-                                    .asComposeRenderEffect()
-                            }
+            // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
+            // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
+            // 받고 실제 캡슐 모양은 셰이더 안에서 잘라냅니다 (안 그러면 가장자리가 검게 비었습니다).
+            // margin 은 셰이더 최대 굴절 거리(짧은 반지름 × 0.75 × 1.25 × 1.18 ≈ 28dp)보다 커야 합니다.
+            val lensMargin = if (liquidEnabled) 30.dp else 0.dp
+            val lensMarginPx = with(density) { lensMargin.toPx() }
+            Box(
+                modifier = Modifier
+                    // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
+                    .offset { IntOffset((capsuleIndex * cellWidthPx - lensMarginPx).roundToInt(), 0) }
+                    // 부모 제약보다 커야 하므로 required 크기로 (height 는 부모 최대 높이에 눌려 절반만 보였습니다).
+                    .requiredWidth(cellWidth + lensMargin * 2)
+                    .requiredHeight(maxHeight + lensMargin * 2)
+                    .graphicsLayer {
+                        scaleX = stretchX
+                        scaleY = squashY
+                        if (!liquidEnabled) {
+                            clip = true
+                            shape = capsuleShape
                         }
-                        .then(
-                            if (liquidEnabled) Modifier.hazeEffect(hazeState!!, lensStyle) { inputScale = HazeInputScale.None }
-                            else Modifier.background(selectedCapsuleColor),
-                        ),
-                )
-            }
-            // 아이콘·글자는 캡슐 "아래"에 그리고, 캡슐 렌즈가 이 층도 뒤 화면과 함께 굴절해 보여줍니다 (iOS 탭 바처럼
-            // 캡슐 가장자리에서 글자가 휘어짐). 그래서 이 Row 도 haze 소스로 등록하되, 바의 서리 유리는 제외합니다.
+                        if (liquidEnabled && lensShader != null) {
+                            lensShader.setFloatUniform(
+                                "rect",
+                                lensMarginPx, lensMarginPx, size.width - lensMarginPx, size.height - lensMarginPx,
+                            )
+                            lensShader.setFloatUniform("radius", capsuleRadiusPx)
+                            lensShader.setFloatUniform("strength", 0.75f + 0.25f * liquid)
+                            lensShader.setFloatUniform("lightDir", light.x, light.y)
+                            lensShader.setFloatUniform("time", light.time)
+                            lensShader.setFloatUniform("tint", 1f, 1f, 1f)
+                            lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
+                            renderEffect = RenderEffect
+                                .createRuntimeShaderEffect(lensShader, "content")
+                                .asComposeRenderEffect()
+                        }
+                    }
+                    .then(
+                        if (liquidEnabled) Modifier.hazeEffect(hazeState!!, lensStyle)
+                        else Modifier.background(selectedCapsuleColor),
+                    ),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(if (liquidEnabled) Modifier.hazeSource(hazeState!!, zIndex = 1f, key = NavItemsHazeKey) else Modifier)
                     .pointerInput(count) {
                         detectHorizontalDragGestures(
                             onDragStart = { dragIndex = currentSelected.toFloat() },
@@ -1849,50 +1842,6 @@ private fun AppNavBar(
                     }
                 }
             }
-            if (liquidEnabled) {
-                // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
-                // 렌즈일 때는 위의 Row 다음에 그려 아이콘 층 위에 놓입니다 (터치는 Row 가 받음).
-                // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
-                // 받고 실제 캡슐 모양은 셰이더 안에서 잘라냅니다 (안 그러면 가장자리가 검게 비었습니다).
-                // margin 은 셰이더 최대 굴절 거리(짧은 반지름 × 0.75 × 1.25 × 1.18 ≈ 28dp)보다 커야 합니다.
-                val lensMargin = if (liquidEnabled) 30.dp else 0.dp
-                val lensMarginPx = with(density) { lensMargin.toPx() }
-                Box(
-                    modifier = Modifier
-                        // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
-                        .offset { IntOffset((capsuleIndex * cellWidthPx - lensMarginPx).roundToInt(), 0) }
-                        // 부모 제약보다 커야 하므로 required 크기로 (height 는 부모 최대 높이에 눌려 절반만 보였습니다).
-                        .requiredWidth(cellWidth + lensMargin * 2)
-                        .requiredHeight(maxHeight + lensMargin * 2)
-                        .graphicsLayer {
-                            scaleX = stretchX
-                            scaleY = squashY
-                            if (!liquidEnabled) {
-                                clip = true
-                                shape = capsuleShape
-                            }
-                            if (liquidEnabled && lensShader != null) {
-                                lensShader.setFloatUniform(
-                                    "rect",
-                                    lensMarginPx, lensMarginPx, size.width - lensMarginPx, size.height - lensMarginPx,
-                                )
-                                lensShader.setFloatUniform("radius", capsuleRadiusPx)
-                                lensShader.setFloatUniform("strength", 0.75f + 0.25f * liquid)
-                                lensShader.setFloatUniform("lightDir", light.x, light.y)
-                                lensShader.setFloatUniform("time", light.time)
-                                lensShader.setFloatUniform("tint", 1f, 1f, 1f)
-                                lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
-                                renderEffect = RenderEffect
-                                    .createRuntimeShaderEffect(lensShader, "content")
-                                    .asComposeRenderEffect()
-                            }
-                        }
-                        .then(
-                            if (liquidEnabled) Modifier.hazeEffect(hazeState!!, lensStyle) { inputScale = HazeInputScale.None }
-                            else Modifier.background(selectedCapsuleColor),
-                        ),
-                )
-            }
         }
     }
 }
@@ -1904,9 +1853,6 @@ private fun AppNavBar(
  * 거리로 굴절시켜 무지개 테(dispersion)를 만들고, 테를 따라 색이 도는 분광 림과 광원을 향한 경사면의 반사광(specular),
  * 천천히 흐르는 광택 띠를 얹습니다. Android 12 이하에서는 null.
  */
-/** 하단 바 아이콘 층의 haze 소스 키 — 캡슐 렌즈만 이 층을 그리고, 바의 서리 유리는 건너뜁니다. */
-private val NavItemsHazeKey = Any()
-
 private object LiquidLens {
     private const val AGSL = """
         uniform shader content;

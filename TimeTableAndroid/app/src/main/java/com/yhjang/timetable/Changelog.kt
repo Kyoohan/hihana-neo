@@ -8,13 +8,6 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
-        "8.6",
-        listOf(
-            "하단 바 캡슐이 탭 아이콘·글자도 함께 굴절 — 캡슐이 지나갈 때 글자가 가장자리에서 휘어짐",
-            "캡슐 안의 아이콘·글자는 흐리지 않고 또렷하게",
-        ),
-    ),
-    ChangelogEntry(
         "8.5",
         listOf(
             "하단 바가 진짜 액체 유리로 — 뒤 화면을 흐려 비추는 바, 뒤 화면을 굴절·확대하며 무지개 테가 도는 선택 캡슐 (Android 13+)",
