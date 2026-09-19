@@ -41,6 +41,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.DisposableEffect
+import android.content.Context
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
@@ -809,7 +813,17 @@ private fun TimeTableAppContent(
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작 — 탭을 바꾸면 펼친 상태에서 시작합니다.
     val headerState = rememberOneUiHeaderState()
-    LaunchedEffect(tab) { headerState.expand() }
+    // 탭마다 헤더 접힘 상태를 따로 기억합니다 — 목록을 내린 탭은 접힌 툴바로, 맨 위인 탭은 펼친 제목으로 돌아옵니다.
+    // 예전엔 탭을 바꿀 때마다 무조건 펼쳐서, 내려 둔 목록이 투명한 큰 제목 뒤로 겹쳐 보였습니다.
+    val headerOffsets = remember { mutableStateMapOf<Int, Float>() }
+    var headerTab by remember { mutableStateOf(tab) }
+    LaunchedEffect(tab) {
+        if (headerTab != tab) {
+            headerOffsets[headerTab] = headerState.offsetPx
+            headerTab = tab
+        }
+        headerState.restore(headerOffsets[tab] ?: 0f)
+    }
 
     val selectedMealDate = remember(selectedMealDay) {
         runCatching { LocalDate.parse(selectedMealDay) }.getOrDefault(PlanStore.today())
@@ -824,8 +838,14 @@ private fun TimeTableAppContent(
 
     // 탭 사이 스와이프 — 페이저가 자리를 잡으면 tab 을 따라가고, 하단 바 탭은 페이저를 그 페이지로 넘깁니다.
     val pagerState = rememberPagerState(initialPage = tab) { 4 }
+    // 하단 바로 고른 탭 전환 중엔 캡슐이 페이저 위치를 따라가지 않습니다 — 따라가면 방금 놓은 자리에서
+    // 이전 페이지 위치로 튀었다가 돌아오며 떨렸습니다.
+    var navDriven by remember { mutableStateOf(false) }
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.collect { page -> if (tab != page) tab = page }
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            if (tab != page) tab = page
+            navDriven = false
+        }
     }
     LaunchedEffect(tab) {
         if (pagerState.currentPage != tab && !pagerState.isScrollInProgress) pagerState.animateScrollToPage(tab)
@@ -1056,10 +1076,13 @@ private fun TimeTableAppContent(
             }
             AppNavBar(
                 selected = tab,
-                onSelect = { tab = it },
+                onSelect = {
+                    if (it != tab) navDriven = true
+                    tab = it
+                },
                 // 스와이프 중엔 캡슐이 페이지 위치를 그대로 따라갑니다.
                 pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction,
-                following = pagerState.isScrollInProgress,
+                following = pagerState.isScrollInProgress && !navDriven,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -1629,7 +1652,14 @@ private fun AppNavBar(
     // dragIndex 는 끄는 동안의 실수 위치(칸 단위) — 끌기 시작할 땐 지금 자리에서 출발해 손가락 이동량만큼만 따라오고,
     // 놓으면 가장 가까운 칸으로 스프링 스냅합니다.
     var dragIndex by remember { mutableStateOf<Float?>(null) }
-    val dragging = dragIndex != null
+    var pendingIndex by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(selected) {
+        if (pendingIndex != null && pendingIndex == selected) {
+            pendingIndex = null
+            dragIndex = null
+        }
+    }
+    val dragging = dragIndex != null && pendingIndex == null
     // pointerInput 람다는 처음 시작할 때의 값을 붙잡고 있어서, 최신 selected/onSelect 를 여기로 받아 씁니다 —
     // 안 그러면 홈이 아닌 탭에서 끌기 시작할 때 캡슐이 맨 왼쪽(초기 탭)으로 튀었다가 따라왔습니다.
     val currentSelected by rememberUpdatedState(selected)
@@ -1650,6 +1680,9 @@ private fun AppNavBar(
 
     // 굴절 렌즈 — Android 13+ 의 AGSL 런타임 셰이더로, 캡슐 아래의 아이콘·글자를 유리 너머로 보듯 휘어 그립니다.
     val lensShader = remember { LiquidLens.create() }
+    // 실시간 반사광 — 기기 기울기(중력 센서)로 광원 방향을 정해, 폰을 기울이면 캡슐의 하이라이트가 따라 움직입니다.
+    // 센서를 못 쓰면 시간에 따라 천천히 도는 광원으로 대신합니다.
+    val light = rememberLiquidLight(enabled = lensShader != null)
     val contentLayer = rememberGraphicsLayer()
     val lensLayer = rememberGraphicsLayer()
 
@@ -1694,8 +1727,16 @@ private fun AppNavBar(
                         detectHorizontalDragGestures(
                             onDragStart = { dragIndex = currentSelected.toFloat() },
                             onDragEnd = {
-                                dragIndex?.let { currentOnSelect(it.roundToInt().coerceIn(0, count - 1)) }
-                                dragIndex = null
+                                val target = dragIndex?.roundToInt()?.coerceIn(0, count - 1)
+                                if (target == null || target == currentSelected) {
+                                    dragIndex = null
+                                } else {
+                                    // selected 가 바뀔 때까지 캡슐을 놓은 칸에 붙잡아 둡니다 — 바로 null 로 두면 한 프레임
+                                    // 동안 이전 selected 로 되돌아가는 목표가 잡혀 캡슐이 떨렸습니다.
+                                    dragIndex = target.toFloat()
+                                    pendingIndex = target
+                                    currentOnSelect(target)
+                                }
                             },
                             onDragCancel = { dragIndex = null },
                             onHorizontalDrag = { change, dx ->
@@ -1722,6 +1763,8 @@ private fun AppNavBar(
                             lensShader.setFloatUniform("radius", capsuleRadiusPx)
                             // 굴절·반사 세기 — 너무 과하지 않게 절반 수준으로 (끌 때 조금 더 세짐)
                             lensShader.setFloatUniform("strength", 0.28f + 0.22f * liquid)
+                            lensShader.setFloatUniform("lightDir", light.x, light.y)
+                            lensShader.setFloatUniform("time", light.time)
                             lensLayer.renderEffect = RenderEffect
                                 .createRuntimeShaderEffect(lensShader, "content")
                                 .asComposeRenderEffect()
@@ -1773,27 +1816,120 @@ private object LiquidLens {
         uniform float4 rect;
         uniform float radius;
         uniform float strength;
+        uniform float2 lightDir;
+        uniform float time;
+
+        // 둥근 사각형 SDF — 음수면 안쪽.
+        float sdRoundRect(float2 p, float2 c, float2 halfSize, float r) {
+            float2 q = abs(p - c) - (halfSize - r);
+            return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        }
 
         half4 main(float2 p) {
             float2 c = (rect.xy + rect.zw) * 0.5;
             float2 halfSize = (rect.zw - rect.xy) * 0.5;
-            float2 q = abs(p - c) - (halfSize - radius);
-            float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
-            float edge = clamp(1.0 + d / (radius * 1.15), 0.0, 1.0);
-            edge = edge * edge;
-            float2 n = normalize(p - c + float2(0.0001, 0.0001));
-            float2 disp = n * edge * radius * 0.42 * strength;
-            float2 src = c + (p - c) * (1.0 - 0.07 * strength) + disp;
-            half4 col = content.eval(src);
-            float rim = smoothstep(0.45, 1.0, edge) * strength;
-            float light = clamp(dot(n, float2(-0.55, -0.83)), 0.0, 1.0);
-            col.rgb += half3(rim * light * 0.38);
+            float d = sdRoundRect(p, c, halfSize, radius);
+
+            // 가장자리 경사(bevel) — 짧은 변의 일정 비율 폭 안에서만 굴절이 일어나고 가운데는 평평합니다.
+            float bevelWidth = min(halfSize.x, halfSize.y) * 0.9;
+            float edge = clamp(1.0 + d / bevelWidth, 0.0, 1.0);
+            float profile = edge * edge * (3.0 - 2.0 * edge);
+
+            // 경사면의 법선 — SDF 의 기울기(중심 방향이 아니라 가장 가까운 변의 방향).
+            float eps = 1.0;
+            float2 grad = float2(
+                sdRoundRect(p + float2(eps, 0.0), c, halfSize, radius) - sdRoundRect(p - float2(eps, 0.0), c, halfSize, radius),
+                sdRoundRect(p + float2(0.0, eps), c, halfSize, radius) - sdRoundRect(p - float2(0.0, eps), c, halfSize, radius)
+            );
+            float2 n = normalize(grad + float2(0.0001, 0.0));
+
+            // 굴절: 경사면에서 바깥쪽으로 샘플 위치를 밀고, 가운데는 살짝 확대합니다. 색수차는 R/B 를 조금 다르게.
+            float2 disp = n * profile * radius * 0.42 * strength;
+            float2 base = c + (p - c) * (1.0 - 0.07 * strength);
+            float ab = 1.0 + 0.10 * strength * profile;
+            half r = content.eval(base + disp * ab).r;
+            half4 g = content.eval(base + disp);
+            half b = content.eval(base + disp / ab).b;
+            half4 col = half4(r, g.g, b, g.a);
+
+            // 반사광: 광원 방향을 향한 경사면이 밝아지고(스펙큘러), 반대편은 살짝 어두워집니다.
+            float2 l = normalize(lightDir + float2(0.0001, 0.0));
+            float facing = dot(n, l);
+            float spec = pow(clamp(facing, 0.0, 1.0), 6.0) * profile;
+            float shade = clamp(-facing, 0.0, 1.0) * profile;
+            // 광택 띠 — 광원에 수직인 방향으로 가로지르는 얇은 하이라이트가 캡슐 몸통을 천천히 지나갑니다.
+            float2 perp = float2(-l.y, l.x);
+            float band = dot(p - c, perp) / max(halfSize.x, 1.0);
+            float sweep = sin(time * 0.6) * 0.9;
+            float sheen = exp(-pow((band - sweep) * 3.2, 2.0)) * (1.0 - profile) * 0.5;
+
+            col.rgb += half3(spec * 0.55 * strength + sheen * 0.12 * strength + 0.08 * strength * profile);
+            col.rgb -= half3(shade * 0.18 * strength);
             return col;
         }
     """
 
     fun create(): RuntimeShader? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) runCatching { RuntimeShader(AGSL) }.getOrNull() else null
+}
+
+/** 캡슐 반사광의 광원 — 화면 좌표계 방향(x 오른쪽, y 아래)과 광택 띠용 시간. */
+private class LiquidLight(x: Float, y: Float) {
+    var x by mutableFloatStateOf(x)
+    var y by mutableFloatStateOf(y)
+    var time by mutableFloatStateOf(0f)
+}
+
+/**
+ * 중력 센서로 광원 방향을 실시간으로 정합니다: 폰을 왼쪽으로 기울이면 빛이 왼쪽 위에서 오는 것처럼 하이라이트가
+ * 옮겨 갑니다. 화면이 보일 때만(RESUMED) 센서를 켭니다. 값은 저역 통과로 부드럽게 따라갑니다.
+ */
+@Composable
+private fun rememberLiquidLight(enabled: Boolean): LiquidLight {
+    val light = remember { LiquidLight(-0.55f, -0.83f) }
+    if (!enabled) return light
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // 광택 띠가 흐르도록 프레임마다 시간을 올립니다.
+    LaunchedEffect(Unit) {
+        val start = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now -> light.time = (now - start) / 1_000_000_000f }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY)
+            ?: manager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        val listener = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(event: android.hardware.SensorEvent) {
+                // 기기 x: 오른쪽이 +, y: 위가 +. 화면 y 는 아래가 + 라 뒤집습니다. 기본(똑바로 세움)은 왼쪽 위 광원.
+                val gx = event.values[0] / 9.81f
+                val gy = event.values[1] / 9.81f
+                val targetX = (-0.55f - gx * 0.9f).coerceIn(-1f, 1f)
+                val targetY = (-0.83f + (gy - 0.6f) * 0.6f).coerceIn(-1f, 0.2f)
+                light.x += (targetX - light.x) * 0.12f
+                light.y += (targetY - light.y) * 0.12f
+            }
+            override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME ->
+                    if (sensor != null) manager?.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME)
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> manager?.unregisterListener(listener)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            manager?.unregisterListener(listener)
+        }
+    }
+    return light
 }
 
 @Composable

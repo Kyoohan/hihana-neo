@@ -963,6 +963,11 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
     /** 0 = 완전히 펼침, 1 = 완전히 접힘 */
     val fraction: Float get() = if (rangePx <= 0f) 1f else (-offsetPx / rangePx).coerceIn(0f, 1f)
 
+    /** 저장해 둔 오프셋으로 되돌립니다 — 탭마다 접힘 상태를 따로 기억할 때 씁니다. */
+    fun restore(offset: Float) {
+        offsetPx = offset.coerceIn(-rangePx, 0f)
+    }
+
     /** 헤더를 펼친 상태로 되돌립니다 — 스크롤할 게 없는 탭으로 옮겼을 때 접힌 채 갇히지 않게. */
     fun expand() {
         offsetPx = 0f
