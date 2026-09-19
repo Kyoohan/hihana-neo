@@ -98,10 +98,9 @@ object LiquidLens {
             half r = content.eval(base + disp * (1.0 + ab)).r;
             half4 g = content.eval(base + disp);
             half b = content.eval(base + disp * (1.0 - ab)).b;
-            half3 col = half3(r, g.g, b);
-
-            // 서리 틴트 (맑은 유리라 옅게).
-            col = mix(col, half3(tint), half(tintAlpha));
+            // 알파를 유지합니다 (premultiplied) — 하단 바 캡슐처럼 내용이 아이콘뿐이고 나머지가 투명한 경우,
+            // 그 밑에 따로 깔린 서리 유리가 비쳐야 합니다.
+            half4 src = half4(r, g.g, b, g.a);
 
             // 반사광 — 광원을 향한 경사면은 밝고, 반대편은 살짝 그늘.
             float2 l = normalize(lightDir + float2(0.0001, 0.0));
@@ -124,11 +123,12 @@ object LiquidLens {
             float sweep = sin(time * 0.5) * 0.9;
             float sheen = exp(-pow((across - sweep) * 2.6, 2.0)) * (1.0 - bend);
 
-            // 더하기가 아니라 섞기: 밝은 화면 위에서도 흰색으로 날아가지 않고 색 테가 보입니다.
-            col = mix(col, irid, half(clamp(rim * 0.6 + band * 0.18, 0.0, 1.0)));
-            col += half3(bevelLight * 0.18 + sheen * 0.08 + 0.02);
-            col -= half3(shade * 0.08);
-            return half4(clamp(col, 0.0, 1.0), 1.0) * half(aa);
+            // 하이라이트(림·경사 반사·광택)를 흰 레이어로 위에 합성하고, 그 위에 옅은 틴트 레이어 — source-over.
+            half hl = half(clamp(rim * 0.6 + band * 0.18 + bevelLight * 0.18 + sheen * 0.08 + 0.02, 0.0, 1.0));
+            half4 outc = src * (1.0 - hl) + half4(hl, hl, hl, hl);
+            outc = outc * (1.0 - half(tintAlpha)) + half4(half3(tint) * half(tintAlpha), half(tintAlpha));
+            outc.rgb -= half3(shade * 0.08) * outc.a;
+            return clamp(outc, 0.0, 1.0) * half(aa);
         }
     """
 

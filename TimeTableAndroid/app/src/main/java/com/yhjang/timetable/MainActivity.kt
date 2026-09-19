@@ -1890,6 +1890,24 @@ private fun AppNavBar(
             val itemsW = with(density) { maxWidth.roundToPx() }
             val itemsH = with(density) { maxHeight.roundToPx() }
             val capsule: @Composable () -> Unit = {
+                // 1) 캡슐 서리 유리 — 바와 같은 결의 블러. 렌즈 셰이더 레이어와 분리해 따로 그립니다: 셰이더 레이어 안(자식이든
+                //    같은 노드든)에 블러를 두면 삼성 기기에서 캡슐을 끌었다 놓은 뒤 블러가 사라져 뒤 본문이 선명하게 비쳤습니다.
+                if (liquidEnabled && hazeState != null) {
+                    Box(
+                        Modifier
+                            .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
+                            .width(cellWidth)
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                scaleX = stretchX
+                                scaleY = squashY
+                                clip = true
+                                shape = capsuleShape
+                            }
+                            .hazeEffect(hazeState, capsuleFrostStyle),
+                    )
+                }
+                // 2) 렌즈 — 탭 아이콘·글자 복사본만 굴절합니다 (나머지는 투명해 아래 서리가 비침).
                 Box(
                     modifier = Modifier
                         // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
@@ -1923,17 +1941,7 @@ private fun AppNavBar(
                                     .asComposeRenderEffect()
                             }
                         }
-                        // 렌즈 속 그림 = 바와 똑같이 서리 유리로 흐린 뒤 화면 + 그 위에 또렷한 탭 아이콘·글자 층.
-                        // 서리 유리는 렌즈 graphicsLayer 와 같은 노드에 겁니다 — 자식 Box 에 걸면 삼성 기기에서 자식의
-                        // 블러가 적용되지 않아 캡슐 속 본문이 거의 선명하게 비쳤습니다 (에뮬레이터에선 멀쩡).
-                        // 매 프레임 다시 그립니다(light.time 읽기) — 처음 켰을 때 캡슐이 비어 보이던 문제를 막습니다.
-                        .then(
-                            if (liquidEnabled && hazeState != null) {
-                                Modifier.drawBehind { light.time }.hazeEffect(hazeState, capsuleFrostStyle)
-                            } else {
-                                Modifier.background(selectedCapsuleColor)
-                            },
-                        ),
+                        .then(if (liquidEnabled) Modifier else Modifier.background(selectedCapsuleColor)),
                 ) {
                     if (liquidEnabled && hazeState != null) {
                         // 그 위에 탭 아이콘·글자를 한 번 더 — 아래 Row 와 같은 자리에 겹치게 놓아 렌즈가 굴절합니다.
