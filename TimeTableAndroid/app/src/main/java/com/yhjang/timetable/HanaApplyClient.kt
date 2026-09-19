@@ -15,10 +15,11 @@ import org.json.JSONObject
  * - [historyPath] 는 포털 내역 페이지로, 교과교실 JSON 조회가 안 되거나 JSON 스키마가
  *   확인되지 않은 면학실·도서관에서 웹뷰로 보여줍니다.
  */
+/** 순서가 곧 신청·내역 카드 순서입니다 — 면학실 → 도서관 → 교과교실 → 외출·외박. */
 enum class ApplyService(val label: String, val applyPath: String, val historyPath: String) {
-    CLASSROOM("교과교실", "/main/classroom/apply.do", "/main/classroom/history.do"),
     STUDY_ROOM("면학실", "/main/studyroom/study-apply.do", "/main/studyroom/study-history.do"),
     LIBRARY("도서관", "/main/library/library-apply.do", "/main/library/library-history.do"),
+    CLASSROOM("교과교실", "/main/classroom/apply.do", "/main/classroom/history.do"),
     OUTING("외출·외박", "/main/outing/apply_inscr.do", "/main/outing/history.do"),
 }
 

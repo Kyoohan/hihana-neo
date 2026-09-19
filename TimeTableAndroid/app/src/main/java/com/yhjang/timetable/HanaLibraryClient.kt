@@ -182,7 +182,9 @@ object HanaLibraryApi {
             }
             val floorText = remapped.firstOrNull { it.type == "2" && Regex("\\d+F").containsMatchIn(it.cont) }
                 ?.let { Regex("(\\d+)F").find(it.cont)?.groupValues?.get(1) + "층" }
-            LibraryArea(floorText ?: "구역 ${index + 1}", gridX, next + 1, remapped)
+            // 면학실 구역은 학교에서 부르는 이름대로 E·F·G·H.
+            val fallback = if (service == SeatService.STUDY_ROOM && index < 4) "구역 ${'E' + index}" else "구역 ${index + 1}"
+            LibraryArea(floorText ?: fallback, gridX, next + 1, remapped)
         }
         if (seats.isNotEmpty()) {
             Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
