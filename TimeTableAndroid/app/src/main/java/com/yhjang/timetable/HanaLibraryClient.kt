@@ -178,7 +178,8 @@ object HanaLibraryApi {
         // 층 이름은 그 바닥색의 어느 구역이든 표지 글자("2F입구")에서 읽습니다.
         fun floorOf(color: String): String? = groups.filter { it.first == color }
             .flatMap { it.second }.flatMap { it.second }
-            .firstNotNullOfOrNull { cell -> if (cell.type == "2") Regex("(\\d+)F").find(cell.cont)?.groupValues?.get(1) else null }
+            // "2F입구"는 srt_type 3 으로 오기도 해서 종류를 가리지 않고 글자만 봅니다.
+            .firstNotNullOfOrNull { cell -> if (!cell.isSeat) Regex("(\\d+)F").find(cell.cont)?.groupValues?.get(1) else null }
             ?.let { "${it}층" }
         val perColor = groups.groupingBy { it.first }.eachCount()
         val colorSeen = mutableMapOf<String, Int>()

@@ -365,8 +365,9 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                     val top = seat.y * cellPx + gap
                     val size = Size(cellPx - gap * 2, cellPx - gap * 2)
                     if (!seat.isSeat) {
-                        // 통로 칸(3)은 비워 두고, 표지(2: "입구", "토의실 A", "2F입구")는 글자만 씁니다.
-                        if (seat.type == "2" && seat.cont.isNotBlank()) {
+                        // 통로 칸(숫자만 적힌 칸)은 비워 두고, 표지("입구", "토의실 A", "2F입구")는 글자만 씁니다 —
+                        // 표지가 srt_type 2 로도 3 으로도 와서 종류 대신 글자로 가립니다.
+                        if (seat.cont.isNotBlank() && !seat.cont.all { it.isDigit() }) {
                             textPaint.color = android.graphics.Color.argb(160, (palette.label.red * 255).toInt(), (palette.label.green * 255).toInt(), (palette.label.blue * 255).toInt())
                             textPaint.alpha = 160
                             drawContext.canvas.nativeCanvas.drawText(seat.cont, left + size.width / 2f, top + size.height / 2f + labelPx * 0.35f, textPaint)
