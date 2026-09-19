@@ -841,14 +841,7 @@ private fun TimeTableAppContent(
     // 탭마다 헤더 접힘 상태를 따로 기억합니다 — 목록을 내린 탭은 접힌 툴바로, 맨 위인 탭은 펼친 제목으로 돌아옵니다.
     // 예전엔 탭을 바꿀 때마다 무조건 펼쳐서, 내려 둔 목록이 투명한 큰 제목 뒤로 겹쳐 보였습니다.
     val headerOffsets = remember { mutableStateMapOf<Int, Float>() }
-    var headerTab by remember { mutableStateOf(tab) }
-    LaunchedEffect(tab) {
-        if (headerTab != tab) {
-            headerOffsets[headerTab] = headerState.offsetPx
-            headerTab = tab
-        }
-        headerState.restore(headerOffsets[tab] ?: 0f)
-    }
+    LaunchedEffect(tab) { headerState.restore(headerOffsets[tab] ?: 0f) }
 
     val selectedMealDate = remember(selectedMealDay) {
         runCatching { LocalDate.parse(selectedMealDay) }.getOrDefault(PlanStore.today())
@@ -936,11 +929,19 @@ private fun TimeTableAppContent(
             // 배경(사진·그레인)도 이 소스 안에 그려야 하단 바·섬 유리가 배경 이미지를 비춥니다 — 루트에만 그리면
             // 유리 뒤가 비어 검은 바탕색으로 채워졌습니다.
             Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(hazeState)) {
+            // 현재 탭의 접힘 상태를 계속 기록합니다 (페이지가 넘어가는 중엔 기록하지 않음). 예전엔 탭이 바뀌는 순간에
+            // 한 번만 저장했는데, 스와이프 중 옆 페이지가 먼저 그려지며 expand() 를 불러 0 이 저장돼 돌아오면 펼쳐졌습니다.
+            LaunchedEffect(Unit) {
+                snapshotFlow { Triple(headerState.offsetPx, pagerState.isScrollInProgress, tab) }
+                    .collect { (offset, scrolling, current) -> if (!scrolling) headerOffsets[current] = offset }
+            }
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
                 beyondViewportPageCount = 0,
             ) { page ->
+            // 이 페이지가 실제로 보이는 탭일 때만 헤더를 건드립니다 — 옆 페이지가 미리 그려질 때 펼치면 안 됩니다.
+            val isActivePage = page == tab && !pagerState.isScrollInProgress
             when (page) {
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
                 1 -> BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -956,7 +957,7 @@ private fun TimeTableAppContent(
                     val rowHeight = (available / periodRows).coerceIn(56.dp, 78.dp)
                     val fits = !timetableInstalled || rowHeight * periodRows <= available
                     // 스크롤할 게 없는데 헤더가 접혀 있으면(다른 탭에서 넘어온 경우) 펼쳐 둡니다.
-                    LaunchedEffect(fits) { if (fits) headerState.expand() }
+                    LaunchedEffect(fits, isActivePage) { if (fits && isActivePage) headerState.expand() }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1052,7 +1053,7 @@ private fun TimeTableAppContent(
                     onOpenAccount = { showingAccountSheet = true },
                     contentPadding = tabContentPadding,
                     headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
-                    onFitsWithoutScroll = { headerState.expand() },
+                    onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
                     modifier = Modifier.fillMaxSize(),
                 )
 
