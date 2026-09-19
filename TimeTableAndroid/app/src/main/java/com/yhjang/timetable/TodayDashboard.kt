@@ -609,19 +609,37 @@ private fun isWeekday1StudyRoom(block: Block): Boolean {
     return kind.session.start == Timetable.Sessions.weekday1.start && kind.session.name.contains("1타임")
 }
 
-/** 제목·교실이 같고 시간이 맞닿은 블록만 하나로 합칩니다 */
+/**
+ * 대기 구간(쉬는 시간·식사)은 바로 다음 수업·면학과 한 줄로 합칩니다 — 대기 구간의 제목이 이미 다음 것을
+ * 가리키기 때문입니다. 대신 수업·면학 자체는 서로 합치지 않습니다: 예전엔 장소가 같으면 주말 1~4타임이
+ * "13:30 ~ 23:10 생활관" 한 줄로 뭉개져 타임 구분이 사라졌습니다. 면학 타임은 제목에 "1타임 · 도서관"처럼
+ * 타임 이름을 붙입니다.
+ */
 internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
     val result = mutableListOf<UpcomingGroup>()
+    // 마지막 그룹이 아직 대기 구간만으로 이뤄져 있어 다음 블록을 받아들일 수 있는지.
+    var lastOpen = false
     for (block in blocks) {
         val supervision = isWeekday1StudyRoom(block)
+        val isGap = block.kind is BlockKind.GapKind
+        val title = when (val kind = block.kind) {
+            is BlockKind.StudyKind -> "${kind.session.name.removePrefix("면학 ")} · ${block.title}"
+            is BlockKind.GapKind -> when (val next = kind.gap.next) {
+                is NextUp.StudyNext -> "${next.session.name.removePrefix("면학 ")} · ${block.title}"
+                else -> block.title
+            }
+            else -> block.title
+        }
         val last = result.lastOrNull()
-        if (last != null && last.title == block.title && last.room == block.room && last.end == block.start) {
+        if (last != null && lastOpen && last.title == title && last.room == block.room && last.end == block.start) {
             result[result.lastIndex] = last.copy(
                 end = block.end,
                 supervisionSlot = last.supervisionSlot || supervision,
             )
+            lastOpen = isGap
         } else {
-            result += UpcomingGroup(block.title, block.room, block.start, block.end, supervision)
+            result += UpcomingGroup(title, block.room, block.start, block.end, supervision)
+            lastOpen = isGap
         }
     }
     return result

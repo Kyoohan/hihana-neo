@@ -8,6 +8,14 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "8.4",
+        listOf(
+            "주말 면학 1~4타임: 포털 타임 이름이 예상과 달라도 날짜 기준으로 해석해 위치를 반영",
+            "'오늘 남은 일정'에서 면학 타임을 '1타임 · 도서관'처럼 타임별로 따로 표시 (같은 장소여도 합치지 않음)",
+            "신청·내역에서 외출·외박 카드 버튼이 잘린 채 스크롤이 안 되던 문제 수정",
+        ),
+    ),
+    ChangelogEntry(
         "8.3",
         listOf(
             "탭을 좌우로 스와이프해서 전환",

@@ -606,7 +606,7 @@ object HanaAssignmentMapper {
      * "평일0타임" / "주말3타임" 같은 st_nm 문자열을 앱의 PlanSlot 으로 변환합니다.
      * 주말 슬롯 이름은 실제 배정을 확인하지 못해 평일 명명 규칙으로 추정했습니다.
      */
-    fun slotFor(stNm: String): PlanSlot? = when (stNm) {
+    fun slotFor(stNm: String): PlanSlot? = when (stNm.replace(" ", "")) {
         "평일0타임" -> PlanSlot.weekday0
         "평일1타임" -> PlanSlot.weekday1
         "평일2타임" -> PlanSlot.weekday2
@@ -615,6 +615,35 @@ object HanaAssignmentMapper {
         "주말3타임" -> PlanSlot.weekend3
         "주말4타임" -> PlanSlot.weekend4
         else -> null
+    }
+
+    /**
+     * 이름이 위 표와 다를 때(예: "토요일1타임" · "휴일 1타임" · 그냥 "1타임")를 위한 폴백 — 이름에서 타임 번호만
+     * 뽑고, 평일/주말은 **조회한 날짜**로 정합니다. 주말 배정 이름을 실제로 확인하지 못해 주말엔 위치가
+     * 전혀 안 붙던 문제를 막기 위한 것입니다.
+     */
+    fun slotFor(stNm: String, date: LocalDate): PlanSlot? {
+        slotFor(stNm)?.let { return it }
+        val compact = stNm.replace(" ", "")
+        if (!compact.contains("타임")) return null
+        val number = Regex("(\\d+)\\s*타임").find(compact)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        val weekend = date.dayOfWeek == java.time.DayOfWeek.SATURDAY || date.dayOfWeek == java.time.DayOfWeek.SUNDAY
+        return if (weekend) {
+            when (number) {
+                1 -> PlanSlot.weekend1
+                2 -> PlanSlot.weekend2
+                3 -> PlanSlot.weekend3
+                4 -> PlanSlot.weekend4
+                else -> null
+            }
+        } else {
+            when (number) {
+                0 -> PlanSlot.weekday0
+                1 -> PlanSlot.weekday1
+                2 -> PlanSlot.weekday2
+                else -> null
+            }
+        }
     }
 
     fun placeFor(assignment: HanaStudyAssignment): StudyPlace? {
@@ -685,8 +714,13 @@ object HanaSyncApplier {
             )
         }
 
+        if (sync.assignments.isEmpty()) Log.d(TAG, "배정 목록이 비어 있음 (date=$date, dow=${date.dayOfWeek})")
         for (assignment in sync.assignments) {
-            val slot = HanaAssignmentMapper.slotFor(assignment.stNm) ?: continue
+            val slot = HanaAssignmentMapper.slotFor(assignment.stNm, date)
+            if (slot == null) {
+                Log.d(TAG, "타임 이름을 해석하지 못함: st_nm=${assignment.stNm} (date=$date)")
+                continue
+            }
             val place = HanaAssignmentMapper.placeFor(assignment) ?: continue
             PlanStore.set(context, place, slot, date)
             Log.d(
@@ -706,7 +740,7 @@ object HanaSyncApplier {
             if (entry.date != null && entry.date != dayKey) continue
             val status = entry.status.orEmpty()
             if (listOf("취소", "반려", "거절", "미승인", "불가").any { it in status }) continue
-            val slot = entry.stNm?.let { HanaAssignmentMapper.slotFor(it) } ?: continue
+            val slot = entry.stNm?.let { HanaAssignmentMapper.slotFor(it, date) } ?: continue
             val room = entry.room?.trim().orEmpty()
             // 교실명이 없으면 칩 없이 "교과교실"만 보여줍니다.
             val place = if (room.isEmpty()) StudyPlace.Other("교과교실", null) else StudyPlace.ClassroomPlace(Classroom.fromName(room))
@@ -716,7 +750,7 @@ object HanaSyncApplier {
 
         for (program in sync.programs) {
             if (program.date != dayKey) continue
-            val slot = HanaAssignmentMapper.slotFor(program.stNm) ?: continue
+            val slot = HanaAssignmentMapper.slotFor(program.stNm, date) ?: continue
             val room = HanaAssignmentMapper.roomFor(program)
             // 1인2기/방과후 둘 다 그 타임의 면학실/도서관 배정을 덮어씁니다 (동시에 발생할 수 없으므로)
             val place = when {
