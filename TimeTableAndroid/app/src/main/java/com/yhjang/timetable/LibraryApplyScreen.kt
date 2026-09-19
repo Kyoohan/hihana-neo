@@ -171,29 +171,25 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     ordered.forEachIndexed { index, area ->
                         if (index > 0) Spacer(Modifier.height(18.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = OneUi.PagePadding, end = OneUi.PagePadding - 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = OneUi.PagePadding),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                area.label,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f),
-                            )
+                            Text(area.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             val starred = area.label == favoriteArea
+                            // 별은 이름 바로 옆, 즐겨찾기면 강조색과 상관없이 노란색.
                             IconButton(
                                 onClick = {
                                     favoriteArea = if (starred) null else area.label
                                     SeatFavoriteStore.set(context, service, favoriteArea)
                                 },
-                                modifier = Modifier.size(36.dp),
+                                modifier = Modifier.size(32.dp),
                             ) {
-                                // 아이콘 코어 세트에는 채운 별만 있어, 즐겨찾기 아니면 옅게 그립니다.
                                 Icon(
                                     Icons.Filled.Star,
                                     contentDescription = if (starred) "즐겨찾기 해제" else "즐겨찾기",
-                                    tint = if (starred) MaterialTheme.colorScheme.primary
+                                    tint = if (starred) Color(0xFFFACC15)
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                         }

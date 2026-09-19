@@ -164,13 +164,25 @@ object HanaLibraryApi {
         val rows = seats.filter { it.x >= 0 && it.y >= 0 }.groupBy { it.y }.toSortedMap()
         fun floorColor(row: List<LibrarySeat>): String =
             row.firstOrNull { it.type == "3" && it.color != null }?.color ?: row.firstNotNullOfOrNull { it.color } ?: ""
+        // 구역 나누기: 바닥색이 바뀌면 새 구역. 도서관은 같은 층 안에서도 없는 행이 이어지는 큰 틈(2-68 과 2-69 사이)
+        // 에서 한 번 더 나눠 "2층 1구역 / 2층 2구역"이 됩니다. 면학실은 색으로만 나눕니다 (E~H).
+        val splitOnGap = service == SeatService.LIBRARY
         val groups = mutableListOf<Pair<String, MutableList<Pair<Int, List<LibrarySeat>>>>>()
         rows.forEach { (y, row) ->
             val color = floorColor(row)
             val last = groups.lastOrNull()
-            if (last != null && last.first == color) last.second += y to row else groups += color to mutableListOf(y to row)
+            val gap = last?.second?.lastOrNull()?.first?.let { y - it > 1 } ?: false
+            if (last != null && last.first == color && !(splitOnGap && gap)) last.second += y to row
+            else groups += color to mutableListOf(y to row)
         }
-        val areas = groups.mapIndexed { index, (_, rowList) ->
+        // 층 이름은 그 바닥색의 어느 구역이든 표지 글자("2F입구")에서 읽습니다.
+        fun floorOf(color: String): String? = groups.filter { it.first == color }
+            .flatMap { it.second }.flatMap { it.second }
+            .firstNotNullOfOrNull { cell -> if (cell.type == "2") Regex("(\\d+)F").find(cell.cont)?.groupValues?.get(1) else null }
+            ?.let { "${it}층" }
+        val perColor = groups.groupingBy { it.first }.eachCount()
+        val colorSeen = mutableMapOf<String, Int>()
+        val areas = groups.mapIndexed { index, (color, rowList) ->
             // y 를 다시 매김: 연속이면 +1, 사이가 비면 빈 행 하나만.
             var next = 0
             var prevY: Int? = null
@@ -180,11 +192,16 @@ object HanaLibraryApi {
                 val yy = next
                 row.map { it.copy(y = yy) }
             }
-            val floorText = remapped.firstOrNull { it.type == "2" && Regex("\\d+F").containsMatchIn(it.cont) }
-                ?.let { Regex("(\\d+)F").find(it.cont)?.groupValues?.get(1) + "층" }
-            // 면학실 구역은 학교에서 부르는 이름대로 E·F·G·H.
-            val fallback = if (service == SeatService.STUDY_ROOM && index < 4) "구역 ${'E' + index}" else "구역 ${index + 1}"
-            LibraryArea(floorText ?: fallback, gridX, next + 1, remapped)
+            val nth = (colorSeen[color] ?: 0) + 1
+            colorSeen[color] = nth
+            val floor = floorOf(color)
+            val label = when {
+                service == SeatService.STUDY_ROOM && index < 4 -> "구역 ${'E' + index}"
+                floor != null && (perColor[color] ?: 1) > 1 -> "$floor ${nth}구역"
+                floor != null -> floor
+                else -> "구역 ${index + 1}"
+            }
+            LibraryArea(label, gridX, next + 1, remapped)
         }
         if (seats.isNotEmpty()) {
             Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
