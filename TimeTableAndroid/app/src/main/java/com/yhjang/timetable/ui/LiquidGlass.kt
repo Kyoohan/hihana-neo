@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -203,6 +204,17 @@ fun liquidFrostStyle(isDark: Boolean): HazeStyle = HazeStyle(
 )
 
 /**
+ * 섬(헤더·버튼 알약·팝업)용 유리 — 하단 바처럼 26dp 로 흐리면 굴절이 보이지 않아, 뒤 화면이 살짝만 흐린 채(6dp)
+ * 렌즈에 굴절되게 합니다. 글자가 읽히도록 틴트는 조금 더 진하게.
+ */
+fun liquidLensStyle(isDark: Boolean): HazeStyle = HazeStyle(
+    backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
+    tints = listOf(HazeTint(if (isDark) Color(0xFF16181B).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f))),
+    blurRadius = 6.dp,
+    noiseFactor = 0.02f,
+)
+
+/**
  * 액체 유리 섬 — 뒤 화면을 서리 유리로 흐리고, 그 위에 렌즈 셰이더(두꺼운 유리 가장자리 굴절 + 무지개 림 + 기울기 반사광)를
  * 얹은 둥근 상자. 글자 등 [content] 는 유리 위에 또렷하게 올라갑니다. 셰이더를 못 쓰는 기기(Android 12 이하)나 haze 가
  * 없으면 보통의 글래스/반투명 알약으로 대체됩니다. [alpha] 0 이면 유리를 그리지 않습니다.
@@ -212,7 +224,7 @@ fun OneUiLiquidGlassBox(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 24.dp,
     alpha: Float = 1f,
-    strength: Float = 0.7f,
+    strength: Float = 1f,
     contentAlignment: Alignment = Alignment.Center,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -241,7 +253,7 @@ fun OneUiLiquidGlassBox(
                             shader.setFloatUniform("dir", -1f)
                             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
                         }
-                        .hazeEffect(hazeState, liquidFrostStyle(isDark)),
+                        .hazeEffect(hazeState, liquidLensStyle(isDark)) { inputScale = HazeInputScale.None },
                 )
             } else {
                 Box(
