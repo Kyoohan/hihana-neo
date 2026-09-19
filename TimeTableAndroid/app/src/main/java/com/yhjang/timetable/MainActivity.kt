@@ -14,6 +14,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.unit.toIntSize
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.Path
@@ -28,6 +32,8 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -168,6 +174,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import com.yhjang.timetable.ui.systemAccentColor
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.HazeStyle
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiAlertDialog
 import com.yhjang.timetable.ui.OneUiButton
@@ -1638,8 +1647,6 @@ private fun AppNavBar(
 ) {
     // 시스템 설정이 아니라 앱에 적용된 테마를 따라야, 앱을 라이트로 고정했을 때 바만 어둡게 남지 않습니다.
     val isDark = MaterialTheme.colorScheme.isDark
-    // One UI "In-App Navigation" 스타일 — 뒤 콘텐츠를 흐려 비추는 글래스 알약 바 위에, 선택된 항목만 그 안에서
-    // 자기 자리에 캡슐형 배경이 켜지는 형태입니다 (바 위로 아이콘이 떠오르지 않습니다).
     val barColor = if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.85f)
     val selectedCapsuleColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.07f)
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
@@ -1660,8 +1667,7 @@ private fun AppNavBar(
         }
     }
     val dragging = dragIndex != null && pendingIndex == null
-    // pointerInput 람다는 처음 시작할 때의 값을 붙잡고 있어서, 최신 selected/onSelect 를 여기로 받아 씁니다 —
-    // 안 그러면 홈이 아닌 탭에서 끌기 시작할 때 캡슐이 맨 왼쪽(초기 탭)으로 튀었다가 따라왔습니다.
+    // pointerInput 람다는 처음 시작할 때의 값을 붙잡고 있어서, 최신 selected/onSelect 를 여기로 받아 씁니다.
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
     val capsuleIndex by animateFloatAsState(
@@ -1675,21 +1681,34 @@ private fun AppNavBar(
         animationSpec = spring(dampingRatio = 0.7f, stiffness = 220f),
         label = "navLiquid",
     )
-    val stretchX = 1f + 0.04f * liquid
-    val squashY = 1f - 0.025f * liquid
+    val stretchX = 1f + 0.05f * liquid
+    val squashY = 1f - 0.03f * liquid
 
-    // 굴절 렌즈 — Android 13+ 의 AGSL 런타임 셰이더로, 캡슐 아래의 아이콘·글자를 유리 너머로 보듯 휘어 그립니다.
+    // 액체 유리 — 바는 뒤 화면을 크게 흐린 서리 유리, 선택 캡슐은 살짝만 흐린 뒤 화면을 AGSL 렌즈로 굴절·확대해 그립니다
+    // (liquidGL 의 refraction/bevel/frost/specular). 뒤 화면은 Haze 가 가져오고, 그 위에 렌즈 셰이더를 얹습니다.
+    val hazeState = LocalHazeState.current
     val lensShader = remember { LiquidLens.create() }
-    // 실시간 반사광 — 기기 기울기(중력 센서)로 광원 방향을 정해, 폰을 기울이면 캡슐의 하이라이트가 따라 움직입니다.
-    // 센서를 못 쓰면 시간에 따라 천천히 도는 광원으로 대신합니다.
-    val light = rememberLiquidLight(enabled = lensShader != null)
-    val contentLayer = rememberGraphicsLayer()
-    val lensLayer = rememberGraphicsLayer()
+    val liquidEnabled = lensShader != null && hazeState != null
+    val light = rememberLiquidLight(enabled = liquidEnabled)
+    val density = LocalDensity.current
+    val barShape = RoundedCornerShape(32.dp)
+    val frostStyle = HazeStyle(
+        backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
+        tints = listOf(HazeTint(if (isDark) Color(0xFF16181B).copy(alpha = 0.55f) else Color.White.copy(alpha = 0.55f))),
+        blurRadius = 26.dp,
+        noiseFactor = 0.04f,
+    )
+    val lensStyle = HazeStyle(
+        backgroundColor = if (isDark) Color(0xFF101214) else Color(0xFFF4F5F7),
+        tints = listOf(HazeTint(Color.White.copy(alpha = if (isDark) 0.06f else 0.16f))),
+        blurRadius = 2.dp,
+        noiseFactor = 0f,
+    )
 
     Surface(
-        shape = RoundedCornerShape(32.dp),
+        shape = barShape,
         color = Color.Transparent,
-        shadowElevation = 8.dp,
+        shadowElevation = 10.dp,
         modifier = modifier
             .fillMaxWidth()
             // 3버튼 내비게이션에서는 시스템 바가 48dp 가까이 되므로, 그 위로 올려야 바가 잘리지 않습니다.
@@ -1700,25 +1719,74 @@ private fun AppNavBar(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .oneUiGlassSurface(RoundedCornerShape(32.dp), fallback = barColor)
+                .clip(barShape)
+                .then(
+                    if (hazeState != null) Modifier.hazeEffect(hazeState, frostStyle)
+                    else Modifier.background(barColor),
+                )
+                .drawWithContent {
+                    drawContent()
+                    // 위쪽이 밝은 얇은 유리 테두리.
+                    val strokePx = with(density) { 1.dp.toPx() }
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = if (isDark) 0.22f else 0.95f),
+                                Color.White.copy(alpha = if (isDark) 0.04f else 0.3f),
+                            ),
+                        ),
+                        cornerRadius = CornerRadius(with(density) { 32.dp.toPx() }),
+                        style = Stroke(strokePx),
+                        topLeft = Offset(strokePx / 2f, strokePx / 2f),
+                        size = Size(size.width - strokePx, size.height - strokePx),
+                    )
+                }
                 .padding(horizontal = 6.dp, vertical = 6.dp),
         ) {
             val cellWidth = maxWidth / count
-            val cellWidthPx = with(LocalDensity.current) { cellWidth.toPx() }
-            val capsuleRadiusPx = with(LocalDensity.current) { 26.dp.toPx() }
+            val cellWidthPx = with(density) { cellWidth.toPx() }
+            val capsuleRadiusPx = with(density) { 26.dp.toPx() }
+            val capsuleShape = RoundedCornerShape(26.dp)
 
-            // 삼성 헬스처럼 바를 4등분한 칸 하나가 선택 캡슐의 폭입니다 — 캡슐 양 끝이 칸의 경계선에 닿습니다.
+            // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
+            // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
+            // 받고 실제 캡슐 모양은 셰이더 안에서 잘라냅니다 (안 그러면 가장자리가 검게 비었습니다).
+            val lensMargin = if (liquidEnabled) 14.dp else 0.dp
+            val lensMarginPx = with(density) { lensMargin.toPx() }
             Box(
                 modifier = Modifier
-                    .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
-                    .width(cellWidth)
-                    .fillMaxHeight()
+                    // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
+                    .offset { IntOffset((capsuleIndex * cellWidthPx - lensMarginPx).roundToInt(), 0) }
+                    // 부모 제약보다 커야 하므로 required 크기로 (height 는 부모 최대 높이에 눌려 절반만 보였습니다).
+                    .requiredWidth(cellWidth + lensMargin * 2)
+                    .requiredHeight(maxHeight + lensMargin * 2)
                     .graphicsLayer {
                         scaleX = stretchX
                         scaleY = squashY
+                        if (!liquidEnabled) {
+                            clip = true
+                            shape = capsuleShape
+                        }
+                        if (liquidEnabled && lensShader != null) {
+                            lensShader.setFloatUniform(
+                                "rect",
+                                lensMarginPx, lensMarginPx, size.width - lensMarginPx, size.height - lensMarginPx,
+                            )
+                            lensShader.setFloatUniform("radius", capsuleRadiusPx)
+                            lensShader.setFloatUniform("strength", 0.75f + 0.25f * liquid)
+                            lensShader.setFloatUniform("lightDir", light.x, light.y)
+                            lensShader.setFloatUniform("time", light.time)
+                            lensShader.setFloatUniform("tint", 1f, 1f, 1f)
+                            lensShader.setFloatUniform("tintAlpha", if (isDark) 0.08f else 0.18f)
+                            renderEffect = RenderEffect
+                                .createRuntimeShaderEffect(lensShader, "content")
+                                .asComposeRenderEffect()
+                        }
                     }
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(selectedCapsuleColor),
+                    .then(
+                        if (liquidEnabled) Modifier.hazeEffect(hazeState!!, lensStyle)
+                        else Modifier.background(selectedCapsuleColor),
+                    ),
             )
             Row(
                 modifier = Modifier
@@ -1744,34 +1812,6 @@ private fun AppNavBar(
                                 dragIndex = ((dragIndex ?: currentSelected.toFloat()) + dx / cellWidthPx).coerceIn(0f, (count - 1).toFloat())
                             },
                         )
-                    }
-                    .drawWithContent {
-                        // ① 항목들을 레이어에 기록해 그대로 그리고, ② 캡슐 영역만 굴절 셰이더를 거친 복사본으로 덮습니다.
-                        contentLayer.record(this, layoutDirection, size.toIntSize()) { this@drawWithContent.drawContent() }
-                        drawLayer(contentLayer)
-                        if (lensShader != null) {
-                            val left = capsuleIndex * cellWidthPx
-                            val w = cellWidthPx * stretchX
-                            val h = size.height * squashY
-                            val rect = Rect(
-                                left = left + (cellWidthPx - w) / 2f,
-                                top = (size.height - h) / 2f,
-                                right = left + (cellWidthPx + w) / 2f,
-                                bottom = (size.height + h) / 2f,
-                            )
-                            lensShader.setFloatUniform("rect", rect.left, rect.top, rect.right, rect.bottom)
-                            lensShader.setFloatUniform("radius", capsuleRadiusPx)
-                            // 굴절·반사 세기 — 너무 과하지 않게 절반 수준으로 (끌 때 조금 더 세짐)
-                            lensShader.setFloatUniform("strength", 0.28f + 0.22f * liquid)
-                            lensShader.setFloatUniform("lightDir", light.x, light.y)
-                            lensShader.setFloatUniform("time", light.time)
-                            lensLayer.renderEffect = RenderEffect
-                                .createRuntimeShaderEffect(lensShader, "content")
-                                .asComposeRenderEffect()
-                            lensLayer.record(this, layoutDirection, size.toIntSize()) { drawLayer(contentLayer) }
-                            val clipPath = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(capsuleRadiusPx))) }
-                            clipPath(clipPath) { drawLayer(lensLayer) }
-                        }
                     },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1806,9 +1846,10 @@ private fun AppNavBar(
 }
 
 /**
- * 하단 바 캡슐의 "액체 유리" 굴절 셰이더 (AGSL, Android 13+). 캡슐 안쪽에서 픽셀의 샘플 위치를 가장자리로 갈수록
- * 바깥쪽으로 밀어 빛이 휘는 것처럼 보이게 하고, 가운데는 살짝 확대하며, 위쪽 림에 반사광을 얹습니다.
- * 12 이하에서는 null 을 돌려줘 굴절 없이 캡슐 틴트만 그립니다.
+ * 하단 바 캡슐의 "액체 유리" 렌즈 셰이더 (AGSL, Android 13+) — liquidGL 의 개념을 옮긴 것입니다.
+ * `content` 는 바 뒤의 실제 화면. 가운데는 살짝 확대(magnify)하고, 가장자리 경사(bevel)에서는 SDF 법선 방향으로
+ * 샘플을 밀어 빛이 휘어 들어오는 것처럼 보이게 하며(refraction, 약한 색수차), 얇은 유리 림과 광원을 향한
+ * 경사면의 반사광(specular), 천천히 흐르는 광택 띠를 얹습니다. Android 12 이하에서는 null.
  */
 private object LiquidLens {
     private const val AGSL = """
@@ -1818,8 +1859,9 @@ private object LiquidLens {
         uniform float strength;
         uniform float2 lightDir;
         uniform float time;
+        uniform float3 tint;
+        uniform float tintAlpha;
 
-        // 둥근 사각형 SDF — 음수면 안쪽.
         float sdRoundRect(float2 p, float2 c, float2 halfSize, float r) {
             float2 q = abs(p - c) - (halfSize - r);
             return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
@@ -1829,13 +1871,14 @@ private object LiquidLens {
             float2 c = (rect.xy + rect.zw) * 0.5;
             float2 halfSize = (rect.zw - rect.xy) * 0.5;
             float d = sdRoundRect(p, c, halfSize, radius);
+            if (d > 0.5) return half4(0.0);
 
-            // 가장자리 경사(bevel) — 짧은 변의 일정 비율 폭 안에서만 굴절이 일어나고 가운데는 평평합니다.
-            float bevelWidth = min(halfSize.x, halfSize.y) * 0.9;
-            float edge = clamp(1.0 + d / bevelWidth, 0.0, 1.0);
+            // 경사면 — 짧은 변의 절반 정도 폭. 가운데는 평평, 가장자리로 갈수록 급해집니다.
+            float bevelW = min(halfSize.x, halfSize.y) * 0.62;
+            float edge = clamp(1.0 + d / bevelW, 0.0, 1.0);
             float profile = edge * edge * (3.0 - 2.0 * edge);
+            profile = profile * profile;
 
-            // 경사면의 법선 — SDF 의 기울기(중심 방향이 아니라 가장 가까운 변의 방향).
             float eps = 1.0;
             float2 grad = float2(
                 sdRoundRect(p + float2(eps, 0.0), c, halfSize, radius) - sdRoundRect(p - float2(eps, 0.0), c, halfSize, radius),
@@ -1843,29 +1886,35 @@ private object LiquidLens {
             );
             float2 n = normalize(grad + float2(0.0001, 0.0));
 
-            // 굴절: 경사면에서 바깥쪽으로 샘플 위치를 밀고, 가운데는 살짝 확대합니다. 색수차는 R/B 를 조금 다르게.
-            float2 disp = n * profile * radius * 0.42 * strength;
-            float2 base = c + (p - c) * (1.0 - 0.07 * strength);
-            float ab = 1.0 + 0.10 * strength * profile;
+            // 굴절 — 가운데 확대 + 경사면에서 바깥으로 크게 밀어, 캡슐 가장자리에 뒤 화면이 늘어져 비칩니다.
+            float magnify = 1.0 + 0.10 * strength;
+            float2 base = c + (p - c) / magnify;
+            float2 disp = n * profile * bevelW * (0.55 + 0.45 * strength);
+            float ab = 1.0 + 0.045 * profile;
             half r = content.eval(base + disp * ab).r;
             half4 g = content.eval(base + disp);
             half b = content.eval(base + disp / ab).b;
-            half4 col = half4(r, g.g, b, g.a);
+            half3 col = half3(r, g.g, b);
 
-            // 반사광: 광원 방향을 향한 경사면이 밝아지고(스펙큘러), 반대편은 살짝 어두워집니다.
+            // 서리 틴트 (맑은 유리라 옅게).
+            col = mix(col, half3(tint), half(tintAlpha));
+
+            // 반사광 — 광원을 향한 경사면은 밝고, 반대편은 살짝 그늘.
             float2 l = normalize(lightDir + float2(0.0001, 0.0));
             float facing = dot(n, l);
-            float spec = pow(clamp(facing, 0.0, 1.0), 6.0) * profile;
+            float bevelLight = pow(clamp(facing, 0.0, 1.0), 3.0) * profile;
             float shade = clamp(-facing, 0.0, 1.0) * profile;
-            // 광택 띠 — 광원에 수직인 방향으로 가로지르는 얇은 하이라이트가 캡슐 몸통을 천천히 지나갑니다.
+            // 얇은 유리 림 — 가장자리 1.5px 안쪽에 밝은 선, 광원 쪽이 더 밝음.
+            float rim = (1.0 - smoothstep(0.0, 1.8, -d)) * (0.35 + 0.65 * clamp(facing, 0.0, 1.0));
+            // 광택 띠 — 광원에 수직으로 가로지르는 넓은 하이라이트가 천천히 지나갑니다.
             float2 perp = float2(-l.y, l.x);
             float band = dot(p - c, perp) / max(halfSize.x, 1.0);
-            float sweep = sin(time * 0.6) * 0.9;
-            float sheen = exp(-pow((band - sweep) * 3.2, 2.0)) * (1.0 - profile) * 0.5;
+            float sweep = sin(time * 0.5) * 0.9;
+            float sheen = exp(-pow((band - sweep) * 2.6, 2.0)) * (1.0 - profile);
 
-            col.rgb += half3(spec * 0.55 * strength + sheen * 0.12 * strength + 0.08 * strength * profile);
-            col.rgb -= half3(shade * 0.18 * strength);
-            return col;
+            col += half3(rim * 0.55 + bevelLight * 0.32 + sheen * 0.10 + 0.02);
+            col -= half3(shade * 0.10);
+            return half4(col, 1.0);
         }
     """
 
