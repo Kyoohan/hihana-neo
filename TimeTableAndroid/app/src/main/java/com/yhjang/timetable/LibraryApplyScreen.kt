@@ -279,26 +279,27 @@ private fun SeatLegend(modifier: Modifier = Modifier) {
  */
 @Composable
 private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier) {
-    // 좌석이 하나도 없는 행·열은 빼고 촘촘히 — 표지·통로 칸을 안 그리니 빈 공간이 너무 많았습니다.
-    // 남은 행·열의 앞뒤 순서는 그대로라 자리 배치의 상대 위치는 유지됩니다.
+    // 격자 구조(통로·간격)는 포털 그대로 두고, 바깥쪽의 빈 행·열만 잘라냅니다 — 제목·안내 글과 좌석 사이가
+    // 비어 보이던 원인. 안쪽 빈 칸은 실제 도서관 배치(통로)라 그대로 둡니다.
     val map = remember(area) {
         val real = area.seats.filter { it.isSeat && it.x >= 0 && it.y >= 0 }
-        val xs = real.map { it.x }.distinct().sorted()
-        val ys = real.map { it.y }.distinct().sorted()
-        val xIndex = xs.withIndex().associate { (i, x) -> x to i }
-        val yIndex = ys.withIndex().associate { (i, y) -> y to i }
+        val minX = real.minOfOrNull { it.x } ?: 0
+        val minY = real.minOfOrNull { it.y } ?: 0
+        val maxX = real.maxOfOrNull { it.x } ?: 0
+        val maxY = real.maxOfOrNull { it.y } ?: 0
         LibraryArea(
             label = area.label,
-            gridX = xs.size.coerceAtLeast(1),
-            gridY = ys.size.coerceAtLeast(1),
-            seats = real.map { it.copy(x = xIndex.getValue(it.x), y = yIndex.getValue(it.y)) },
+            gridX = (maxX - minX + 1).coerceAtLeast(1),
+            gridY = (maxY - minY + 1).coerceAtLeast(1),
+            seats = real.map { it.copy(x = it.x - minX, y = it.y - minY) },
         )
     }
     val palette = seatPalette()
     val density = LocalDensity.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
+        // 칸 크기는 원래 격자 폭(10칸)을 화면에 맞춘 것보다 살짝(10%) 크게 — 잘라낸 뒤 남은 칸 수로 맞추면 너무 커집니다.
         val minCell = 34.dp
-        val fit = maxWidth / map.gridX.coerceAtLeast(1)
+        val fit = maxWidth / area.gridX.coerceAtLeast(1) * 1.1f
         val cell = if (fit < minCell) minCell else fit
         val cellPx = with(density) { cell.toPx() }
         val gap = with(density) { 2.dp.toPx() }
