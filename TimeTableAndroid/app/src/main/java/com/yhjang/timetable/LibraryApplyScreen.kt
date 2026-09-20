@@ -468,6 +468,14 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                         }
                         textPaint.textSize = labelPx * 0.9f
                         drawContext.canvas.nativeCanvas.drawText(who.take(5), cx, cy + lineGap / 2f + labelPx * 0.35f, textPaint)
+                        // 학년 — 칸 오른쪽 위 구석에 작게 (학번 앞 두 자리로 계산: 24=3학년, 25=2학년, 26=1학년).
+                        StudentNameCache.grade(seat.studentNumber)?.let { grade ->
+                            textPaint.textSize = labelPx * 0.72f
+                            textPaint.textAlign = android.graphics.Paint.Align.RIGHT
+                            textPaint.alpha = 190
+                            drawContext.canvas.nativeCanvas.drawText("$grade", left + size.width - labelPx * 0.35f, top + labelPx * 0.95f, textPaint)
+                            textPaint.textAlign = android.graphics.Paint.Align.CENTER
+                        }
                         textPaint.textSize = prevSize
                         textPaint.color = prevColor
                         textPaint.alpha = prevAlpha

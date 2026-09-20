@@ -92,7 +92,22 @@ object StudentNameCache {
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun name(context: Context, studentNumber: String?): String? =
-        studentNumber?.let { prefs(context).getString(it, null) }
+        studentNumber?.let { prefs(context).getString(it, null) }?.let(::cleanName)
+
+    /** 이름 뒤에 붙어 들어온 쉼표·공백 정리 ("한예준," → "한예준"). */
+    private fun cleanName(raw: String): String? = raw.trim().trimEnd(',', ';', '\t').trim().takeIf { it.isNotEmpty() }
+
+    /**
+     * 학번 앞 두 자리(입학 연도) → 학년. 26 이면 2026년 입학 = 1학년, 25 는 2학년, 24 는 3학년.
+     * 1~3 밖이면(졸업생·오류) null.
+     */
+    fun grade(studentNumber: String?): Int? {
+        val prefix = studentNumber?.take(2)?.toIntOrNull() ?: return null
+        val year = PlanStore.today().year % 100
+        // 3월 전에는 아직 새 학년이 시작되지 않았으므로 전년도 기준.
+        val academicYear = if (PlanStore.today().monthValue < 3) year - 1 else year
+        return (academicYear - prefix + 1).takeIf { it in 1..3 }
+    }
 
     fun count(context: Context): Int = prefs(context).all.size
 
@@ -113,9 +128,9 @@ object StudentNameCache {
         }
         val lines = text.lines().map { it.trim() }
         val mail = Regex("""has_(\d{5})@hana\.hs\.kr""", RegexOption.IGNORE_CASE)
-        val pair = Regex("""^(\d{5})[,\t ]+(\S{2,7})$""")
-        // "이름, 학번" 순서 (예: `강건우, 25001`, 동명이인은 `김규리A, 24009`)
-        val pairNameFirst = Regex("""^(\S{2,7})[,\t ]+(\d{5})$""")
+        val pair = Regex("""^(\d{5})[,;\t ]+([^,;\t ]{2,7})$""")
+        // "이름, 학번" 순서 (예: `강건우, 25001`, 동명이인은 `김규리A, 24009`) — 이름에 쉼표가 붙지 않게 구분자를 제외.
+        val pairNameFirst = Regex("""^([^,;\t ]{2,7})[,;\t ]+(\d{5})$""")
         lines.forEachIndexed { i, line ->
             mail.find(line)?.let { m ->
                 var j = i - 1
