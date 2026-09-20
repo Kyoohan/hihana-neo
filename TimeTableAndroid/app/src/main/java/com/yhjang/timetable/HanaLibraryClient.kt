@@ -56,7 +56,7 @@ enum class SeatService(
     val applyPage: String,
     val listPaths: List<String>,
     val reservePaths: List<String>,
-    /** 기기 등록(updateDiviceInfo.json)의 usegubun — 도서관 L, 면학실 S (도서관 값으로 등록하면 면학실엔 안 먹힘). */
+    /** 기기 등록(updateDiviceInfo.json)의 usegubun — 포털 페이지 JS 에서 확인: 도서관 L, 면학실 C. */
     val deviceGubun: String,
 ) {
     LIBRARY(
@@ -71,7 +71,7 @@ enum class SeatService(
         "/main/studyroom/study-apply.do",
         listOf("/main/studyroom/study-room-req-list.json", "/main/studyroom/study-req-list.json", "/main/studyroom/studyroom-req-list.json"),
         listOf("/main/studyroom/study-room-req.json", "/main/studyroom/study-req.json", "/main/studyroom/studyroom-req.json"),
-        "S",
+        "C",
     ),
 }
 
