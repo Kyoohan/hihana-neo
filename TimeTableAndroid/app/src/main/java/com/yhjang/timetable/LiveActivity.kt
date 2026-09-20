@@ -176,8 +176,12 @@ object LiveActivity {
         // 제목은 "지금 있어야 할 장소" — 면학이면 장소+자리, 수업이면 과목+교실. 쉬는 시간·식사 같은 대기 구간에는
         // 다음에 가야 할 장소를 제목에 같이 붙입니다 ("쉬는 시간 → 교과교실 A201").
         val kind = block.kind
+        // 대기 구간이 가리키는 "바로 다음" 장소는 구간 자체(title/room = gap.next)에 있습니다 — [next] 는 nextEvent() 가
+        // 대기 구간에서는 바로 다음을 건너뛴 그 다음 일정이라(위젯 히어로용) 여기 쓰면 한 타임 뒤 장소가 붙었습니다.
+        val gapNextPlace = listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() })
+            .joinToString(" ").takeIf { it.isNotBlank() && it != kind.gapLabel() }
         val title = when (kind) {
-            is BlockKind.GapKind -> listOfNotNull(kind.gap.label, nextPlace?.let { "→ $it" }).joinToString(" ")
+            is BlockKind.GapKind -> listOfNotNull(kind.gap.label, gapNextPlace?.let { "→ $it" }).joinToString(" ")
             else -> listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() }).joinToString(" ")
                 .ifBlank { block.statusLabel }
         }
@@ -251,6 +255,9 @@ object LiveActivity {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()
     }
+
+    /** 대기 구간의 이름(없으면 null) — 다음 장소가 없을 때 title 이 fallbackTitle(=이름)로 채워지는 것을 걸러내는 용도. */
+    private fun BlockKind.gapLabel(): String? = (this as? BlockKind.GapKind)?.gap?.fallbackTitle
 
     private fun ensureChannel(manager: NotificationManager) {
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
