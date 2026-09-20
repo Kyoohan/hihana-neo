@@ -165,6 +165,8 @@ object StudentNameCache {
 }
 
 object HanaLibraryApi {
+    /** 신청·취소 응답을 기다리는 최대 시간 — 브라우저가 기다리는 만큼 (예약 오픈 직후 서버 대기열 대비). */
+    private const val APPLY_WAIT_MS = 90_000L
 
     private const val TAG = "HanaLibrary"
     private const val BASE = "https://hh.hana.hs.kr"
@@ -203,7 +205,13 @@ object HanaLibraryApi {
     }
 
     /** 후보 경로를 차례로 POST 해 처음으로 JSON 을 주는 응답을 돌려줍니다 (404 HTML 은 건너뜀). */
-    private suspend fun firstJson(context: Context, paths: List<String>, params: List<Pair<String, String>>, referer: String): JSONObject {
+    private suspend fun firstJson(
+        context: Context,
+        paths: List<String>,
+        params: List<Pair<String, String>>,
+        referer: String,
+        readTimeoutMs: Long? = null,
+    ): JSONObject {
         var last: Exception? = null
         for (path in paths) {
             // 예약 오픈 직후 과부하 때 포털이 빈 본문(HTTP 200)을 자주 돌려줍니다 — 같은 경로를 짧게 몇 번 더 두드립니다.
@@ -211,7 +219,7 @@ object HanaLibraryApi {
             var transientHere = false
             while (attempt < 5) {
                 try {
-                    val raw = HanaPortalClient.get().authenticatedRaw(context, path, params, method = "POST", referer = referer)
+                    val raw = HanaPortalClient.get().authenticatedRaw(context, path, params, method = "POST", referer = referer, readTimeoutMs = readTimeoutMs)
                     val json = runCatching { JSONObject(raw.body) }.getOrNull()
                     if (json != null) return json
                     if (raw.body.isBlank()) {
@@ -227,6 +235,10 @@ object HanaLibraryApi {
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     // 화면을 닫았거나 타임을 바꿔 취소된 것 — 다음 후보로 넘어가면 안 됩니다.
                     throw e
+                } catch (e: java.net.SocketTimeoutException) {
+                    // 기다리는 동안 답이 없었음 — 서버가 아직 처리 중일 수 있으니 다시 보내지 않고 호출부가 좌석표로 확인합니다.
+                    Log.d(TAG, "$path 응답 대기 시간 초과")
+                    throw HanaPortalException.Timeout("[$path] ${e.message}")
                 } catch (e: Exception) {
                     last = e
                     Log.d(TAG, "$path 실패: ${e.message}")
@@ -375,11 +387,13 @@ object HanaLibraryApi {
      */
     suspend fun reserve(context: Context, seat: LibrarySeat, slotId: String, service: SeatService = SeatService.LIBRARY): String = withContext(Dispatchers.IO) {
         val params = listOf("clrIdx" to seat.clrIdx.toString(), "srtIdx" to seat.srtIdx.toString(), "stIdxFull" to slotId)
-        var json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage)
+        // 브라우저처럼 한 번만 보내고 길게 기다립니다 — 예약 오픈 직후엔 서버가 요청을 수십 초 붙들고 있다가 답합니다.
+        // 기본 10초에서 끊어 버리면 실제로는 신청됐는데 앱은 실패로 보여주고, 사용자가 다시 눌러 서버를 더 밀어 넣습니다.
+        var json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage, readTimeoutMs = APPLY_WAIT_MS)
         if (json.optString("result") != "success" && json.optString("resMsg").contains("기기")) {
             Log.d(TAG, "device not registered here — registering and retrying")
             registerDevice(context, service)
-            json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage)
+            json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage, readTimeoutMs = APPLY_WAIT_MS)
         }
         val message = cleanMessage(json.optString("resMsg"))
         if (json.optString("result") != "success") {
@@ -389,8 +403,9 @@ object HanaLibraryApi {
     }
 
     suspend fun cancel(context: Context, sreIdx: Int, service: SeatService = SeatService.LIBRARY): String = withContext(Dispatchers.IO) {
-        val json = HanaPortalClient.get().authenticatedJson(
-            context, "/main/studyroom/study-cancel.json", listOf("sreIdx" to sreIdx.toString()), referer = BASE + service.applyPage,
+        val json = firstJson(
+            context, listOf("/main/studyroom/study-cancel.json"), listOf("sreIdx" to sreIdx.toString()),
+            referer = BASE + service.applyPage, readTimeoutMs = APPLY_WAIT_MS,
         )
         val message = cleanMessage(json.optString("resMsg"))
         if (json.optString("result") != "success") {

@@ -103,6 +103,8 @@ sealed class HanaPortalException(message: String) : Exception(message) {
     class Rejected(message: String) : HanaPortalException(message)
     /** 서버가 과부하일 때 내려오는 빈 본문(HTTP 200) — 세션 문제가 아니므로 재로그인하지 말고 잠깐 뒤 다시 시도합니다. */
     class Transient(detail: String) : HanaPortalException("학사시스템이 응답하지 않습니다 (잠시 후 다시 시도)\n$detail")
+    /** 요청은 보냈지만 기다리는 시간 안에 응답이 오지 않음 — 서버는 그 요청을 계속 처리하고 있을 수 있습니다. */
+    class Timeout(detail: String) : HanaPortalException("응답이 오지 않았습니다\n$detail")
 
     /** 세션 만료로 로그인 페이지가 내려온 경우 — [authenticatedRaw] 가 재로그인을 결정하는 내부 신호. */
     internal data object LoginPage : HanaPortalException("로그인 페이지가 내려왔습니다")
@@ -524,12 +526,13 @@ class HanaPortalClient private constructor() {
         params: List<Pair<String, String>> = emptyList(),
         method: String = "GET",
         referer: String = "$BASE/",
+        readTimeoutMs: Long? = null,
     ): HanaRawResponse = withContext(Dispatchers.IO) {
         try {
-            requestRaw(path, params, method, referer)
+            requestRaw(path, params, method, referer, readTimeoutMs)
         } catch (e: HanaPortalException.LoginPage) {
             login(context)
-            requestRaw(path, params, method, referer)
+            requestRaw(path, params, method, referer, readTimeoutMs)
         }.also { lastAuthenticatedAt = System.currentTimeMillis() }
     }
 
@@ -601,6 +604,7 @@ class HanaPortalClient private constructor() {
         params: List<Pair<String, String>>,
         method: String,
         referer: String,
+        readTimeoutMs: Long? = null,
     ): HanaRawResponse {
         val builder = browserLikeRequestBuilder(BASE + path, referer)
         val request = when (method.uppercase()) {
@@ -608,7 +612,10 @@ class HanaPortalClient private constructor() {
             else -> builder.post(formBody(params)).build()
         }
 
-        client.newCall(request).execute().use { resp ->
+        // 예약 오픈 직후처럼 서버가 요청을 오래 붙들고 있다가 답하는 경우, 브라우저처럼 한 번 보내고 길게 기다립니다
+        // (newBuilder 는 연결 풀·쿠키를 그대로 공유합니다).
+        val caller = if (readTimeoutMs != null) client.newBuilder().readTimeout(readTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS).build() else client
+        caller.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
             if (looksLikeLoginPage(body)) throw HanaPortalException.LoginPage
             return HanaRawResponse(resp.code, body)

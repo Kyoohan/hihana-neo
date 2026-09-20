@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,6 +83,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // 신청·취소 요청을 기다리는 동안 팝업에 띄우는 문구 (null 이면 기다리는 중이 아님).
+    var pendingText by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     // 팝업이 사라지는 애니메이션 동안에도 글자가 남아 있도록 마지막 문구를 따로 둡니다.
     var noticeShown by remember { mutableStateOf("") }
@@ -115,15 +118,37 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         val id = slotId ?: return
         val cancelling = seat.mine && seat.sreIdx != null
         busy = true
+        // 기다리는 동안엔 팝업에 진행 상황을 — 예약 오픈 직후엔 서버가 1분 넘게 붙들기도 해서 멈춘 게 아님을 보여줍니다.
+        pendingText = if (cancelling) "${seat.cont} 취소 중…" else "${seat.cont} 신청 중…"
+        val slowHint = scope.launch {
+            delay(8_000)
+            pendingText = (if (cancelling) "${seat.cont} 취소 중" else "${seat.cont} 신청 중") + " · 서버가 붐벼 오래 걸릴 수 있어요"
+        }
         scope.launch {
-            notice = try {
+            var timedOut = false
+            val result = try {
                 if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
                 else HanaLibraryApi.reserve(context, seat, id, service)
+            } catch (e: HanaPortalException.Timeout) {
+                timedOut = true
+                null
             } catch (e: Exception) {
                 e.message ?: "실패했습니다"
             }
-            busy = false
+            slowHint.cancel()
             loadMap()
+            busy = false
+            pendingText = null
+            // 응답 없이 시간이 지났으면 다시 보내는 대신 좌석표로 결과를 확인합니다 — 서버가 첫 요청을 늦게 처리했을 수 있습니다.
+            notice = if (timedOut) {
+                val nowMine = map?.areas?.flatMap { it.seats }?.any { it.mine && it.cont == seat.cont } == true
+                when {
+                    cancelling && !nowMine -> "응답은 없었지만 ${seat.cont} 취소가 반영됐습니다"
+                    cancelling -> "응답이 없었고 ${seat.cont} 은 아직 내 자리입니다 — 다시 눌러 주세요"
+                    nowMine -> "응답은 없었지만 ${seat.cont} 신청이 반영됐습니다"
+                    else -> "응답이 없었고 ${seat.cont} 은 신청되지 않았습니다 — 다시 눌러 주세요"
+                }
+            } else result
             runCatching { refreshDevice() }
             onChanged()
         }
@@ -157,7 +182,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         overlay = { toolbar ->
         // 결과는 아래쪽 알약 팝업으로 잠깐 보여줍니다 (다이얼로그 없이).
         AnimatedVisibility(
-            visible = notice != null,
+            visible = notice != null || pendingText != null,
             enter = fadeIn() + slideInVertically { it / 2 },
             exit = fadeOut() + slideOutVertically { it / 2 },
             modifier = Modifier
@@ -167,13 +192,25 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         ) {
             // 헤더 섬과 같은 액체 유리(서리 + 무지개 림 + 반사광) 알약.
             OneUiLiquidGlassBox(cornerRadius = 22.dp, strength = 0.8f) {
-                Text(
-                    noticeShown,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 13.dp),
-                )
+                ) {
+                    if (pendingText != null) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(
+                        pendingText ?: noticeShown,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
         },
