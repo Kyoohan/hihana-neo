@@ -1751,14 +1751,23 @@ private fun SettingsScreen(
 
             item {
                 OneUiSectionTitle("정보")
-                // 개발자 모드 — "버전 x.y" 줄을 5번 누르면 켜집니다. 학번·이름 파일을 기기에 직접 넣는 용도(APK 엔 포함 안 함).
+                // 개발자 모드 — 정보 화면의 "버전 x.y" 글씨를 10번 누르면 켜집니다. 학번·이름 파일을 기기에 직접 넣는 용도
+                // (APK 엔 포함 안 함). 정보 화면에서 돌아올 때 다시 읽습니다.
                 var devMode by remember { mutableStateOf(DeveloperMode.isEnabled(context)) }
-                var versionTaps by remember { mutableStateOf(0) }
+                val lifecycleOwnerDev = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwnerDev) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) devMode = DeveloperMode.isEnabled(context)
+                    }
+                    lifecycleOwnerDev.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwnerDev.lifecycle.removeObserver(observer) }
+                }
                 var devNotice by remember { mutableStateOf<String?>(null) }
                 OneUiGroupColumn {
-                    // 갤러리 설정의 "갤러리 정보•" — 상세(업데이트·변경 사항)는 정보 화면에서.
+                    // 갤러리 설정의 "갤러리 정보•" — 버전만 적고, 상세(업데이트·변경 사항)는 정보 화면에서.
                     OneUiListItem(
                         title = "${context.getString(R.string.app_name)} 정보",
+                        subtitle = "버전 ${BuildConfig.VERSION_NAME}",
                         badgeDot = updateAvailable,
                         trailing = {
                             Icon(
@@ -1768,24 +1777,6 @@ private fun SettingsScreen(
                             )
                         },
                         onClick = onOpenAppInfo,
-                    )
-                    OneUiDivider()
-                    OneUiListItem(
-                        title = "버전 ${BuildConfig.VERSION_NAME}",
-                        subtitle = when {
-                            devMode -> "개발자 모드 켜짐"
-                            versionTaps in 2..4 -> "${5 - versionTaps}번 더 누르면 개발자 모드"
-                            else -> null
-                        },
-                        onClick = {
-                            if (devMode) return@OneUiListItem
-                            versionTaps++
-                            if (versionTaps >= 5) {
-                                DeveloperMode.setEnabled(context, true)
-                                devMode = true
-                                versionTaps = 0
-                            }
-                        },
                     )
                 }
                 if (devMode) {

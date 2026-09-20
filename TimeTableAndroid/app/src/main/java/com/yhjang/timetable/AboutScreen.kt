@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,11 +141,29 @@ internal fun AppInfoScreen(
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(28.dp))
+                    // 개발자 모드 — 이 버전 글씨를 10번 누르면 켜집니다 (설정 → 정보 아래에 '개발자' 섹션이 생김).
+                    var versionTaps by remember { mutableStateOf(0) }
+                    var devEnabled by remember { mutableStateOf(DeveloperMode.isEnabled(context)) }
                     Text(
-                        "버전 ${BuildConfig.VERSION_NAME}",
+                        when {
+                            devEnabled -> "버전 ${BuildConfig.VERSION_NAME} · 개발자 모드"
+                            versionTaps in 3..9 -> "버전 ${BuildConfig.VERSION_NAME} · ${10 - versionTaps}번 더"
+                            else -> "버전 ${BuildConfig.VERSION_NAME}"
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = scheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            if (devEnabled) return@clickable
+                            versionTaps++
+                            if (versionTaps >= 10) {
+                                DeveloperMode.setEnabled(context, true)
+                                devEnabled = true
+                            }
+                        },
                     )
                     Spacer(Modifier.height(4.dp))
                     UpdateStatusLine(updateState)
