@@ -34,6 +34,13 @@ data class LibrarySeat(
     val sreIdx: Int?,
     val mine: Boolean,
     val holiday: Boolean,
+    /** 신청한 학생 이름·학번 (sre_mem_name / sre_std_num) — 포털 응답에 그대로 들어 있습니다. 빈 자리면 null. */
+    val memberName: String? = null,
+    val studentNumber: String? = null,
+    /** 성별 (mem_sex M/F → 남/여) — 포털 페이지는 남의 자리에 이름 대신 이것만 보여줍니다. */
+    val gender: String? = null,
+    /** 지정석(sre_assign_yn=Y) — 취소할 수 없습니다. */
+    val assigned: Boolean = false,
 ) {
     val isSeat: Boolean get() = type == "1"
     val available: Boolean get() = isSeat && usable && sreIdx == null && !holiday
@@ -158,6 +165,10 @@ object HanaLibraryApi {
                 sreIdx = row.optInt("sre_idx", 0).takeIf { it > 0 },
                 mine = row.optString("myYn") == "Y",
                 holiday = row.optString("holidayYn") == "Y",
+                memberName = row.optString("sre_mem_name").takeIf { it.isNotBlank() && it != "null" },
+                studentNumber = row.optString("sre_std_num").takeIf { it.isNotBlank() && it != "null" },
+                gender = when (row.optString("mem_sex")) { "M" -> "남"; "F" -> "여"; else -> null },
+                assigned = row.optString("sre_assign_yn").uppercase() == "Y",
             )
         }
         // 배치도는 세로로 긴 한 장입니다 (10 × 66 정도, 사이에 없는 행도 있음). 층은 통로 칸의 바닥색으로 갈립니다

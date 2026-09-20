@@ -258,7 +258,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     Text(
                         buildString {
                             append("빈 자리 $free")
-                            if (mine != null) append(" · 내 자리 ${mine.cont}")
+                            if (mine != null) append(" · 내 자리 ${mine.cont}").also { if (mine.assigned) append(" (지정석)") }
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -382,6 +382,8 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
         val fit = maxWidth / area.gridX.coerceAtLeast(1) * 1.1f
         val cell = if (fit < minCell) minCell else fit
         val cellPx = with(density) { cell.toPx() }
+        // 칸 높이는 두 줄(번호 + 이름)이 들어가도록 폭의 1.3배.
+        val rowPx = cellPx * 1.3f
         val gap = with(density) { 2.dp.toPx() }
         val labelPx = with(density) { 10.sp.toPx() }
         val byCell = remember(map) { map.seats.associateBy { it.x to it.y } }
@@ -396,21 +398,21 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
             Canvas(
                 Modifier
                     .width(cell * map.gridX)
-                    .height(cell * map.gridY)
+                    .height(cell * 1.3f * map.gridY)
                     .pointerInput(map) {
                         detectTapGestures { p ->
                             val x = floor(p.x / cellPx).toInt()
-                            val y = floor(p.y / cellPx).toInt()
+                            val y = floor(p.y / rowPx).toInt()
                             val seat = byCell[x to y] ?: return@detectTapGestures
-                            if (seat.isSeat && (seat.available || seat.mine)) onSeatTap(seat)
+                            if (seat.isSeat && (seat.available || (seat.mine && !seat.assigned))) onSeatTap(seat)
                         }
                     },
             ) {
                 map.seats.forEach { seat ->
                     if (seat.x < 0 || seat.y < 0) return@forEach
                     val left = seat.x * cellPx + gap
-                    val top = seat.y * cellPx + gap
-                    val size = Size(cellPx - gap * 2, cellPx - gap * 2)
+                    val top = seat.y * rowPx + gap
+                    val size = Size(cellPx - gap * 2, rowPx - gap * 2)
                     if (!seat.isSeat) {
                         // 통로 칸(숫자만 적힌 칸)은 비워 두고, 표지("입구", "토의실 A", "2F입구")는 글자만 씁니다 —
                         // 표지가 srt_type 2 로도 3 으로도 와서 종류 대신 글자로 가립니다.
@@ -437,13 +439,23 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                     textPaint.color = (if (seat.mine) palette.labelOnDark else palette.label).let { c ->
                         android.graphics.Color.argb((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt())
                     }
-                    textPaint.alpha = if (!seat.available && !seat.mine) 140 else 255
-                    drawContext.canvas.nativeCanvas.drawText(
-                        label,
-                        left + size.width / 2f,
-                        top + size.height / 2f + labelPx * 0.35f,
-                        textPaint,
-                    )
+                    textPaint.alpha = if (!seat.available && !seat.mine) 170 else 255
+                    // 두 번째 줄: 신청한 사람 — 이름(없으면 성별), 내 자리는 이름. 포털 JSON 의 sre_mem_name 을 그대로 씁니다.
+                    val who = when {
+                        seat.mine -> seat.memberName ?: "나"
+                        seat.sreIdx != null -> seat.memberName ?: seat.gender
+                        else -> null
+                    }
+                    val cx = left + size.width / 2f
+                    if (who == null) {
+                        drawContext.canvas.nativeCanvas.drawText(label, cx, top + size.height / 2f + labelPx * 0.35f, textPaint)
+                    } else {
+                        drawContext.canvas.nativeCanvas.drawText(label, cx, top + size.height * 0.42f + labelPx * 0.35f, textPaint)
+                        val prev = textPaint.textSize
+                        textPaint.textSize = labelPx * 0.9f
+                        drawContext.canvas.nativeCanvas.drawText(who.take(4), cx, top + size.height * 0.78f + labelPx * 0.3f, textPaint)
+                        textPaint.textSize = prev
+                    }
                 }
             }
         }

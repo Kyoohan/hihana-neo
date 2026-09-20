@@ -114,7 +114,11 @@ object HanaApplyApi {
             Log.d("HanaDiscover", "html $path 실패: ${it.message}"); return@withContext
         }
         Log.d("HanaDiscover", "html $path ${html.length} chars")
-        val keys = listOf("updateDiviceInfo", "usegubun", "deviceChk", "study-room-req", "stIdxFull")
+        val keys = listOf(
+            "updateDiviceInfo", "usegubun", "deviceChk", "study-room-req", "stIdxFull",
+            // 좌석 칸에 이름·학번을 어떻게 그리는지 (좌석 JSON 의 sre_mem_name / sre_std_num / in_mem_name 사용처)
+            "sre_mem_name", "sre_std_num", "in_mem_name", "myYn", "srt_cont",
+        )
         keys.forEach { key ->
             var from = 0
             var n = 0
