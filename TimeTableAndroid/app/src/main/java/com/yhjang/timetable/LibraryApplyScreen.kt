@@ -447,14 +447,29 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                         else -> null
                     }
                     val cx = left + size.width / 2f
+                    val cy = top + size.height / 2f
                     if (who == null) {
-                        drawContext.canvas.nativeCanvas.drawText(label, cx, top + size.height / 2f + labelPx * 0.35f, textPaint)
+                        drawContext.canvas.nativeCanvas.drawText(label, cx, cy + labelPx * 0.35f, textPaint)
                     } else {
-                        drawContext.canvas.nativeCanvas.drawText(label, cx, top + size.height * 0.42f + labelPx * 0.35f, textPaint)
-                        val prev = textPaint.textSize
+                        // 번호 + 이름 두 줄을 한 덩어리로 보고 칸 세로 가운데에 놓습니다 (줄 간격 = 글자 크기 × 1.15).
+                        val lineGap = labelPx * 1.15f
+                        drawContext.canvas.nativeCanvas.drawText(label, cx, cy - lineGap / 2f + labelPx * 0.35f, textPaint)
+                        val prevSize = textPaint.textSize
+                        val prevColor = textPaint.color
+                        val prevAlpha = textPaint.alpha
+                        // 이름은 성별 색으로 — 남 파랑, 여 분홍 (내 자리는 흰 바탕 대비를 위해 그대로).
+                        if (!seat.mine) {
+                            when (seat.gender) {
+                                "남" -> textPaint.color = android.graphics.Color.rgb(96, 165, 250)
+                                "여" -> textPaint.color = android.graphics.Color.rgb(244, 114, 182)
+                            }
+                            textPaint.alpha = 255
+                        }
                         textPaint.textSize = labelPx * 0.9f
-                        drawContext.canvas.nativeCanvas.drawText(who.take(4), cx, top + size.height * 0.78f + labelPx * 0.3f, textPaint)
-                        textPaint.textSize = prev
+                        drawContext.canvas.nativeCanvas.drawText(who.take(4), cx, cy + lineGap / 2f + labelPx * 0.35f, textPaint)
+                        textPaint.textSize = prevSize
+                        textPaint.color = prevColor
+                        textPaint.alpha = prevAlpha
                     }
                 }
             }
