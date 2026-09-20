@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -55,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.Saver
@@ -66,6 +68,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -1031,9 +1040,12 @@ fun rememberOneUiHeaderState(expandedExtra: Dp = OneUiHeaderExpandedExtra): OneU
 }
 
 /**
- * 메인 화면 상단 헤더 — 펼치면 왼쪽 아래에 큰 제목(+회색 부제목)이 있고, 스크롤로 접히면 큰 제목이 사라지며
- * 키트 "Top App Bar" 처럼 작은 제목·부제목이 든 글래스 툴바만 남습니다. 콘텐츠는 이 툴바 아래로 지나가며
+ * 메인 화면 상단 헤더 — 펼치면 왼쪽에 큰 제목(+회색 부제목)이 있고, 스크롤로 접히면 그 제목이 그대로 줄어들며
+ * 키트 "Top App Bar" 처럼 작은 제목·부제목이 든 글래스 섬 안으로 미끄러져 들어갑니다. 콘텐츠는 이 섬 아래로 지나가며
  * 흐려 비칩니다. 오른쪽 액션 아이콘은 여기 없고, 호출부가 [OneUiActionPill] 을 오버레이로 얹습니다.
+ *
+ * 제목은 한 벌만 그립니다 — 섬 안에는 투명한 자리표시 글자를 두고, 큰 제목이 접힘 비율만큼 그 자리로
+ * 이동·축소되므로 두 글자가 끊겨 바뀌지 않고 이어집니다.
  */
 @Composable
 fun OneUiCollapsingHeader(
@@ -1046,10 +1058,21 @@ fun OneUiCollapsingHeader(
     val scheme = MaterialTheme.colorScheme
     val fraction = state.fraction
     val extra = with(density) { (state.rangePx + state.offsetPx).toDp() }
-    val titleAlpha = (1f - fraction * 1.6f).coerceIn(0f, 1f)
-    val barAlpha = ((fraction - 0.4f) / 0.6f).coerceIn(0f, 1f)
+    // 섬 유리는 글자가 도착하기 조금 전부터 떠오릅니다.
+    val barAlpha = ((fraction - 0.25f) / 0.6f).coerceIn(0f, 1f)
+    val progress = FastOutSlowInEasing.transform(fraction)
 
-    // 접히면 가로 전체 바가 아니라, 제목·날짜 섬(왼쪽)과 액션 알약(오른쪽, 호출부)이 각각 액체 유리로 떠 있습니다.
+    val bigTitleStyle = MaterialTheme.typography.headlineMedium.copy(lineHeight = 36.sp)
+    val smallTitleStyle = MaterialTheme.typography.titleMedium
+    val bigSubtitleStyle = MaterialTheme.typography.bodyMedium
+    val smallSubtitleStyle = MaterialTheme.typography.labelSmall
+
+    // 큰 자리와 섬 안 자리 — 배치된 뒤 루트 기준 위치를 재서 그 차이만큼 옮깁니다.
+    var titleFrom by remember { mutableStateOf<Rect?>(null) }
+    var titleTo by remember { mutableStateOf<Rect?>(null) }
+    var subtitleFrom by remember { mutableStateOf<Rect?>(null) }
+    var subtitleTo by remember { mutableStateOf<Rect?>(null) }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1065,10 +1088,9 @@ fun OneUiCollapsingHeader(
                 }
             }
             .windowInsetsPadding(WindowInsets.statusBars)
-            .height(OneUiCompactBarHeight + extra)
-            .clipToBounds(),
+            .height(OneUiCompactBarHeight + extra),
     ) {
-        // 접힌 제목·날짜 섬 — 오른쪽 액션 알약 자리는 비워 둡니다.
+        // 접힌 제목·날짜 섬 — 오른쪽 액션 알약 자리는 비워 둡니다. 안의 글자는 자리만 잡는 투명 표시자입니다.
         OneUiLiquidGlassBox(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -1085,48 +1107,75 @@ fun OneUiCollapsingHeader(
             ) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = smallTitleStyle,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.alpha(0f).trackBounds { titleTo = it },
                 )
                 if (subtitle != null) {
                     Text(
                         subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
+                        style = smallSubtitleStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.alpha(0f).trackBounds { subtitleTo = it },
                     )
                 }
             }
         }
-        // 펼친 상태의 큰 제목 — 제목 한 줄의 세로 중심을 오른쪽 액션 버튼 줄의 중심(상단 4dp + 52dp/2 = 30dp)에 맞춥니다.
-        // 제목 줄 높이가 36dp 이므로 위 여백은 30 - 18 = 12dp. 날짜는 그 아래에 이어집니다.
+        // 실제로 보이는 제목 — 펼친 자리(제목 한 줄의 세로 중심을 오른쪽 액션 버튼 줄의 중심 30dp 에 맞춤: 줄 높이 36dp 라
+        // 위 여백 12dp)에 놓고, 접힘 비율만큼 섬 안 자리로 이동·축소합니다. 헤더가 낮아져도 글자 높이가 눌리지 않도록
+        // 높이 제한 없이 잽니다 — 안 그러면 접혔을 때 부제목이 0 높이로 잘려 사라집니다.
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = 24.dp, top = 12.dp, end = 120.dp)
-                .alpha(titleAlpha),
+                .wrapContentHeight(align = Alignment.Top, unbounded = true),
         ) {
             Text(
                 title,
-                style = MaterialTheme.typography.headlineMedium.copy(lineHeight = 36.sp),
+                style = bigTitleStyle,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .trackBounds { titleFrom = it }
+                    .morphTo(progress, titleFrom, titleTo, smallTitleStyle.fontSize.value / bigTitleStyle.fontSize.value),
             )
             if (subtitle != null) {
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = bigSubtitleStyle,
                     color = scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .trackBounds { subtitleFrom = it }
+                        .morphTo(progress, subtitleFrom, subtitleTo, smallSubtitleStyle.fontSize.value / bigSubtitleStyle.fontSize.value),
                 )
             }
         }
     }
+}
+
+/** 배치될 때마다 루트 기준 사각형을 알립니다. 안쪽 graphicsLayer 변환은 여기 좌표에 포함되지 않습니다. */
+private fun Modifier.trackBounds(onBounds: (Rect) -> Unit): Modifier = onGloballyPositioned { coords ->
+    onBounds(Rect(coords.positionInRoot(), coords.size.toSize()))
+}
+
+/**
+ * [from] 자리에 놓인 글자를 [progress] 만큼 [to] 자리로 옮기며 [targetScale] 까지 줄입니다.
+ * 왼쪽 가운데를 기준으로 줄여, 왼쪽 정렬된 글자의 시작점이 그대로 목표 자리의 시작점으로 갑니다.
+ */
+private fun Modifier.morphTo(progress: Float, from: Rect?, to: Rect?, targetScale: Float): Modifier = graphicsLayer {
+    if (from == null || to == null || progress <= 0f) return@graphicsLayer
+    val scale = 1f + (targetScale - 1f) * progress
+    transformOrigin = TransformOrigin(0f, 0.5f)
+    scaleX = scale
+    scaleY = scale
+    translationX = (to.left - from.left) * progress
+    translationY = (to.center.y - from.center.y) * progress
 }
 
 // MARK: - 아이콘 배지
