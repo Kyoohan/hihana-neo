@@ -146,10 +146,11 @@ object LiveActivity {
             else -> listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() }).joinToString(" ")
                 .ifBlank { block.statusLabel }
         }
+        // 남은 시간은 시스템 카운트다운이 이미 보여주므로(API 36) 본문에는 넣지 않습니다 — 그 아래 폴백 알림에만 씁니다.
         val text = listOfNotNull(
             block.statusLabel.takeIf { it.isNotBlank() && kind !is BlockKind.GapKind },
             range,
-            remainingText,
+            remainingText.takeIf { Build.VERSION.SDK_INT < 36 },
         ).joinToString(" · ")
         val nextText = if (kind is BlockKind.GapKind) null else nextPlace?.let { "다음 · $it" }
         // 아이콘·색은 위젯과 같은 상황별 아이콘·종류별 색.
@@ -163,19 +164,31 @@ object LiveActivity {
         if (Build.VERSION.SDK_INT >= 36) {
             // 진행률은 0~1000 으로 — 밀리초 그대로(수백만) 넘기면 삼성 Now Bar 가 막대 오른쪽 끝을 잘라 그렸습니다.
             val permille = (elapsed * 1000L / total).toInt().coerceIn(0, 1000)
+            // 진행률에 따라 시스템이 뒷부분을 흐리게 칠하는 방식(styledByProgress)은 One UI 가 막대 오른쪽 끝을 작은 점처럼
+            // 밝게 남겼습니다 — 대신 지난 구간·남은 구간을 색이 다른 두 조각으로 직접 그립니다.
+            val done = permille.coerceIn(1, 999)
             val style = Notification.ProgressStyle()
                 .setProgress(permille)
-                .setProgressSegments(listOf(Notification.ProgressStyle.Segment(1000)))
+                .setStyledByProgress(false)
+                .setProgressSegments(
+                    listOf(
+                        Notification.ProgressStyle.Segment(done).setColor(0xFFFFFFFF.toInt()),
+                        Notification.ProgressStyle.Segment(1000 - done).setColor(0x59FFFFFF),
+                    ),
+                )
                 .setProgressTrackerIcon(null)
+            // One UI 는 subText 를 제목 바로 아래 줄에, contentText 를 그 아래에 그립니다 — 구간·시간이 먼저, 다음 장소가 뒤에
+            // 오도록 자리를 바꿔 넣습니다.
             return Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(icon)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setSubText(nextText)
+                .setContentTitle("$title\u2002")
+                .setContentText(nextText ?: text)
+                .setSubText(text.takeIf { nextText != null })
                 .setStyle(style)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 // 시스템이 직접 세는 카운트다운(구간 끝까지) — 알람이 밀려도 이 숫자는 실제 시간과 맞습니다.
+                // One UI 는 이 숫자를 제목 바로 뒤에 띄어쓰기 없이 붙여 그리므로("도서관 2-3457:14") 제목 끝에 공백을 둡니다.
                 .setWhen(toMillis(block.end))
                 .setShowWhen(true)
                 .setUsesChronometer(true)

@@ -8,6 +8,13 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "10.2",
+        listOf(
+            "실시간 일정(Now Bar): 제목 뒤에 카운트다운이 띄어쓰기 없이 붙던 문제 수정",
+            "헤더 제목이 스크롤에 따라 줄어들며 섬 안으로 자연스럽게 이어짐",
+        ),
+    ),
+    ChangelogEntry(
         "10.1",
         listOf("마이너 버그 수정 및 사용성 개편"),
     ),
