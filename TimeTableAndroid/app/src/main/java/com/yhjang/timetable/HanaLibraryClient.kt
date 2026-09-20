@@ -82,6 +82,33 @@ enum class SeatService(
     ),
 }
 
+/**
+ * 학번 → 이름 캐시. 도서관 좌석 응답은 이름(sre_mem_name)을 비우고 학번(sre_std_num)·성별만 주지만, 면학실 응답에는
+ * 학번과 이름이 함께 오므로 면학실 배치도를 볼 때마다 짝을 모아 두었다가 도서관 자리의 학번을 이름으로 바꿉니다.
+ * 한 번이라도 면학실을 신청한 학생은 이름이 나오고, 아니면 학번이 나옵니다.
+ */
+object StudentNameCache {
+    private const val PREFS = "student_names"
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun name(context: Context, studentNumber: String?): String? =
+        studentNumber?.let { prefs(context).getString(it, null) }
+
+    fun learn(context: Context, seats: List<LibrarySeat>) {
+        val editor = prefs(context).edit()
+        var changed = false
+        seats.forEach { seat ->
+            val number = seat.studentNumber ?: return@forEach
+            val name = seat.memberName ?: return@forEach
+            if (prefs(context).getString(number, null) != name) {
+                editor.putString(number, name)
+                changed = true
+            }
+        }
+        if (changed) editor.apply()
+    }
+}
+
 object HanaLibraryApi {
 
     private const val TAG = "HanaLibrary"
@@ -169,7 +196,7 @@ object HanaLibraryApi {
         }
         val open = json.optJSONObject("studyRoomOpenVo")
         val list = json.optJSONArray("list")
-        val seats = (0 until (list?.length() ?: 0)).mapNotNull { i ->
+        val seatsRaw = (0 until (list?.length() ?: 0)).mapNotNull { i ->
             val row = list?.optJSONObject(i) ?: return@mapNotNull null
             LibrarySeat(
                 cont = row.optString("srt_cont"),
@@ -190,6 +217,15 @@ object HanaLibraryApi {
                 gender = when (row.optString("mem_sex")) { "M" -> "남"; "F" -> "여"; else -> null },
                 assigned = row.optString("sre_assign_yn").uppercase() == "Y",
             )
+        }
+        // 학번·이름 짝을 모아 두고(면학실 응답), 이름이 비어 온 자리(도서관 응답)는 캐시로 채웁니다.
+        StudentNameCache.learn(context, seatsRaw)
+        val seats = seatsRaw.map { seat ->
+            if (seat.memberName == null && seat.studentNumber != null) {
+                seat.copy(memberName = StudentNameCache.name(context, seat.studentNumber))
+            } else {
+                seat
+            }
         }
         // 배치도는 세로로 긴 한 장입니다 (10 × 66 정도, 사이에 없는 행도 있음). 층은 통로 칸의 바닥색으로 갈립니다
         // (2F #efefef, 1F #d9d9d9). 행마다 바닥색을 구해 같은 색끼리 한 구역으로 묶고, 없는 행이 이어지는 큰 틈은
