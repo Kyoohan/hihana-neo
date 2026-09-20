@@ -723,12 +723,8 @@ fun OneUiDialog(
         // 키트 Dialog 프레임처럼 뒤 화면 전체를 크게 흐리고 옅은 스크림만 얹습니다 — 다이얼로그가 화면 위에
         // "떠 있는" 느낌이 나고, 카드 자체는 그 위에 반투명 글래스로 놓입니다.
         val container = if (scheme.isDark) Color(0xFF232326) else Color.White
-        val backdropStyle = HazeStyle(
-            backgroundColor = if (scheme.isDark) Color(0xFF0B1512) else Color(0xFFE4EEE8),
-            tints = listOf(HazeTint(if (scheme.isDark) Color.Black.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.22f))),
-            blurRadius = 36.dp,
-            noiseFactor = 0f,
-        )
+        // 뒤 화면은 흐리지 않고 살짝만 어둡게(One UI 시트의 딤) — 블러는 시트 자체에만 걸립니다.
+        val dimColor = Color.Black.copy(alpha = if (scheme.isDark) 0.4f else 0.25f)
         val cardStyle = HazeStyle(
             backgroundColor = container,
             tints = listOf(HazeTint(container.copy(alpha = if (scheme.isDark) 0.66f else 0.7f))),
@@ -740,7 +736,7 @@ fun OneUiDialog(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (hazeState != null) Modifier.hazeEffect(hazeState, backdropStyle) else Modifier)
+                .background(dimColor)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
                 .navigationBarsPadding()
                 .imePadding()
