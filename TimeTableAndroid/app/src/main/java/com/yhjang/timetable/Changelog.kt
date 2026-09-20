@@ -8,6 +8,10 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "10.1",
+        listOf("마이너 버그 수정 및 사용성 개편"),
+    ),
+    ChangelogEntry(
         "10.0",
         listOf(
             "면학실·도서관 신청을 앱 안 좌석 배치도로 — 타임 선택, 빈 자리 탭으로 바로 신청, 내 자리 탭으로 취소, 구역 즐겨찾기",
