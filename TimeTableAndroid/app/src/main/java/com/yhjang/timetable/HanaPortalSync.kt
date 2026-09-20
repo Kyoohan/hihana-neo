@@ -101,6 +101,8 @@ sealed class HanaPortalException(message: String) : Exception(message) {
     class UnexpectedResponse(detail: String) : HanaPortalException("학사시스템 응답을 해석하지 못했습니다\n$detail")
     /** 서버가 이유를 문장으로 돌려준 실패 ("이미 신청된 좌석입니다" 등) — 문구를 그대로 보여줍니다. */
     class Rejected(message: String) : HanaPortalException(message)
+    /** 서버가 과부하일 때 내려오는 빈 본문(HTTP 200) — 세션 문제가 아니므로 재로그인하지 말고 잠깐 뒤 다시 시도합니다. */
+    class Transient(detail: String) : HanaPortalException("학사시스템이 응답하지 않습니다 (잠시 후 다시 시도)\n$detail")
 
     /** 세션 만료로 로그인 페이지가 내려온 경우 — [authenticatedRaw] 가 재로그인을 결정하는 내부 신호. */
     internal data object LoginPage : HanaPortalException("로그인 페이지가 내려왔습니다")
@@ -457,15 +459,26 @@ class HanaPortalClient private constructor() {
         referer: String = "$BASE/",
         isValid: (JSONObject) -> Boolean = { true },
     ): JSONObject = withContext(Dispatchers.IO) {
-        val first = try {
-            requestJson(path, params, referer)
-        } catch (e: HanaPortalException.UnexpectedResponse) {
-            null
+        // 빈 응답(과부하)은 짧게 몇 번 다시 시도하고, 그래도 안 되면 그대로 알립니다 — 재로그인은 하지 않습니다.
+        var transient: HanaPortalException.Transient? = null
+        repeat(4) { attempt ->
+            try {
+                val json = requestJson(path, params, referer)
+                if (isValid(json)) {
+                    lastAuthenticatedAt = System.currentTimeMillis()
+                    return@withContext json
+                }
+                transient = null
+                return@repeat
+            } catch (e: HanaPortalException.Transient) {
+                transient = e
+                kotlinx.coroutines.delay(250L * (attempt + 1))
+            } catch (e: HanaPortalException.UnexpectedResponse) {
+                transient = null
+                return@repeat
+            }
         }
-        if (first != null && isValid(first)) {
-            lastAuthenticatedAt = System.currentTimeMillis()
-            return@withContext first
-        }
+        transient?.let { throw it }
         login(context)
         requestJson(path, params, referer).also { lastAuthenticatedAt = System.currentTimeMillis() }
     }
@@ -478,6 +491,9 @@ class HanaPortalClient private constructor() {
         val request = browserLikeRequestBuilder(BASE + path, referer).post(body).build()
         client.newCall(request).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
+            // 예약 오픈 직후 같은 과부하 때 포털이 200 에 빈 본문을 돌려줍니다 — 로그인 문제로 오판해 재로그인(그마저 404)
+            // 하지 않도록 따로 구분합니다.
+            if (text.isBlank()) throw HanaPortalException.Transient("[$path] HTTP ${resp.code} 빈 응답")
             val json = runCatching { JSONObject(text) }.getOrNull()
                 ?: throw nonJsonResponse(path, resp.code)
             return json

@@ -124,15 +124,35 @@ object HanaLibraryApi {
     private suspend fun firstJson(context: Context, paths: List<String>, params: List<Pair<String, String>>, referer: String): JSONObject {
         var last: Exception? = null
         for (path in paths) {
-            try {
-                val raw = HanaPortalClient.get().authenticatedRaw(context, path, params, method = "POST", referer = referer)
-                val json = runCatching { JSONObject(raw.body) }.getOrNull()
-                if (json != null) return json
-                Log.d(TAG, "$path HTTP ${raw.code} JSON 아님: ${raw.body.take(120).replace('\n', ' ')}")
-            } catch (e: Exception) {
-                last = e
-                Log.d(TAG, "$path 실패: ${e.message}")
+            // 예약 오픈 직후 과부하 때 포털이 빈 본문(HTTP 200)을 자주 돌려줍니다 — 같은 경로를 짧게 몇 번 더 두드립니다.
+            var attempt = 0
+            var transientHere = false
+            while (attempt < 5) {
+                try {
+                    val raw = HanaPortalClient.get().authenticatedRaw(context, path, params, method = "POST", referer = referer)
+                    val json = runCatching { JSONObject(raw.body) }.getOrNull()
+                    if (json != null) return json
+                    if (raw.body.isBlank()) {
+                        Log.d(TAG, "$path HTTP ${raw.code} 빈 응답 (${attempt + 1}/5)")
+                        last = HanaPortalException.Transient("[$path] HTTP ${raw.code} 빈 응답")
+                        transientHere = true
+                        attempt++
+                        kotlinx.coroutines.delay(200L + 150L * attempt)
+                        continue
+                    }
+                    Log.d(TAG, "$path HTTP ${raw.code} JSON 아님: ${raw.body.take(120).replace('\n', ' ')}")
+                    break
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // 화면을 닫았거나 타임을 바꿔 취소된 것 — 다음 후보로 넘어가면 안 됩니다.
+                    throw e
+                } catch (e: Exception) {
+                    last = e
+                    Log.d(TAG, "$path 실패: ${e.message}")
+                    break
+                }
             }
+            // 빈 응답만 계속 받은 경로는 존재하는 경로이므로 다른 후보를 더 시도하지 않습니다.
+            if (transientHere) break
         }
         throw last ?: HanaPortalException.UnexpectedResponse("[${paths.first()}] 사용할 수 있는 엔드포인트가 없습니다")
     }
@@ -221,6 +241,10 @@ object HanaLibraryApi {
         }
         if (seats.isNotEmpty()) {
             Log.d(TAG, "seatMap $slotId grid=${gridX}x$gridY items=${seats.size} areas=${areas.map { it.label + ":" + it.seats.count { s -> s.isSeat } }}")
+            // 남이 잡은 자리 하나의 원문 — 이름·학번 필드 이름 확인용 (도서관은 면학실과 필드가 다를 수 있음).
+            val occupied = (0 until (list?.length() ?: 0)).map { list!!.optJSONObject(it) }
+                .firstOrNull { it != null && it.optInt("sre_idx", 0) > 0 && it.optString("myYn") != "Y" }
+            if (occupied != null) Log.d(TAG, "occupied sample (${service.label}): ${occupied.toString().take(900)}")
         }
         LibrarySeatMap(areas, null)
     }
