@@ -94,6 +94,43 @@ object StudentNameCache {
     fun name(context: Context, studentNumber: String?): String? =
         studentNumber?.let { prefs(context).getString(it, null) }
 
+    fun count(context: Context): Int = prefs(context).all.size
+
+    fun clear(context: Context) = prefs(context).edit().clear().apply()
+
+    /**
+     * (학번, 이름) 파일을 읽어 저장합니다 — 개발자 모드의 "학번·이름 파일 불러오기". 세 가지 형식을 받습니다:
+     * Google 디렉터리 페이지를 통째로 복사한 텍스트(`has_<학번>@hana.hs.kr` 줄 위의 이름), `학번,이름`/`학번 이름` 줄,
+     * `{"학번":"이름"}` JSON. 저장한 쌍 수를 돌려줍니다.
+     */
+    fun importText(context: Context, text: String): Int {
+        val found = LinkedHashMap<String, String>()
+        val trimmed = text.trim()
+        if (trimmed.startsWith("{")) {
+            runCatching { JSONObject(trimmed) }.getOrNull()?.let { json ->
+                json.keys().forEach { key -> json.optString(key).takeIf { it.isNotBlank() }?.let { found[key.trim()] = it.trim() } }
+            }
+        }
+        val lines = text.lines().map { it.trim() }
+        val mail = Regex("""has_(\d{5})@hana\.hs\.kr""", RegexOption.IGNORE_CASE)
+        val pair = Regex("""^(\d{5})[,\t ]+(\S{2,6})$""")
+        lines.forEachIndexed { i, line ->
+            mail.find(line)?.let { m ->
+                var j = i - 1
+                while (j >= 0 && (lines[j].isEmpty() || lines[j] == "drag_indicator" || lines[j] == "연락처 저장")) j--
+                val name = lines.getOrNull(j) ?: return@let
+                if (name.length in 2..6 && !name.any { it.isLetter() && it.code < 128 } && !name.contains('@')) found[m.groupValues[1]] = name
+            }
+            pair.find(line)?.let { m -> found[m.groupValues[1]] = m.groupValues[2] }
+        }
+        if (found.isNotEmpty()) {
+            val editor = prefs(context).edit()
+            found.forEach { (number, name) -> editor.putString(number, name) }
+            editor.apply()
+        }
+        return found.size
+    }
+
     fun learn(context: Context, seats: List<LibrarySeat>) {
         val editor = prefs(context).edit()
         var changed = false
@@ -222,7 +259,8 @@ object HanaLibraryApi {
         StudentNameCache.learn(context, seatsRaw)
         val seats = seatsRaw.map { seat ->
             if (seat.memberName == null && seat.studentNumber != null) {
-                seat.copy(memberName = StudentNameCache.name(context, seat.studentNumber))
+                // 내장 디렉터리(학번→이름) → 면학실에서 배운 캐시 순.
+                seat.copy(memberName = StudentDirectory.name(context, seat.studentNumber) ?: StudentNameCache.name(context, seat.studentNumber))
             } else {
                 seat
             }

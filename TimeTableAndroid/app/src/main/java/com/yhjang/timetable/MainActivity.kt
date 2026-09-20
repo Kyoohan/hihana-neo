@@ -1751,11 +1751,14 @@ private fun SettingsScreen(
 
             item {
                 OneUiSectionTitle("정보")
+                // 개발자 모드 — "버전 x.y" 줄을 5번 누르면 켜집니다. 학번·이름 파일을 기기에 직접 넣는 용도(APK 엔 포함 안 함).
+                var devMode by remember { mutableStateOf(DeveloperMode.isEnabled(context)) }
+                var versionTaps by remember { mutableStateOf(0) }
+                var devNotice by remember { mutableStateOf<String?>(null) }
                 OneUiGroupColumn {
-                    // 갤러리 설정의 "갤러리 정보•" — 버전만 적고, 상세(업데이트·변경 사항)는 정보 화면에서.
+                    // 갤러리 설정의 "갤러리 정보•" — 상세(업데이트·변경 사항)는 정보 화면에서.
                     OneUiListItem(
                         title = "${context.getString(R.string.app_name)} 정보",
-                        subtitle = "버전 ${BuildConfig.VERSION_NAME}",
                         badgeDot = updateAvailable,
                         trailing = {
                             Icon(
@@ -1766,6 +1769,75 @@ private fun SettingsScreen(
                         },
                         onClick = onOpenAppInfo,
                     )
+                    OneUiDivider()
+                    OneUiListItem(
+                        title = "버전 ${BuildConfig.VERSION_NAME}",
+                        subtitle = when {
+                            devMode -> "개발자 모드 켜짐"
+                            versionTaps in 2..4 -> "${5 - versionTaps}번 더 누르면 개발자 모드"
+                            else -> null
+                        },
+                        onClick = {
+                            if (devMode) return@OneUiListItem
+                            versionTaps++
+                            if (versionTaps >= 5) {
+                                DeveloperMode.setEnabled(context, true)
+                                devMode = true
+                                versionTaps = 0
+                            }
+                        },
+                    )
+                }
+                if (devMode) {
+                    Spacer(Modifier.height(16.dp))
+                    OneUiSectionTitle("개발자")
+                    var nameCount by remember { mutableStateOf(StudentNameCache.count(context)) }
+                    val pickNames = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri == null) return@rememberLauncherForActivityResult
+                        scope.launch {
+                            val text = withContext(Dispatchers.IO) {
+                                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                            }
+                            if (text == null) {
+                                devNotice = "파일을 읽지 못했습니다"
+                            } else {
+                                val added = StudentNameCache.importText(context, text)
+                                nameCount = StudentNameCache.count(context)
+                                devNotice = if (added == 0) "학번·이름 쌍을 찾지 못했습니다" else "$added 명 불러옴 (총 $nameCount 명)"
+                            }
+                        }
+                    }
+                    OneUiGroupColumn {
+                        OneUiListItem(
+                            title = "학번·이름 파일 불러오기",
+                            subtitle = "저장된 이름 $nameCount 명 · 디렉터리 복사 텍스트 / '학번,이름' 줄 / JSON — 이 기기에만 저장",
+                            onClick = { pickNames.launch(arrayOf("text/*", "application/json", "*/*")) },
+                        )
+                        OneUiDivider()
+                        OneUiListItem(
+                            title = "학번·이름 지우기",
+                            onClick = {
+                                StudentNameCache.clear(context)
+                                nameCount = 0
+                                devNotice = "지웠습니다"
+                            },
+                        )
+                        OneUiDivider()
+                        OneUiListItem(
+                            title = "개발자 모드 끄기",
+                            onClick = {
+                                DeveloperMode.setEnabled(context, false)
+                                devMode = false
+                            },
+                        )
+                    }
+                }
+                devNotice?.let { message ->
+                    OneUiDialog(
+                        onDismissRequest = { devNotice = null },
+                        title = "개발자",
+                        buttons = listOf(OneUiDialogButton("확인", { devNotice = null })),
+                    ) { Text(message, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
         }

@@ -10,3 +10,4 @@ TimeTableAndroid/.kotlin/
 
 # macOS
 .DS_Store
+TimeTableAndroid/app/src/debug/assets/students.bin
