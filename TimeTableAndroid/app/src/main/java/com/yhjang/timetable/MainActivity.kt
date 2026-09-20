@@ -388,6 +388,17 @@ private fun TimeTableAppContent(
     var syncError by remember { mutableStateOf<String?>(null) }
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
+    // 설치·업데이트 직후 한 번, '알람 및 리마인더' 권한이 없으면 켜 달라고 안내합니다 — 없으면 위젯·실시간 일정의
+    // 남은 시간이 절전 중 5~15분씩 늦게 갱신됩니다. 버전마다 한 번만 (allowBackup 과 무관한 일반 SharedPreferences).
+    var showingExactAlarmPrompt by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("prompts", Context.MODE_PRIVATE)
+        val asked = prefs.getInt("exactAlarmPromptVersion", -1)
+        if (!ExactAlarmPermission.isGranted(context) && asked != BuildConfig.VERSION_CODE) {
+            prefs.edit().putInt("exactAlarmPromptVersion", BuildConfig.VERSION_CODE).apply()
+            showingExactAlarmPrompt = true
+        }
+    }
     // 계정 유무는 화면 상태로 들고 있어야 연동 직후 '지금' 카드·게시판 등이 바로 바뀝니다.
     var hasCredentials by remember { mutableStateOf(HanaCredentialStore.hasCredentials(context)) }
     // 오프라인 표시 — 네트워크 오류로 동기화에 실패하면 다이얼로그 대신 헤더에 조용히 표시하고 캐시로 버팁니다.
@@ -1257,6 +1268,26 @@ private fun TimeTableAppContent(
             },
             onDismiss = { showingAlim = false },
         )
+    }
+
+    if (showingExactAlarmPrompt) {
+        OneUiDialog(
+            onDismissRequest = { showingExactAlarmPrompt = false },
+            title = "알람 및 리마인더 권한",
+            buttons = listOf(
+                OneUiDialogButton("나중에", { showingExactAlarmPrompt = false }),
+                OneUiDialogButton("허용하기", {
+                    showingExactAlarmPrompt = false
+                    ExactAlarmPermission.openSettings(context)
+                }),
+            ),
+        ) {
+            Text(
+                "위젯과 Now Bar 실시간 일정의 남은 시간을 제때 갱신하려면 이 권한이 필요합니다. 없으면 절전 중에 " +
+                    "5~15분씩 늦게 바뀔 수 있습니다. 설정 화면에서 '하이하나 Neo'를 허용해 주세요.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 
     seatService?.let { service ->
