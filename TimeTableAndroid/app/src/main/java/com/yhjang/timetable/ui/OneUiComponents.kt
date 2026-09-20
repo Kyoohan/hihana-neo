@@ -428,21 +428,27 @@ fun OneUiChip(
     leading: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 액체 유리 칩 — 선택되면 강조색 유리, 아니면 옅은 회색 유리. 본문(haze 소스) 안이라 뒤 화면 대신 색 판 위에
+    // 렌즈(림·반사광)를 얹습니다.
     val container by animateColorAsState(
-        if (selected) scheme.primary else scheme.floatingPill,
+        if (selected) scheme.primary.copy(alpha = 0.9f) else scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
         label = "chipContainer",
     )
     val content by animateColorAsState(
         if (selected) scheme.onPrimary else scheme.onSurface,
         label = "chipContent",
     )
-    Row(
+    OneUiLiquidGlassBox(
         modifier = modifier
             .clip(CircleShape)
-            .background(container)
             .clickable(onClick = onClick)
-            .height(36.dp)
-            .padding(horizontal = 16.dp),
+            .height(36.dp),
+        cornerRadius = 18.dp,
+        strength = 0.6f,
+        fill = container,
+    ) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp).height(36.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
@@ -456,6 +462,7 @@ fun OneUiChip(
             color = content,
             maxLines = 1,
         )
+    }
     }
 }
 

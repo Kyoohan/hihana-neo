@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -230,6 +232,11 @@ fun OneUiLiquidGlassBox(
     alpha: Float = 1f,
     strength: Float = 1f,
     contentAlignment: Alignment = Alignment.Center,
+    /**
+     * null 이면 뒤 화면을 haze 로 가져와 굴절합니다(섬·팝업처럼 콘텐츠 소스 밖에 있을 때). 색을 주면 뒤 화면 대신
+     * 그 색 판 위에 렌즈(림·반사광)만 얹습니다 — 본문 안의 칩처럼 haze 소스 안에 있어 뒤를 잡을 수 없는 곳용.
+     */
+    fill: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hazeState = LocalHazeState.current
@@ -241,7 +248,28 @@ fun OneUiLiquidGlassBox(
     val shape = RoundedCornerShape(cornerRadius)
     Box(modifier, contentAlignment = contentAlignment) {
         if (alpha > 0f) {
-            if (hazeState != null && shader != null) {
+            if (fill != null && shader != null) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .graphicsLayer {
+                            this.alpha = alpha
+                            shader.setFloatUniform("rect", 0f, 0f, size.width, size.height)
+                            shader.setFloatUniform("radius", radiusPx)
+                            shader.setFloatUniform("strength", strength)
+                            shader.setFloatUniform("lightDir", light.x, light.y)
+                            shader.setFloatUniform("time", light.time)
+                            shader.setFloatUniform("tint", 1f, 1f, 1f)
+                            shader.setFloatUniform("tintAlpha", 0f)
+                            shader.setFloatUniform("dir", -1f)
+                            shader.setFloatUniform("rainbow", 0f)
+                            renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+                        }
+                        .background(fill),
+                )
+            } else if (fill != null) {
+                Box(Modifier.matchParentSize().clip(shape).background(fill))
+            } else if (hazeState != null && shader != null) {
                 Box(
                     Modifier
                         .matchParentSize()
