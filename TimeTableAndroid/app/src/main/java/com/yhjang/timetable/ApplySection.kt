@@ -87,7 +87,8 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
             ApplyServiceCard(
                 service = service,
                 state = states[service] ?: ApplyHistoryState.Idle,
-                onHistory = { loadHistory(service) },
+                // 면학실 내역은 포털 페이지가 더 보기 좋아 바로 웹뷰로.
+                onHistory = { if (service == ApplyService.STUDY_ROOM) openHistory(service) else loadHistory(service) },
                 // 도서관·면학실은 앱 안 좌석 화면, 교과교실·외출외박은 포털 신청 페이지.
                 onApply = {
                     when (service) {

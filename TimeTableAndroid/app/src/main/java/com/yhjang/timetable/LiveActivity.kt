@@ -59,6 +59,12 @@ object LiveActivity {
         if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
             return BlockedReason("'실시간 일정' 알림 카테고리가 꺼져 있습니다", "눌러서 알림 카테고리 → 실시간 일정을 켜 주세요.")
         }
+        if (!ExactAlarmPermission.isGranted(context)) {
+            return BlockedReason(
+                "남은 시간이 늦게 갱신될 수 있습니다",
+                "'알람 및 리마인더' 권한이 없으면 절전 중 갱신이 5~15분 미뤄집니다. 위의 위젯 항목에서 권한을 허용해 주세요.",
+            )
+        }
         if (Build.VERSION.SDK_INT >= 36 && !manager.canPostPromotedNotifications()) {
             return BlockedReason(
                 "Now Bar 표시가 허용되지 않았습니다",
@@ -110,10 +116,11 @@ object LiveActivity {
         val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(app) }.getOrDefault(emptyMap()))
         manager.notify(NOTIFICATION_ID, build(app, block, next, now, kindColors))
 
-        // 1분 틱 + 구간 경계엔 정확히 (권한 없으면 틱만).
+        // 1분 틱과 구간 경계 모두 정확한 알람으로 (알람 및 리마인더 권한이 있을 때) — 부정확 알람은 절전 상태에서
+        // 5~15분씩 미뤄져 Now Bar 의 남은 시간이 실제와 어긋났습니다. 권한이 없으면 부정확 알람으로 폴백.
         val boundary = toMillis(block.end) + 1_000
         val tickAt = System.currentTimeMillis() + TICK_MS
-        scheduleAt(app, minOf(boundary, tickAt), exact = boundary <= tickAt)
+        scheduleAt(app, minOf(boundary, tickAt), exact = true)
     }
 
     private suspend fun nextWindowStart(context: Context, date: LocalDate): LocalDateTime? {
@@ -168,7 +175,11 @@ object LiveActivity {
                 .setStyle(style)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setShowWhen(false)
+                // 시스템이 직접 세는 카운트다운(구간 끝까지) — 알람이 밀려도 이 숫자는 실제 시간과 맞습니다.
+                .setWhen(toMillis(block.end))
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
                 .setContentIntent(open)
                 .setRequestPromotedOngoing(true)
                 .setShortCriticalText(shortText)

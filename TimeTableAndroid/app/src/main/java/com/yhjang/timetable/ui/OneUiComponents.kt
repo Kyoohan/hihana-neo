@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.view.Gravity
@@ -1011,7 +1012,7 @@ class OneUiHeaderState(val rangePx: Float, initialOffset: Float = 0f) {
 }
 
 /** 펼친 상태 헤더의 큰 제목 영역 높이 — 접히면 0 이 되고 [OneUiCompactBarHeight] 의 툴바만 남습니다. */
-val OneUiHeaderExpandedExtra = 78.dp
+val OneUiHeaderExpandedExtra = 40.dp
 
 /** 접힌 뒤 남는 툴바(작은 제목·부제목) 높이 — 키트 "Top App Bar". */
 val OneUiCompactBarHeight = 52.dp
@@ -1093,16 +1094,17 @@ fun OneUiCollapsingHeader(
                 }
             }
         }
-        // 펼친 상태의 큰 제목 — 영역 아래쪽에 붙어 있어 접힐수록 툴바 뒤로 밀려 올라가며 사라집니다.
+        // 펼친 상태의 큰 제목 — 제목 한 줄의 세로 중심을 오른쪽 액션 버튼 줄의 중심(상단 4dp + 52dp/2 = 30dp)에 맞춥니다.
+        // 제목 줄 높이가 36dp 이므로 위 여백은 30 - 18 = 12dp. 날짜는 그 아래에 이어집니다.
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 24.dp, end = 120.dp, bottom = 10.dp)
+                .align(Alignment.TopStart)
+                .padding(start = 24.dp, top = 12.dp, end = 120.dp)
                 .alpha(titleAlpha),
         ) {
             Text(
                 title,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(lineHeight = 36.sp),
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
