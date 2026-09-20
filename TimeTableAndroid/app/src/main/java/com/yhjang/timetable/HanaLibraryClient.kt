@@ -100,8 +100,8 @@ object StudentNameCache {
 
     /**
      * (학번, 이름) 파일을 읽어 저장합니다 — 개발자 모드의 "학번·이름 파일 불러오기". 세 가지 형식을 받습니다:
-     * Google 디렉터리 페이지를 통째로 복사한 텍스트(`has_<학번>@hana.hs.kr` 줄 위의 이름), `학번,이름`/`학번 이름` 줄,
-     * `{"학번":"이름"}` JSON. 저장한 쌍 수를 돌려줍니다.
+     * Google 디렉터리 페이지를 통째로 복사한 텍스트(`has_<학번>@hana.hs.kr` 줄 위의 이름), `이름, 학번` 또는 `학번, 이름` 줄
+     * (쉼표·탭·공백 구분), `{"학번":"이름"}` JSON. 저장한 쌍 수를 돌려줍니다.
      */
     fun importText(context: Context, text: String): Int {
         val found = LinkedHashMap<String, String>()
@@ -113,7 +113,9 @@ object StudentNameCache {
         }
         val lines = text.lines().map { it.trim() }
         val mail = Regex("""has_(\d{5})@hana\.hs\.kr""", RegexOption.IGNORE_CASE)
-        val pair = Regex("""^(\d{5})[,\t ]+(\S{2,6})$""")
+        val pair = Regex("""^(\d{5})[,\t ]+(\S{2,7})$""")
+        // "이름, 학번" 순서 (예: `강건우, 25001`, 동명이인은 `김규리A, 24009`)
+        val pairNameFirst = Regex("""^(\S{2,7})[,\t ]+(\d{5})$""")
         lines.forEachIndexed { i, line ->
             mail.find(line)?.let { m ->
                 var j = i - 1
@@ -122,6 +124,7 @@ object StudentNameCache {
                 if (name.length in 2..6 && !name.any { it.isLetter() && it.code < 128 } && !name.contains('@')) found[m.groupValues[1]] = name
             }
             pair.find(line)?.let { m -> found[m.groupValues[1]] = m.groupValues[2] }
+            pairNameFirst.find(line)?.let { m -> found[m.groupValues[2]] = m.groupValues[1] }
         }
         if (found.isNotEmpty()) {
             val editor = prefs(context).edit()
