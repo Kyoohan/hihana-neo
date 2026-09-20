@@ -2099,10 +2099,12 @@ private fun MealTab(
                 ) {
                     weekDates.forEach { date ->
                         val hasData = PlanStore.dayKey(date) in availableDays
+                        // 식단이 없는 날은 점(" ·")을 붙이는 대신 칩을 옅게 — 점이 글자 뒤에 남은 것처럼 보였습니다.
                         OneUiChip(
                             selected = date == selectedDate,
                             onClick = { onSelectDate(date) },
-                            label = shortMealDate(date) + if (hasData) "" else " ·",
+                            label = shortMealDate(date),
+                            modifier = Modifier.alpha(if (hasData) 1f else 0.5f),
                         )
                     }
                 }
