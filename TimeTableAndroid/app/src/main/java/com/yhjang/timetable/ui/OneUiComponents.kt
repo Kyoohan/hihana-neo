@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -733,15 +735,17 @@ fun OneUiDialog(
             blurRadius = 48.dp,
             noiseFactor = 0.02f,
         )
-        // 창 안에서 가운데 정렬 — 큰 화면에서도 왼쪽으로 쏠리지 않고 폭은 400dp 까지만 넓어집니다.
+        // One UI 시트처럼 화면 아래쪽에 — 좌우·아래 여백을 두고 떠 있으며(갤러리의 아래 메뉴), 폭은 400dp 까지.
         // 창이 화면 전체라 바깥 탭 닫기를 직접 처리합니다 — 카드 자체는 탭을 삼켜 닫히지 않게 합니다.
         Box(
             Modifier
                 .fillMaxSize()
                 .then(if (hazeState != null) Modifier.hazeEffect(hazeState, backdropStyle) else Modifier)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest)
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center,
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            contentAlignment = Alignment.BottomCenter,
         ) {
         Box(
             modifier = modifier
