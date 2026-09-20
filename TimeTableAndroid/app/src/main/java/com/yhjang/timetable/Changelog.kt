@@ -8,6 +8,10 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "10.3",
+        listOf("실시간 일정(Now Bar): 저녁시간·쉬는 시간에 바로 다음 장소 대신 한 타임 뒤 장소가 뜨던 문제 수정"),
+    ),
+    ChangelogEntry(
         "10.2",
         listOf(
             "실시간 일정(Now Bar): 제목 뒤에 카운트다운이 붙던 문제 수정, 중복이던 '분 남음' 제거, 구간·시간 줄을 다음 장소보다 위로, 진행 막대 끝의 점 제거",
