@@ -237,6 +237,7 @@ object HanaLibraryApi {
         ?.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
         ?.replace(Regex("<[^>]+>"), "")
         ?.replace("&nbsp;", " ")
+        ?.lines()?.joinToString("\n") { it.trim() }   // <br/> 뒤에 붙어 있던 공백으로 줄이 한 칸 밀려 시작하지 않게
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
 

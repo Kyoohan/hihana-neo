@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +43,7 @@ fun DevTab(
     onRefreshLive: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var sampleDialog by remember { mutableStateOf(false) }
     Column(
         Modifier
@@ -75,6 +78,17 @@ fun DevTab(
             OneUiListItem(title = "면학실 좌석 화면", onClick = { onOpenSeats(SeatService.STUDY_ROOM) })
             OneUiDivider()
             OneUiListItem(title = "도서관 좌석 화면", onClick = { onOpenSeats(SeatService.LIBRARY) })
+            OneUiDivider()
+            OneUiListItem(
+                title = "포털 페이지 JS 조사 → 로그",
+                subtitle = "study-apply.do / library-apply.do 를 HTML 로 받아 기기 등록 코드 주변을 HanaDiscover 로그에",
+                onClick = {
+                    scope.launch {
+                        HanaApplyApi.dumpPageScript(context, "/main/studyroom/study-apply.do")
+                        HanaApplyApi.dumpPageScript(context, "/main/library/library-apply.do")
+                    }
+                },
+            )
         }
         Spacer(Modifier.height(16.dp))
 

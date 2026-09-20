@@ -108,6 +108,26 @@ object HanaApplyApi {
      * 로그로 남깁니다 (`adb logcat -s HanaDiscover`). 아직 API 를 모르는 도서관·외출외박 내역과 면학실·도서관 신청을
      * 앱 안에서 그리기 위한 사전 조사용이며, 프로세스당 한 번만 돕니다.
      */
+    /** 페이지 JS 조사 — HTML 로 받아 `updateDiviceInfo`·`usegubun`·`.json` 호출 주변을 로그로 남깁니다 (Dev 탭에서 호출). */
+    suspend fun dumpPageScript(context: Context, path: String) = withContext(Dispatchers.IO) {
+        val html = runCatching { HanaPortalClient.get().authenticatedHtml(context, path) }.getOrElse {
+            Log.d("HanaDiscover", "html $path 실패: ${it.message}"); return@withContext
+        }
+        Log.d("HanaDiscover", "html $path ${html.length} chars")
+        val keys = listOf("updateDiviceInfo", "usegubun", "deviceChk", "study-room-req", "stIdxFull")
+        keys.forEach { key ->
+            var from = 0
+            var n = 0
+            while (n < 6) {
+                val i = html.indexOf(key, from)
+                if (i < 0) break
+                Log.d("HanaDiscover", "[$key] …" + html.substring((i - 220).coerceAtLeast(0), (i + 260).coerceAtMost(html.length)).replace(Regex("\\s+"), " ") + "…")
+                from = i + key.length
+                n++
+            }
+        }
+    }
+
     @Volatile private var discovered = false
     suspend fun discoverEndpoints(context: Context) = withContext(Dispatchers.IO) {
         if (discovered) return@withContext

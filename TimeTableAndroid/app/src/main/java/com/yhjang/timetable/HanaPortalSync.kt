@@ -547,6 +547,30 @@ class HanaPortalClient private constructor() {
     @Volatile private var lastAuthenticatedAt = 0L
     private val SESSION_FRESH_MS = 3 * 60 * 1000L
 
+    /**
+     * 페이지를 브라우저처럼(Accept: text/html) 받습니다 — 같은 .do 라도 JSON Accept 로 부르면 데이터만 오고,
+     * HTML 로 부르면 페이지 JS(어떤 엔드포인트를 어떤 파라미터로 부르는지)가 옵니다. 조사용.
+     */
+    suspend fun authenticatedHtml(context: Context, path: String): String = withContext(Dispatchers.IO) {
+        fun fetch(): String {
+            val request = browserLikeRequestBuilder(BASE + path, "$BASE/")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .removeHeader("X-Requested-With")
+                .get().build()
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (looksLikeLoginPage(body)) throw HanaPortalException.LoginPage
+                return body
+            }
+        }
+        try {
+            fetch()
+        } catch (e: HanaPortalException.LoginPage) {
+            login(context)
+            fetch()
+        }
+    }
+
     /** [authenticatedRaw] 의 본문 문자열만 필요한 호출부용 단축. */
     suspend fun authenticatedText(
         context: Context,
