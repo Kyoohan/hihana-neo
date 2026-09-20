@@ -93,7 +93,19 @@ fun DevTab(
         Spacer(Modifier.height(16.dp))
 
         OneUiSectionTitle("실시간 일정")
+        var liveTempUntil by remember { mutableStateOf(LiveActivity.tempUntil(context)) }
         OneUiGroupColumn {
+            OneUiListItem(
+                title = "Now Bar 30분만 켜기",
+                subtitle = if (liveTempUntil > System.currentTimeMillis()) {
+                    "${java.text.SimpleDateFormat("H:mm", java.util.Locale.KOREA).format(java.util.Date(liveTempUntil))} 에 저절로 꺼짐"
+                } else "설정 스위치를 건드리지 않고 바로 띄우고, 30분 뒤 알람으로 끕니다",
+                onClick = {
+                    LiveActivity.enableTemporarily(context, 30)
+                    liveTempUntil = LiveActivity.tempUntil(context)
+                },
+            )
+            OneUiDivider()
             OneUiListItem(
                 title = "알림 지금 다시 그리기",
                 subtitle = "LiveActivity.update() — 켜져 있고 표시 창 안이면 Now Bar 갱신",

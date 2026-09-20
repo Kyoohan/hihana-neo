@@ -35,6 +35,9 @@ object LiveActivity {
     private const val KEY_ENABLED = "enabled"
     private const val TICK_MS = 60_000L
     private const val REQUEST_TICK = 7402
+    private const val REQUEST_TEMP_OFF = 7403
+    private const val KEY_TEMP_UNTIL = "temp_until"
+    const val ACTION_TEMP_OFF = "com.yhjang.timetable.LIVE_TEMP_OFF"
     private val timeFormat = DateTimeFormatter.ofPattern("H:mm")
 
     private fun prefs(context: Context) =
@@ -43,9 +46,36 @@ object LiveActivity {
     fun isEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ENABLED, false)
 
     fun setEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).remove(KEY_TEMP_UNTIL).apply()
+        cancelTempOff(context)
         CoroutineScope(Dispatchers.Default).launch { update(context) }
     }
+
+    /** 잠깐만 켜 둡니다 (Dev 탭) — [minutes] 뒤 알람으로 저절로 꺼집니다. 이미 켜져 있으면 그대로 두고 갱신만 합니다. */
+    fun enableTemporarily(context: Context, minutes: Int) {
+        if (isEnabled(context) && tempUntil(context) == 0L) {
+            CoroutineScope(Dispatchers.Default).launch { update(context) }
+            return
+        }
+        val until = System.currentTimeMillis() + minutes * 60_000L
+        prefs(context).edit().putBoolean(KEY_ENABLED, true).putLong(KEY_TEMP_UNTIL, until).apply()
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, until, tempOffIntent(context))
+        CoroutineScope(Dispatchers.Default).launch { update(context) }
+    }
+
+    /** 임시로 켜 둔 경우 꺼질 시각(epoch ms), 아니면 0. */
+    fun tempUntil(context: Context): Long = prefs(context).getLong(KEY_TEMP_UNTIL, 0L)
+
+    private fun cancelTempOff(context: Context) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmManager.cancel(tempOffIntent(context))
+    }
+
+    private fun tempOffIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
+        context, REQUEST_TEMP_OFF, Intent(context, LiveActivityReceiver::class.java).setAction(ACTION_TEMP_OFF),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     /** 시스템 설정 때문에 실시간 알림이 안 보이는 이유 — 없으면 null. */
     class BlockedReason(val title: String, val steps: String)
@@ -87,6 +117,11 @@ object LiveActivity {
     suspend fun update(context: Context) {
         val app = context.applicationContext
         val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // 임시로 켜 둔 시간이 지났으면(알람이 밀렸어도) 여기서 끕니다.
+        val tempUntil = tempUntil(app)
+        if (tempUntil != 0L && System.currentTimeMillis() >= tempUntil) {
+            prefs(app).edit().putBoolean(KEY_ENABLED, false).remove(KEY_TEMP_UNTIL).apply()
+        }
         if (!isEnabled(app)) {
             manager.cancel(NOTIFICATION_ID)
             cancelTick(app)
@@ -165,7 +200,8 @@ object LiveActivity {
             // 진행률은 0~1000 으로 — 밀리초 그대로(수백만) 넘기면 삼성 Now Bar 가 막대 오른쪽 끝을 잘라 그렸습니다.
             val permille = (elapsed * 1000L / total).toInt().coerceIn(0, 1000)
             // 진행률에 따라 시스템이 뒷부분을 흐리게 칠하는 방식(styledByProgress)은 One UI 가 막대 오른쪽 끝을 작은 점처럼
-            // 밝게 남겼습니다 — 대신 지난 구간·남은 구간을 색이 다른 두 조각으로 직접 그립니다.
+            // 밝게 남겼습니다 — 대신 지난 구간·남은 구간을 색이 다른 두 조각으로 직접 그립니다. 남은 조각은 불투명한
+            // 회색으로 — 반투명 흰색은 One UI 가 알파를 무시해 지난 조각과 같은 흰색으로 그렸습니다.
             val done = permille.coerceIn(1, 999)
             val style = Notification.ProgressStyle()
                 .setProgress(permille)
@@ -173,7 +209,7 @@ object LiveActivity {
                 .setProgressSegments(
                     listOf(
                         Notification.ProgressStyle.Segment(done).setColor(0xFFFFFFFF.toInt()),
-                        Notification.ProgressStyle.Segment(1000 - done).setColor(0x59FFFFFF),
+                        Notification.ProgressStyle.Segment(1000 - done).setColor(0xFF8E96A6.toInt()),
                     ),
                 )
                 .setProgressTrackerIcon(null)
@@ -256,6 +292,7 @@ class LiveActivityReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
+            if (intent.action == LiveActivity.ACTION_TEMP_OFF) LiveActivity.setEnabled(context, false)
             runCatching { LiveActivity.update(context) }
             pending.finish()
         }
