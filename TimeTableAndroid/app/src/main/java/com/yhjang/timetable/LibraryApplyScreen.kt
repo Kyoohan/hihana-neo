@@ -7,6 +7,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +35,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -95,6 +101,9 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         if (notice == current) notice = null
     }
     var favoriteArea by remember { mutableStateOf(SeatFavoriteStore.get(context, service)) }
+    // 빠른 예약 — 미리 골라 둔 자리(최대 4개)를 맨 위 버튼으로. '+' 를 누른 뒤 좌석을 탭하면 저장, 버튼을 길게 누르면 제거.
+    var quickSeats by remember { mutableStateOf(QuickSeatStore.get(context, service)) }
+    var pickingQuick by remember { mutableStateOf(false) }
     // 신청 기기 — 포털은 마지막으로 등록한 기기에서만 신청을 받습니다. 상태를 보여주고 버튼으로 이 기기를 등록합니다.
     var deviceRegistered by remember { mutableStateOf<Boolean?>(null) }
     var registering by remember { mutableStateOf(false) }
@@ -221,6 +230,40 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 .verticalScroll(rememberScrollState())
                 .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
+            // 빠른 예약 — 저장해 둔 자리를 누르면 지금 고른 타임에 바로 신청(내 자리면 취소).
+            QuickReserveSection(
+                seats = quickSeats,
+                map = map,
+                picking = pickingQuick,
+                slotLabel = slots.firstOrNull { it.id == slotId }?.label,
+                onTap = { cont ->
+                    val current = map
+                    val seat = current?.seats?.firstOrNull { it.cont == cont }
+                    when {
+                        busy -> Unit
+                        current == null -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
+                        seat == null -> notice = "$cont 자리를 이 타임 좌석표에서 찾지 못했습니다"
+                        seat.mine || seat.available -> act(seat)
+                        else -> notice = "$cont 은 이미 다른 사람이 신청했습니다"
+                    }
+                },
+                onRemove = { cont ->
+                    quickSeats = quickSeats - cont
+                    QuickSeatStore.set(context, service, quickSeats)
+                    notice = "$cont 을 빠른 예약에서 뺐습니다"
+                },
+                onAdd = {
+                    pickingQuick = !pickingQuick
+                    notice = if (pickingQuick) "저장할 좌석을 아래에서 탭하세요" else null
+                },
+            )
+            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                thickness = 0.8.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            )
+            Spacer(Modifier.height(12.dp))
             // 타임 선택.
             Row(
                 Modifier
@@ -334,7 +377,21 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         Spacer(Modifier.height(2.dp))
                         SeatGrid(
                             area = area,
-                            onSeatTap = { seat -> if (!busy) act(seat) },
+                            onSeatTap = { seat ->
+                                when {
+                                    pickingQuick -> {
+                                        pickingQuick = false
+                                        if (seat.cont in quickSeats) {
+                                            notice = "${seat.cont} 은 이미 빠른 예약에 있습니다"
+                                        } else {
+                                            quickSeats = (quickSeats + seat.cont).take(QuickSeatStore.MAX)
+                                            QuickSeatStore.set(context, service, quickSeats)
+                                            notice = "${seat.cont} 을 빠른 예약에 추가했습니다"
+                                        }
+                                    }
+                                    !busy -> act(seat)
+                                }
+                            },
                             modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                         )
                     }
@@ -348,6 +405,109 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 }
             }
         }
+    }
+}
+
+/**
+ * 빠른 예약 줄 — 저장한 자리를 네모 버튼으로, 마지막에 '+'. 버튼 색은 지금 타임 좌석표 기준: 내 자리면 강조색,
+ * 남이 잡았으면 흐리게, 비었으면 보통. 길게 누르면 제거.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun QuickReserveSection(
+    seats: List<String>,
+    map: LibrarySeatMap?,
+    picking: Boolean,
+    slotLabel: String?,
+    onTap: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("빠른 예약", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            when {
+                picking -> "저장할 좌석을 탭하세요"
+                seats.isEmpty() -> "+ 를 누르고 자리를 골라 두세요"
+                slotLabel != null -> "누르면 $slotLabel 에 바로 신청"
+                else -> ""
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(
+        Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = OneUi.PagePadding),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        seats.forEach { cont ->
+            val seat = map?.seats?.firstOrNull { it.cont == cont }
+            val mine = seat?.mine == true
+            val blocked = seat != null && !mine && !seat.available
+            val fill = when {
+                mine -> scheme.primary.copy(alpha = 0.9f)
+                else -> scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f)
+            }
+            OneUiLiquidGlassBox(
+                modifier = Modifier
+                    .size(64.dp)
+                    .alpha(if (blocked) 0.45f else 1f)
+                    .combinedClickable(onClick = { onTap(cont) }, onLongClick = { onRemove(cont) }),
+                cornerRadius = 16.dp,
+                strength = 0.6f,
+                fill = fill,
+            ) {
+                Text(
+                    cont,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (mine) scheme.onPrimary else scheme.onSurface,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (seats.size < QuickSeatStore.MAX) {
+            OneUiLiquidGlassBox(
+                modifier = Modifier
+                    .size(64.dp)
+                    .combinedClickable(onClick = onAdd),
+                cornerRadius = 16.dp,
+                strength = 0.6f,
+                fill = if (picking) scheme.primary.copy(alpha = 0.9f) else scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "빠른 예약 자리 추가",
+                    tint = if (picking) scheme.onPrimary else scheme.onSurface,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 빠른 예약 자리(좌석 번호, 최대 [MAX]) — 면학실·도서관 따로. */
+object QuickSeatStore {
+    const val MAX = 4
+    private const val PREFS = "quick_seats"
+    private fun prefs(context: android.content.Context) =
+        context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    fun get(context: android.content.Context, service: SeatService): List<String> =
+        prefs(context).getString(service.name, null)?.split(',')?.filter { it.isNotBlank() }?.take(MAX) ?: emptyList()
+
+    fun set(context: android.content.Context, service: SeatService, seats: List<String>) {
+        prefs(context).edit().putString(service.name, seats.take(MAX).joinToString(",")).apply()
     }
 }
 
