@@ -94,6 +94,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
@@ -429,7 +430,8 @@ private fun TimeTableAppContent(
     var timetableRevision by remember { mutableStateOf(0) }
 
     // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/시간표/급식/학사 네 개입니다.
-    val tabTitles = listOf("홈", "시간표", "급식", "학사")
+    // 디버그 빌드에는 새 기능을 바로 눌러 볼 수 있는 Dev 탭이 하나 더 있습니다.
+    val tabTitles = if (BuildConfig.DEBUG) listOf("홈", "시간표", "급식", "학사", "Dev") else listOf("홈", "시간표", "급식", "학사")
     // 이전 버전 저장 상태(설정=3, 학사=4)가 복원돼도 범위를 벗어나지 않게 보정합니다.
     if (tab !in tabTitles.indices) tab = 0
 
@@ -871,7 +873,7 @@ private fun TimeTableAppContent(
     val hazeState = remember { HazeState() }
 
     // 탭 사이 스와이프 — 페이저가 자리를 잡으면 tab 을 따라가고, 하단 바 탭은 페이저를 그 페이지로 넘깁니다.
-    val pagerState = rememberPagerState(initialPage = tab) { 4 }
+    val pagerState = rememberPagerState(initialPage = tab) { tabTitles.size }
     // 하단 바로 고른 탭 전환 중엔 캡슐이 페이저 위치를 따라가지 않습니다 — 따라가면 방금 놓은 자리에서
     // 이전 페이지 위치로 튀었다가 돌아오며 떨렸습니다.
     var navDriven by remember { mutableStateOf(false) }
@@ -1040,6 +1042,14 @@ private fun TimeTableAppContent(
                     modifier = Modifier.fillMaxSize(),
                 )
 
+                4 -> DevTab(
+                    contentPadding = tabContentPadding,
+                    onShowExactAlarmPrompt = { showingExactAlarmPrompt = true },
+                    onOpenSeats = { seatService = it },
+                    onOpenSettings = { showingSettings = true },
+                    onOpenAccount = { showingAccountSheet = true },
+                    onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
+                )
                 3 -> AcademicTab(
                     subTab = academicSubTab,
                     onSubTabChange = { academicSubTab = it },
@@ -1784,7 +1794,7 @@ private fun AppNavBar(
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
-    val labels = listOf("홈", "시간표", "급식", "학사")
+    val labels = if (BuildConfig.DEBUG) listOf("홈", "시간표", "급식", "학사", "Dev") else listOf("홈", "시간표", "급식", "학사")
     val count = labels.size
 
     // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
@@ -2037,7 +2047,8 @@ private fun NavIcon(index: Int, tint: Color) {
         0 -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
         1 -> Icon(Icons.Outlined.DateRange, contentDescription = "시간표", tint = tint)
         2 -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
-        else -> Icon(painter = painterResource(R.drawable.ic_academic), contentDescription = "학사", tint = tint)
+        3 -> Icon(painter = painterResource(R.drawable.ic_academic), contentDescription = "학사", tint = tint)
+        else -> Icon(Icons.Outlined.Build, contentDescription = "Dev", tint = tint)
     }
 }
 
