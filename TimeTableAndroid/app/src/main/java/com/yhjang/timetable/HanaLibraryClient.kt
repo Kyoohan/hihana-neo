@@ -56,18 +56,22 @@ enum class SeatService(
     val applyPage: String,
     val listPaths: List<String>,
     val reservePaths: List<String>,
+    /** 기기 등록(updateDiviceInfo.json)의 usegubun — 도서관 L, 면학실 S (도서관 값으로 등록하면 면학실엔 안 먹힘). */
+    val deviceGubun: String,
 ) {
     LIBRARY(
         "도서관",
         "/main/library/library-apply.do",
         listOf("/main/library/study-room-req-list.json"),
         listOf("/main/library/study-room-req.json"),
+        "L",
     ),
     STUDY_ROOM(
         "면학실",
         "/main/studyroom/study-apply.do",
         listOf("/main/studyroom/study-room-req-list.json", "/main/studyroom/study-req-list.json", "/main/studyroom/studyroom-req-list.json"),
         listOf("/main/studyroom/study-room-req.json", "/main/studyroom/study-req.json", "/main/studyroom/studyroom-req.json"),
+        "S",
     ),
 }
 
@@ -131,7 +135,7 @@ object HanaLibraryApi {
             context, service.listPaths, listOf("stIdxFull" to slotId, "subListYn" to "N"), referer = BASE + service.applyPage,
         )
         if (json.optString("result") != "success") {
-            throw HanaPortalException.Rejected(json.optString("resMsg").ifBlank { "좌석을 불러오지 못했습니다" })
+            throw HanaPortalException.Rejected(cleanMessage(json.optString("resMsg")) ?: "좌석을 불러오지 못했습니다")
         }
         if (json.optString("hYn") == "Y") {
             return@withContext LibrarySeatMap(emptyList(), json.optString("hMsg").ifBlank { "휴관일" })
@@ -220,10 +224,21 @@ object HanaLibraryApi {
     /** 이 기기를 "마지막 등록 기기"로 만듭니다 — 신청이 기기 때문에 거절될 때, 또는 사용자가 버튼으로. */
     suspend fun registerDevice(context: Context, service: SeatService) {
         val json = HanaPortalClient.get().authenticatedJson(
-            context, "/main/member/updateDiviceInfo.json", listOf("usegubun" to "L"), referer = BASE + service.applyPage,
+            context, "/main/member/updateDiviceInfo.json", listOf("usegubun" to service.deviceGubun), referer = BASE + service.applyPage,
         )
-        if (json.optString("result") != "success") Log.d(TAG, "registerDevice: $json")
+        Log.d(TAG, "registerDevice(${service.deviceGubun}): $json")
+        if (json.optString("result") != "success") {
+            throw HanaPortalException.Rejected(cleanMessage(json.optString("resMsg")) ?: "기기를 등록하지 못했습니다")
+        }
     }
+
+    /** 서버 문구의 HTML(`<br/>` 등)을 줄바꿈·공백으로 정리합니다. 비어 있으면 null. */
+    private fun cleanMessage(raw: String?): String? = raw
+        ?.replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        ?.replace(Regex("<[^>]+>"), "")
+        ?.replace("&nbsp;", " ")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
 
     /** 좌석 신청 — 성공하면 서버 문구(없으면 "신청되었습니다"), 실패하면 예외 메시지에 서버 문구. */
     /**
@@ -238,7 +253,7 @@ object HanaLibraryApi {
             registerDevice(context, service)
             json = firstJson(context, service.reservePaths, params, referer = BASE + service.applyPage)
         }
-        val message = json.optString("resMsg").ifBlank { null }
+        val message = cleanMessage(json.optString("resMsg"))
         if (json.optString("result") != "success") {
             throw HanaPortalException.Rejected(message ?: "신청하지 못했습니다")
         }
@@ -249,7 +264,7 @@ object HanaLibraryApi {
         val json = HanaPortalClient.get().authenticatedJson(
             context, "/main/studyroom/study-cancel.json", listOf("sreIdx" to sreIdx.toString()), referer = BASE + service.applyPage,
         )
-        val message = json.optString("resMsg").ifBlank { null }
+        val message = cleanMessage(json.optString("resMsg"))
         if (json.optString("result") != "success") {
             throw HanaPortalException.Rejected(message ?: "취소하지 못했습니다")
         }
