@@ -70,6 +70,7 @@ import com.yhjang.timetable.ui.OneUiFullScreen
 import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.OneUiLiquidGlassBox
 import com.yhjang.timetable.ui.isDark
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.floor
@@ -115,6 +116,10 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         error = null
         map = try {
             HanaLibraryApi.seatMap(context, id, service)
+        } catch (e: CancellationException) {
+            // 타임을 바꿔 LaunchedEffect 가 다시 시작되면 이전 불러오기가 취소됩니다 — 오류가 아니므로 카드에
+            // "The coroutine scope left the composition" 을 띄우지 말고 그대로 전파합니다.
+            throw e
         } catch (e: Exception) {
             error = e.message ?: "좌석을 불러오지 못했습니다"
             map
@@ -134,30 +139,38 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             pendingText = (if (cancelling) "${seat.cont} 취소 중" else "${seat.cont} 신청 중") + " · 서버가 붐벼 오래 걸릴 수 있어요"
         }
         scope.launch {
+            var success: String? = null
+            var failure: String? = null
             var timedOut = false
-            val result = try {
-                if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
+            try {
+                success = if (cancelling) HanaLibraryApi.cancel(context, seat.sreIdx!!, service)
                 else HanaLibraryApi.reserve(context, seat, id, service)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: HanaPortalException.Timeout) {
                 timedOut = true
-                null
             } catch (e: Exception) {
-                e.message ?: "실패했습니다"
+                failure = e.message ?: "실패했습니다"
             }
             slowHint.cancel()
+            // 결과는 서버 문구가 아니라 새로 받은 좌석표로 판정합니다. 예약 오픈 직후엔 (1) 응답이 안 와 기다리다 끝나거나
+            // (2) 첫 요청은 처리됐는데 응답 본문이 비어 다시 보낸 요청에 "이미 선택된 좌석입니다"가 오는 일이 있어서,
+            // 서버 문구만 믿으면 실제로는 잡힌 자리를 실패로 보여줍니다.
+            val before = map
             loadMap()
             busy = false
             pendingText = null
-            // 응답 없이 시간이 지났으면 다시 보내는 대신 좌석표로 결과를 확인합니다 — 서버가 첫 요청을 늦게 처리했을 수 있습니다.
-            notice = if (timedOut) {
-                val nowMine = map?.areas?.flatMap { it.seats }?.any { it.mine && it.cont == seat.cont } == true
-                when {
-                    cancelling && !nowMine -> "응답은 없었지만 ${seat.cont} 취소가 반영됐습니다"
-                    cancelling -> "응답이 없었고 ${seat.cont} 은 아직 내 자리입니다 — 다시 눌러 주세요"
-                    nowMine -> "응답은 없었지만 ${seat.cont} 신청이 반영됐습니다"
-                    else -> "응답이 없었고 ${seat.cont} 은 신청되지 않았습니다 — 다시 눌러 주세요"
-                }
-            } else result
+            val after = map?.takeIf { it !== before }?.seats?.firstOrNull { it.cont == seat.cont }
+            val nowMine = after?.mine == true
+            notice = when {
+                // 좌석표를 새로 못 받았으면 서버 문구대로.
+                after == null -> success ?: failure ?: "응답이 없었습니다 — 좌석표를 새로고침해 확인해 주세요"
+                cancelling && !nowMine -> success ?: "${seat.cont} 취소가 반영됐습니다"
+                cancelling -> failure ?: "${seat.cont} 은 아직 내 자리입니다 — 다시 눌러 주세요"
+                nowMine -> success ?: "${seat.cont} 신청이 반영됐습니다" + (failure?.let { " (서버 응답: $it)" } ?: if (timedOut) " (응답은 늦었지만 좌석표에 반영)" else "")
+                !after.available -> (failure?.let { "$it — " } ?: "") + "${seat.cont} 은 다른 사람이 잡았습니다"
+                else -> failure ?: "${seat.cont} 은 신청되지 않았습니다 — 다시 눌러 주세요"
+            }
             runCatching { refreshDevice() }
             onChanged()
         }
