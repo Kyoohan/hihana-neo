@@ -22,5 +22,6 @@ fun iconResFor(key: String): Int = when (key) {
     "school" -> R.drawable.ic_school
     "directions_run" -> R.drawable.ic_directions_run
     "place" -> R.drawable.ic_place
+    "bedtime" -> R.drawable.ic_bedtime
     else -> R.drawable.ic_menu_book
 }

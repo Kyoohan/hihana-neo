@@ -154,6 +154,17 @@ fun DevTab(
             )
             OneUiDivider()
             OneUiListItem(
+                title = "심야면학 테스트 신청 넣기",
+                subtitle = "오늘 심야 1타임 23:50–01:00 · 3층 5번 (다음 동기화 때 실제 신청으로 덮임)",
+                onClick = { MidnightSchedule.injectTest(context); onRefreshLive() },
+            )
+            OneUiDivider()
+            OneUiListItem(
+                title = "심야면학 일정 지우기",
+                onClick = { MidnightSchedule.clear(context); onRefreshLive() },
+            )
+            OneUiDivider()
+            OneUiListItem(
                 title = "실시간 일정 스위치 상태",
                 subtitle = if (LiveActivity.isEnabled(context)) "켜짐" else "꺼짐",
                 onClick = onOpenSettings,

@@ -105,21 +105,11 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
                 },
             )
         }
-        // 심야면학은 학교 포털이 아니라 기숙사 쪽 별도 사이트(자체 로그인)라 API 없이 신청 페이지만 엽니다.
-        OneUiCard(modifier = Modifier.fillMaxWidth()) {
-            Text("심야면학", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(14.dp))
-            OneUiButton(
-                text = "신청 페이지 열기",
-                onClick = { onOpenWeb(MIDNIGHT_STUDY_URL, "심야면학") },
-                style = OneUiButtonStyle.Neutral,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        // 심야면학은 학교 포털이 아닌 기숙사 쪽 별도 사이트(Supabase) — 자체 로그인으로 내역·신청.
+        MidnightStudyCard()
     }
 }
 
-private const val MIDNIGHT_STUDY_URL = "https://midnight-study.vercel.app/"
 
 @Composable
 private fun ApplyServiceCard(

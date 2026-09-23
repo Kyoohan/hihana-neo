@@ -54,6 +54,9 @@ sealed class StudyPlace {
      */
     data class Other(val category: String, val location: String?) : StudyPlace()
 
+    /** 심야면학 (선택 신청) — 기숙사 쪽 사이트에서 신청한 날만 일정에 들어갑니다. [seat] 예: "3층 5번". */
+    data class Midnight(val seat: String?) : StudyPlace()
+
     /** 큰 글씨로 표시할 장소명 */
     val name: String
         get() = when (this) {
@@ -64,6 +67,7 @@ sealed class StudyPlace {
             is AfterSchool -> "방과후"
             is OneTwo -> "1인2기"
             is Other -> category.ifEmpty { "기타 장소" }
+            is Midnight -> "심야면학"
         }
 
     /** 칩에 표시할 구체적인 목적지 (교실명 또는 자리번호) */
@@ -76,11 +80,12 @@ sealed class StudyPlace {
             is AfterSchool -> room?.let { "$courseName · $it" } ?: courseName
             is OneTwo -> room?.let { "$activityName · $it" } ?: activityName
             is Other -> location
+            is Midnight -> seat
         }
 
     val accent: Accent
         get() = when (this) {
-            is ClassroomPlace, is StudyRoom, is Other -> Accent.STUDY
+            is ClassroomPlace, is StudyRoom, is Other, is Midnight -> Accent.STUDY
             is Library -> Accent.LIBRARY
             Dorm -> Accent.DORM
             is AfterSchool -> Accent.AFTER_SCHOOL
@@ -100,6 +105,7 @@ sealed class StudyPlace {
             is AfterSchool -> "school"
             is OneTwo -> "directions_run"
             is Other -> "place"
+            is Midnight -> "bedtime"
         }
 
     /** 화면에 한 줄로 보여줄 때 */
@@ -115,11 +121,13 @@ sealed class StudyPlace {
             is AfterSchool -> "afterschool:$courseName|${room ?: ""}"
             is OneTwo -> "onetwo:$activityName|${room ?: ""}"
             is Other -> "other:$category|${location ?: ""}"
+            is Midnight -> "midnight:${seat ?: ""}"
         }
 
     companion object {
         fun fromStorageValue(value: String): StudyPlace? {
             if (value == "dorm") return Dorm
+            if (value.startsWith("midnight:")) return Midnight(value.removePrefix("midnight:").takeIf { it.isNotEmpty() })
             if (value.startsWith("other:")) {
                 val parts = value.removePrefix("other:").split("|", limit = 2)
                 val category = parts.getOrNull(0)?.takeIf { it.isNotEmpty() } ?: return null
@@ -405,6 +413,26 @@ object Timetable {
 
     fun fetchedWeek(): TimetableWeek? = installedWeek
 
+    // ---------- 심야면학 (선택) ----------
+
+    /**
+     * 심야면학 신청 한 건. [start]/[end] 는 신청한 날 0시 기준 분 — 자정을 넘기면 1440 이상입니다 (예: 23:50–01:00 → 1430–1500).
+     * 신청하지 않은 타임은 아예 넣지 않으므로, 신청이 없는 날의 일과는 평소대로 마지막 면학(23:10)에서 끝납니다.
+     */
+    data class MidnightBooking(val session: Int, val start: Int, val end: Int, val seat: String?)
+
+    // 날짜별로 둡니다 — 자정을 넘긴 뒤에도 전날 신청(00:00~01:00 부분)을 오늘 맨 앞에 이어 붙여야 해서.
+    @Volatile private var midnightByDate: Map<LocalDate, List<MidnightBooking>>? = null
+
+    /** 앱 모듈(MidnightSchedule)이 저장해 둔 신청을 설치합니다. */
+    fun installMidnight(byDate: Map<LocalDate, List<MidnightBooking>>) {
+        midnightByDate = byDate.mapValues { (_, list) -> list.sortedBy { it.start } }
+    }
+
+    fun midnightInstalled(): Boolean = midnightByDate != null
+
+    private fun midnightFor(date: LocalDate): List<MidnightBooking> = midnightByDate?.get(date).orEmpty()
+
     // ---------- 시간 구획 (자정 기준 분) ----------
 
     val periodTimes: Map<Int, Pair<Int, Int>> = mapOf(
@@ -450,7 +478,54 @@ object Timetable {
     // placeFor 는 PlanStore 조회를 대신합니다 — DataStore 접근이 suspend 라서
     // 이 함수 자체는 동기로 두고, 호출부에서 하루치 배정을 미리 읽어 클로저로 넘깁니다.
 
+    /**
+     * 하루 블록 + 심야면학: 오늘 신청한 심야 타임은 마지막 면학 뒤에 (그 사이는 "휴식"), 전날 신청이 자정을 넘기면
+     * 그 남은 부분을 오늘 맨 앞에 붙입니다. 신청이 없으면 평소 블록 그대로입니다.
+     */
     fun blocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
+        val base = baseBlocks(date, placeFor)
+        val today = midnightFor(date)
+        val carry = midnightFor(date.minusDays(1)).filter { it.end > 24 * 60 }
+        if (today.isEmpty() && carry.isEmpty()) return base
+        val result = base.toMutableList()
+        val startOfDay = date.atStartOfDay()
+        fun at(minutes: Int): LocalDateTime = startOfDay.plusMinutes(minutes.toLong())
+        fun session(b: MidnightBooking, offset: Int) = StudySession("심야 ${b.session}타임", b.start - offset, b.end - offset)
+        fun block(b: MidnightBooking, offset: Int) =
+            Block(BlockKind.StudyKind(session(b, offset), StudyPlace.Midnight(b.seat)), at(b.start - offset), at(b.end - offset))
+
+        if (today.isNotEmpty()) {
+            // 끝의 빈 블록(마지막 면학 ~ 자정)을 걷어 내고 그 자리에 휴식 → 심야 타임을 잇습니다.
+            val tail = result.lastOrNull()?.takeIf { it.isBlank }
+            if (tail != null) result.removeAt(result.lastIndex)
+            var cursor = tail?.start ?: result.lastOrNull()?.end ?: at(24 * 60)
+            for (b in today) {
+                val start = at(b.start)
+                if (start.isBefore(cursor)) continue
+                if (start.isAfter(cursor)) {
+                    val next = NextUp.StudyNext(session(b, 0), StudyPlace.Midnight(b.seat))
+                    result += Block(BlockKind.GapKind(Gap("휴식", "휴식", "심야 ${b.session}타임까지", next, Accent.IDLE)), cursor, start)
+                }
+                result += block(b, 0)
+                cursor = at(b.end)
+            }
+            if (cursor.isBefore(at(24 * 60))) result += Block(BlockKind.BlankKind, cursor, at(24 * 60))
+        }
+
+        if (carry.isNotEmpty()) {
+            // 전날 심야가 자정을 넘겨 이어지는 부분 — 블록은 전날 시작 시각 그대로 두어 진행률이 맞게 합니다.
+            val carryEnd = at(carry.maxOf { it.end } - 24 * 60)
+            val head = result.firstOrNull()?.takeIf { it.isBlank }
+            if (head != null) {
+                result.removeAt(0)
+                if (carryEnd.isBefore(head.end)) result.add(0, Block(BlockKind.BlankKind, carryEnd, head.end))
+            }
+            result.addAll(0, carry.map { block(it, 24 * 60) })
+        }
+        return result
+    }
+
+    private fun baseBlocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
         val startOfDay = date.atStartOfDay()
         fun at(minutes: Int): LocalDateTime = startOfDay.plusMinutes(minutes.toLong())
 

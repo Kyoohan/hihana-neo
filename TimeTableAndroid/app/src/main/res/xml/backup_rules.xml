@@ -3,4 +3,5 @@
      다른 설치로 복원되면 열 수 없으므로 백업하지 않습니다. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="hana_credentials.xml" />
+    <exclude domain="sharedpref" path="midnight_session.xml" />
 </full-backup-content>

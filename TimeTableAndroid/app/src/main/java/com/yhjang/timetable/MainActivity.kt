@@ -768,6 +768,8 @@ private fun TimeTableAppContent(
             HanaSyncApplier.apply(context, sync, date)
             // 시간표도 함께, 항상 새로(캐시 아님) 받아옵니다 — 실패해도 예외를 던지지 않습니다.
             HanaTimetableSync.refresh(context, date, force = true)
+            // 심야면학(선택)은 로그인해 둔 경우에만 — 실패해도 동기화 전체를 막지 않습니다.
+            runCatching { MidnightSchedule.refresh(context) }
             timetableRevision++
             syncEverywhere()
             offline = false
@@ -837,7 +839,7 @@ private fun TimeTableAppContent(
     // 상태를 구분하기 위한 값 — 이게 없으면 로딩 중에도 "오늘 일정이 모두 끝났습니다"라는
     // 잘못된 문구가 떠서, 앱이 멈춘 것처럼(화면이 빈 것처럼) 보이는 원인이 됐습니다.
     val hasTimetable = remember(timetableRevision) { Timetable.fetchedWeek() != null }
-    val todayBlocks = remember(today, places, timetableRevision) { Timetable.blocks(today) { places[it] } }
+    val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision) { Timetable.blocks(today) { places[it] } }
     val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
     // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
     val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
@@ -2657,6 +2659,7 @@ private fun kindFor(place: StudyPlace?): PlaceKind = when (place) {
     is StudyPlace.AfterSchool -> PlaceKind.NONE
     is StudyPlace.OneTwo -> PlaceKind.NONE
     is StudyPlace.Other -> PlaceKind.NONE
+    is StudyPlace.Midnight -> PlaceKind.NONE
 }
 
 @Composable

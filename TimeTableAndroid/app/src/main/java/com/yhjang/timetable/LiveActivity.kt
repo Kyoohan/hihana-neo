@@ -146,6 +146,14 @@ object LiveActivity {
         }
 
         val block = Timetable.blockAt(today, now) { places[it] }
+        // 전날 심야면학이 자정을 넘겨 이어지면 표시 창이 전날 밤부터 시작해, 그게 끝난 뒤의 새벽 빈 시간도 창 안에
+        // 들어옵니다 — 빈 구간이면 알림을 내리고 다음 일정 시작에 다시 깨웁니다.
+        if (block.isBlank) {
+            manager.cancel(NOTIFICATION_ID)
+            val nextStart = shown.firstOrNull { it.start.isAfter(now) }?.start
+            scheduleAt(app, nextStart?.let { toMillis(it) } ?: (System.currentTimeMillis() + 6 * 3_600_000L), exact = false)
+            return
+        }
         val next = Timetable.nextEvent(blocks, block, now)
         ensureChannel(manager)
         val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(app) }.getOrDefault(emptyMap()))

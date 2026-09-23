@@ -437,6 +437,8 @@ object HanaTimetableSync {
      * 없으면 캐시된 포털 시간표를 먼저 반영하기 위한 것으로, 이미 설치돼 있으면 즉시 돌아옵니다.
      */
     suspend fun ensureInstalled(context: Context, date: LocalDate = PlanStore.today()) {
+        // 심야면학 신청도 여기서 함께 — 위젯·Now Bar 가 새 프로세스에서 떠도 블록에 들어가게.
+        MidnightSchedule.ensureInstalled(context)
         if (Timetable.fetchedWeek() != null) return
         val week = PlanStore.cachedJson(context, NAME_PREFIX + weekKey(date))?.let { TimetableWeek.fromJson(it.value) }
             ?: latest(context)

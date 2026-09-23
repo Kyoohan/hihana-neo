@@ -839,6 +839,7 @@ object HanaSyncApplier {
         is StudyPlace.AfterSchool -> "AfterSchool ${place.courseName} room=${place.room ?: "-"}"
         is StudyPlace.OneTwo -> "OneTwo ${place.activityName} room=${place.room ?: "-"}"
         is StudyPlace.Other -> "Other category=${place.category} location=${place.location ?: "-"}"
+        is StudyPlace.Midnight -> "Midnight seat=${place.seat ?: "-"}"
     }
 }
 
