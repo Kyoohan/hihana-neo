@@ -1,3 +1,5 @@
+import java.util.Properties
+
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -20,6 +22,12 @@ android {
         // 비어 있으면 업데이트 확인을 건너뜁니다.
         val updateRepo = (project.findProperty("updateRepo") as? String).orEmpty()
         buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
+        // NEIS 급식 API 인증키 — CI 는 환경변수(NEIS_KEY 시크릿), 로컬은 local.properties 에서. 저장소에는 두지 않습니다.
+        val localProps = Properties().apply {
+            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        val neisKey = System.getenv("NEIS_KEY")?.takeIf { it.isNotBlank() } ?: localProps.getProperty("NEIS_KEY").orEmpty()
+        buildConfigField("String", "NEIS_KEY", "\"$neisKey\"")
     }
 
     // 릴리스 서명 — CI(또는 로컬)에서 환경 변수로 키스토어를 넘기면 그걸로, 없으면 디버그 키로 서명합니다.

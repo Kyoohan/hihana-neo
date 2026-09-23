@@ -85,6 +85,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -425,6 +431,8 @@ private fun TimeTableAppContent(
     var weekday1Supervisor by remember { mutableStateOf<String?>(null) }
     var isLoadingMeals by remember { mutableStateOf(false) }
     var mealDays by remember { mutableStateOf<Map<String, DayMeals>>(emptyMap()) }
+    // NEIS 부가 정보(칼로리·영양·원산지) — 날짜 키 → 끼니 키 → 정보.
+    var neisDays by remember { mutableStateOf<Map<String, Map<String, NeisMealInfo>>>(emptyMap()) }
     var mealWeekMode by rememberSaveable { mutableStateOf(false) }
     var selectedMealDay by rememberSaveable { mutableStateOf(PlanStore.dayKey(PlanStore.today())) }
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -739,6 +747,12 @@ private fun TimeTableAppContent(
         } else {
             loadMealDay(PlanStore.today(), force = false)
         }
+        // 지금 보는 날의 칼로리·영양·원산지 (메뉴와 별개 — 실패해도 메뉴는 그대로).
+        val shownDate = if (mealWeekMode) {
+            runCatching { LocalDate.parse(selectedMealDay) }.getOrDefault(PlanStore.today())
+        } else PlanStore.today()
+        val info = NeisMeal.load(context, shownDate)
+        if (info.isNotEmpty()) neisDays = neisDays + (PlanStore.dayKey(shownDate) to info)
     }
 
     // 게시판·학사일정 탭에 들어올 때 데이터 로드 (신청내역은 섹션 컴포저블이 자체적으로 조회합니다).
@@ -996,6 +1010,7 @@ private fun TimeTableAppContent(
             when (page) {
                 TabIndex.MEAL -> MealTab(
                     dayMeals = mealDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)],
+                    neisInfo = neisDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)].orEmpty(),
                     isLoading = isLoadingMeals,
                     allergyCodes = allergyCodes,
                     weekMode = mealWeekMode,
@@ -2166,6 +2181,7 @@ private fun NavIcon(index: Int, tint: Color) {
 @Composable
 private fun MealTab(
     dayMeals: DayMeals?,
+    neisInfo: Map<String, NeisMealInfo>,
     isLoading: Boolean,
     allergyCodes: Set<Int>,
     weekMode: Boolean,
@@ -2243,6 +2259,7 @@ private fun MealTab(
                     items = items[meal.key].orEmpty(),
                     photoFile = photos[meal.key],
                     allergyCodes = allergyCodes,
+                    info = neisInfo[meal.key],
                 )
             }
         }
@@ -2363,6 +2380,7 @@ private fun MealCard(
     items: List<MealItem>,
     photoFile: String?,
     allergyCodes: Set<Int>,
+    info: NeisMealInfo? = null,
 ) {
     OneUiCard(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         // 끼니마다 색이 다른 원형 배지 — 아침 연두 / 점심 하늘 / 저녁 보라 (삼성 헬스 지표 아이콘 톤).
@@ -2375,6 +2393,15 @@ private fun MealCard(
             OneUiMetricIcon(painterResource(R.drawable.ic_meal), badge, size = 36.dp)
             Spacer(Modifier.width(12.dp))
             Text(meal.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            info?.kcal?.let { kcal ->
+                Text(
+                    "${kcal.toDoubleOrNull()?.let { "%,.0f".format(it) } ?: kcal} kcal",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         val thumbUrl = HanaMealClient.mealPhotoThumbUrl(photoFile)
         if (thumbUrl != null) {
@@ -2424,6 +2451,76 @@ private fun MealCard(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+        if (info != null && (info.nutrients.isNotEmpty() || info.origins.isNotEmpty())) {
+            MealInfoSection(info)
+        }
+    }
+}
+
+/** 영양성분·원산지 — 접어 두고, 누르면 펼칩니다 (NEIS). */
+@Composable
+private fun MealInfoSection(info: NeisMealInfo) {
+    var expanded by rememberSaveable(info) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    Spacer(Modifier.height(10.dp))
+    HorizontalDivider(thickness = 0.8.dp, color = scheme.outlineVariant.copy(alpha = 0.6f))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            buildString {
+                append("영양성분·원산지")
+                info.servings?.let { append(" · ${"%,d".format(it)}명 급식") }
+            },
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (expanded) "접기" else "펼치기",
+            tint = scheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+    AnimatedVisibility(visible = expanded) {
+        Column(Modifier.padding(top = 8.dp)) {
+            // 영양성분: 두 칸씩 — "탄수화물 111.3g".
+            info.nutrients.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    pair.forEach { (name, value) ->
+                        val unit = Regex("\\(([^)]+)\\)").find(name)?.groupValues?.get(1).orEmpty()
+                        val label = name.replace(Regex("\\([^)]*\\)"), "")
+                        Row(Modifier.weight(1f)) {
+                            Text(label, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                            Spacer(Modifier.width(6.dp))
+                            Text("$value$unit", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            if (info.origins.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                // 원산지: 같은 산지끼리 묶어 한 줄로 — "국내산 · 쇠고기(한우), 돼지고기, 쌀 …".
+                info.origins.groupBy({ it.second }, { it.first }).forEach { (origin, foods) ->
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = scheme.onSurface)) { append(origin) }
+                            append("  ")
+                            append(foods.joinToString(", "))
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 2.dp),
                     )
                 }
             }

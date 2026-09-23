@@ -39,6 +39,7 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          NEIS_KEY: ${{ secrets.NEIS_KEY }}
         # 앱이 자기 저장소의 릴리스를 읽도록 updateRepo 를 이 저장소로 고정합니다.
         run: ./gradlew :app:assembleRelease -PupdateRepo="${{ github.repository }}" --no-daemon
 
