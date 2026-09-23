@@ -285,18 +285,19 @@ object HanaLibraryApi {
                 assigned = row.optString("sre_assign_yn").uppercase() == "Y",
             )
         }
-        // 학번·이름 짝을 모아 두고(면학실 응답), 이름이 비어 온 자리(도서관 응답)는 캐시로 채웁니다.
-        StudentNameCache.learn(context, seatsRaw)
-        val seats = seatsRaw.map { seat ->
-            if (seat.memberName == null && seat.studentNumber != null) {
-                // 내장 디렉터리(학번→이름) → 면학실에서 배운 캐시 순.
-                seat.copy(
-                    memberName = StudentDirectory.name(context, seat.studentNumber)
-                        // 기기에 저장한 학번·이름(Dev 탭에서 불러오기/면학실에서 익힌 것)은 dev 빌드에서만 씁니다 — 릴리스는 학번만.
-                        ?: StudentNameCache.name(context, seat.studentNumber).takeIf { BuildConfig.DEBUG },
-                )
-            } else {
-                seat
+        // 좌석의 학생 이름은 dev 빌드에서만 — 릴리스는 면학실·도서관 모두 학번만 보여주고, 이름을 기기에 모으지도 않습니다.
+        val seats = if (!BuildConfig.DEBUG) {
+            seatsRaw.map { it.copy(memberName = null) }
+        } else {
+            // 학번·이름 짝을 모아 두고(면학실 응답), 이름이 비어 온 자리(도서관 응답)는 캐시로 채웁니다.
+            StudentNameCache.learn(context, seatsRaw)
+            seatsRaw.map { seat ->
+                if (seat.memberName == null && seat.studentNumber != null) {
+                    // 내장 디렉터리(학번→이름) → 기기에 저장한 학번·이름(Dev 탭 불러오기/면학실에서 익힌 것) 순.
+                    seat.copy(memberName = StudentDirectory.name(context, seat.studentNumber) ?: StudentNameCache.name(context, seat.studentNumber))
+                } else {
+                    seat
+                }
             }
         }
         // 배치도는 세로로 긴 한 장입니다 (10 × 66 정도, 사이에 없는 행도 있음). 층은 통로 칸의 바닥색으로 갈립니다
@@ -352,7 +353,8 @@ object HanaLibraryApi {
             // 남이 잡은 자리 하나의 원문 — 이름·학번 필드 이름 확인용 (도서관은 면학실과 필드가 다를 수 있음).
             val occupied = (0 until (list?.length() ?: 0)).map { list!!.optJSONObject(it) }
                 .firstOrNull { it != null && it.optInt("sre_idx", 0) > 0 && it.optString("myYn") != "Y" }
-            if (occupied != null) Log.d(TAG, "occupied sample (${service.label}): ${occupied.toString().take(900)}")
+            // 원문에 이름이 들어 있어 dev 빌드에서만 남깁니다.
+            if (occupied != null && BuildConfig.DEBUG) Log.d(TAG, "occupied sample (${service.label}): ${occupied.toString().take(900)}")
         }
         LibrarySeatMap(areas, null)
     }
