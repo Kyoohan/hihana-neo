@@ -110,4 +110,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // 게시글 본문 웹뷰를 다크 모드에서 어둡게 칠합니다.
+    implementation("androidx.webkit:webkit:1.14.0")
 }

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 게시판 새 글 알림 — 게시판마다 켜고 끌 수 있고, 켜진 게시판만 주기 동기화([worker.HanaSyncWorker])에서
@@ -79,7 +80,7 @@ object BoardNotifier {
      * 새로 받은 [posts] 중 본 적 없는 글을 알립니다. 게시판을 켠 뒤 첫 확인이면 알리지 않고 기준선만 잡습니다.
      * 새 글이 하나면 제목을, 여럿이면 "n건" 요약 + 제목 목록을 한 알림으로 보냅니다.
      */
-    fun process(context: Context, category: BoardCategory, posts: List<HanaBoardPost>) {
+    suspend fun process(context: Context, category: BoardCategory, posts: List<HanaBoardPost>) {
         if (posts.isEmpty()) return
         if (!hasBaseline(context, category)) {
             markSeen(context, category, posts)
@@ -108,16 +109,35 @@ object BoardNotifier {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = if (fresh.size == 1) "${category.label} 새 글" else "${category.label} 새 글 ${fresh.size}건"
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_menu_book)
-            .setContentTitle(title)
-            .setContentText(first.title.ifEmpty { "(제목 없음)" })
             .setContentIntent(pending)
             .setAutoCancel(true)
         if (fresh.size == 1) {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText(first.title))
+            // 한 건이면 제목을 크게, 그 아래 AI 한 줄 요약을 — 펼치면 자세한 요약까지 보입니다.
+            // 요약 서버가 늦거나 실패하면 본문 앞부분으로 대신하고, 그것도 안 되면 게시판 이름만 둡니다.
+            val postTitle = first.title.ifEmpty { "(제목 없음)" }
+            val detail = runCatching { HanaPostApi.detail(context, first.url) }.getOrNull()
+            val summary = detail?.let { d ->
+                withTimeoutOrNull(30_000) {
+                    runCatching { PostSummarizer.ensure(context, PostSummarizer.key(first.url), d.title.ifEmpty { first.title }, d.text) }.getOrNull()
+                }
+            }
+            val short = summary?.line ?: detail?.let { HanaPostApi.excerpt(it.text) }?.takeIf { it.isNotBlank() } ?: "${category.label} 새 글"
+            val long = if (summary != null && summary.points.isNotEmpty()) {
+                summary.line + "\n" + summary.points.joinToString("\n") { "• $it" }
+            } else {
+                short
+            }
+            builder.setContentTitle(postTitle)
+                .setSubText(category.label)
+                .setContentText(short)
+                .setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(postTitle).bigText(long))
         } else {
+            builder.setContentTitle("${category.label} 새 글 ${fresh.size}건")
+                .setContentText(first.title.ifEmpty { "(제목 없음)" })
+            // 여러 건이면 알림은 제목 목록으로 두고, 목록에서 바로 보이도록 한 줄 요약만 미리 받아 둡니다.
+            withTimeoutOrNull(60_000) { PostSummarizer.prefetch(context, fresh.take(6)) }
             val inbox = NotificationCompat.InboxStyle()
             fresh.take(6).forEach { inbox.addLine(it.title.ifEmpty { "(제목 없음)" }) }
             if (fresh.size > 6) inbox.setSummaryText("외 ${fresh.size - 6}건")

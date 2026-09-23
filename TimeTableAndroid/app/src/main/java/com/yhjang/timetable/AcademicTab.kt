@@ -343,11 +343,22 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
                 Text("N", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
             }
         }
+        // AI 한 줄 요약 — 목록을 여는 동안 한 건씩 채워지며, 자리를 미리 비워 두지 않아 없는 글은 예전처럼 보입니다.
+        PostSummarizer.line(LocalContext.current, post.url)?.let { line ->
+            Spacer(Modifier.height(3.dp))
+            Text(
+                line,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (post.grades.isNotEmpty()) {
                 Text(
-                    "학년 ${post.grades.joinToString(",")}",
+                    post.grades.joinToString("·") { it.removeSuffix("학년").trim() } + "학년",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

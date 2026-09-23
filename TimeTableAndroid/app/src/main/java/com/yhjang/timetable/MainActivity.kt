@@ -460,6 +460,8 @@ private fun TimeTableAppContent(
     var boardError by remember { mutableStateOf<String?>(null) }
     // 앱 내 웹뷰로 띄울 페이지 (null 이면 닫힘) — 게시글·신청·내역 페이지 공용
     var webPage by remember { mutableStateOf<HanaWebPage?>(null) }
+    // 게시글은 포털 웹 대신 앱 화면(제목·AI 요약·본문·첨부)으로 엽니다 — url 과, 불러오는 동안 먼저 보일 제목.
+    var boardPost by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var seatService by remember { mutableStateOf<SeatService?>(null) }
 
     // 알리미
@@ -543,6 +545,11 @@ private fun TimeTableAppContent(
         }
     }
 
+    // 게시판 목록이 바뀌면 각 글의 AI 한 줄 요약을 한 건씩 채웁니다(이미 받은 글은 건너뜀).
+    LaunchedEffect(boardPosts) {
+        if (boardPosts.isNotEmpty()) PostSummarizer.prefetch(context, boardPosts)
+    }
+
     suspend fun loadAlim(force: Boolean) {
         alimLoading = true
         alimError = null
@@ -587,7 +594,7 @@ private fun TimeTableAppContent(
 
     /** 게시글 열기 — 화면은 즉시 뜨고, 세션 확인·로그인은 웹뷰가 페이지를 읽기 직전에 화면 안에서 합니다. */
     fun openBoardPost(post: HanaBoardPost) {
-        webPage = HanaWebPage(post.url, "게시글")
+        boardPost = post.url to post.title
     }
 
     suspend fun syncEverywhere() {
@@ -728,7 +735,7 @@ private fun TimeTableAppContent(
         }
         openPostRequest.value?.let { url ->
             openPostRequest.value = null
-            webPage = HanaWebPage(url, "게시글")
+            boardPost = url to null
         }
     }
 
@@ -1404,6 +1411,19 @@ private fun TimeTableAppContent(
             onDismiss = { seatService = null },
             // 자리를 잡거나 취소하면 오늘·주·위젯의 면학 위치를 바로 새로 받습니다.
             onChanged = { scope.launch { syncFromHana() } },
+        )
+    }
+
+    boardPost?.let { (url, title) ->
+        BoardPostScreen(
+            url = url,
+            fallbackTitle = title,
+            onDismiss = { boardPost = null },
+            onOpenBrowser = { openUrl(context, url) },
+            onFallbackWeb = {
+                boardPost = null
+                webPage = HanaWebPage(url, "게시글")
+            },
         )
     }
 
