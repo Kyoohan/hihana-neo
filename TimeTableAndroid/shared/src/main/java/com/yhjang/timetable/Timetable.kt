@@ -686,6 +686,21 @@ object Timetable {
     fun nextEvent(blocks: List<Block>, current: Block?, time: LocalDateTime): Block? {
         val upcoming = blocks.filter { it.start.isAfter(time) && !it.isBlank && it.kind !is BlockKind.GapKind }
         val skipFirst = current?.kind is BlockKind.GapKind && upcoming.firstOrNull()?.start == current.end
-        return if (skipFirst) upcoming.getOrNull(1) else upcoming.firstOrNull()
+        var index = if (skipFirst) 1 else 0
+        // 연강(같은 과목·같은 교실이 쉬는 시간만 사이에 두고 이어짐)은 한 수업으로 봅니다 — 안 그러면 점심시간 위젯이
+        // 히어로에 "5교시 컴퓨터실2", 아래 '다음'에 "6교시 같은 과목 · 컴퓨터실2"를 겹쳐 보여줬습니다.
+        var reference: Block? = if (skipFirst) upcoming.firstOrNull() else current
+        while (true) {
+            val candidate = upcoming.getOrNull(index) ?: return null
+            if (!sameLesson(reference, candidate)) return candidate
+            reference = candidate
+            index++
+        }
+    }
+
+    private fun sameLesson(a: Block?, b: Block): Boolean {
+        val x = a?.kind as? BlockKind.LessonKind ?: return false
+        val y = b.kind as? BlockKind.LessonKind ?: return false
+        return !x.lesson.isFree && x.lesson.subject == y.lesson.subject && x.lesson.room == y.lesson.room
     }
 }
