@@ -56,6 +56,8 @@ object HanaTimetableApi {
         // 0) 페이지가 JS 로 표를 그리므로, 웹뷰로 렌더링한 DOM 의 표를 가장 먼저 읽습니다.
         val fromWebView = try {
             fetchFromWebView()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.d(TAG, "웹뷰 렌더 DOM 조회 실패: ${e.message}")
             null
@@ -70,6 +72,8 @@ object HanaTimetableApi {
         } catch (e: HanaPortalException.MissingCredentials) {
             throw e
         } catch (e: HanaPortalException.LoginFailed) {
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.d(TAG, "학생시간표 페이지 조회 실패: ${e.message}")
@@ -135,6 +139,8 @@ object HanaTimetableApi {
             throw e
         } catch (e: HanaPortalException.LoginFailed) {
             // 비밀번호 오류로 5회 실패 잠금에 걸리지 않도록 여기서 멈춥니다
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.d(TAG, "$label -> 실패: ${e.message}")
@@ -408,6 +414,8 @@ object HanaTimetableSync {
             } catch (e: HanaPortalException.LoginFailed) {
                 HanaSyncGate.suspend(context)
                 null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
             }

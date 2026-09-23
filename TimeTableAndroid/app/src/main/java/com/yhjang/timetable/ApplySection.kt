@@ -79,6 +79,9 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
                 }
             } catch (e: HanaPortalException.MissingCredentials) {
                 ApplyHistoryState.Error(ACADEMIC_NEEDS_LOGIN)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+                throw e
             } catch (e: Exception) {
                 ApplyHistoryState.Error(e.message ?: "내역을 불러오지 못했습니다")
             }

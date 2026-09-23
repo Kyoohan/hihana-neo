@@ -314,6 +314,9 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                                 notice = try {
                                     HanaLibraryApi.registerDevice(context, service)
                                     "이 기기를 신청 기기로 등록했습니다"
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+                                    throw e
                                 } catch (e: Exception) {
                                     e.message ?: "등록하지 못했습니다"
                                 }

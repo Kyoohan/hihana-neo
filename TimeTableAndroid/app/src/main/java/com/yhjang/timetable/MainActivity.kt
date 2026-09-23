@@ -499,6 +499,9 @@ private fun TimeTableAppContent(
             scheduleError = ACADEMIC_NEEDS_LOGIN
         } catch (e: HanaPortalException.LoginFailed) {
             scheduleError = e.message ?: ACADEMIC_NEEDS_LOGIN
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+            throw e
         } catch (e: Exception) {
             scheduleError = e.message ?: "학사일정을 불러오지 못했습니다"
         } finally {
@@ -518,6 +521,9 @@ private fun TimeTableAppContent(
             boardError = ACADEMIC_NEEDS_LOGIN
         } catch (e: HanaPortalException.LoginFailed) {
             boardError = e.message ?: ACADEMIC_NEEDS_LOGIN
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+            throw e
         } catch (e: Exception) {
             boardError = e.message ?: "게시글을 불러오지 못했습니다"
         } finally {
@@ -539,6 +545,9 @@ private fun TimeTableAppContent(
             alimError = ACADEMIC_NEEDS_LOGIN
         } catch (e: HanaPortalException.LoginFailed) {
             alimError = e.message ?: ACADEMIC_NEEDS_LOGIN
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+            throw e
         } catch (e: Exception) {
             alimError = e.message ?: "알리미를 불러오지 못했습니다"
         } finally {
@@ -776,6 +785,9 @@ private fun TimeTableAppContent(
         } catch (e: java.io.IOException) {
             // 네트워크가 없거나 서버에 못 닿는 경우 — 오류 창 대신 오프라인 표시로 두고 캐시된 내용을 그대로 씁니다.
             offline = true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 화면을 떠났거나(다른 앱에 갔다 오기 등) 같은 작업이 새로 시작돼 취소된 것 — 오류가 아닙니다.
+            throw e
         } catch (e: Exception) {
             syncError = e.message ?: "알 수 없는 오류가 발생했습니다"
         } finally {

@@ -206,6 +206,8 @@ object HanaAcademicApi {
                 throw e
             } catch (e: HanaPortalException.LoginFailed) {
                 throw e
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (firstError == null) firstError = e
             }
@@ -350,6 +352,8 @@ object HanaAcademicApi {
         scheduleVariants.forEachIndexed { index, variant ->
             val result = try {
                 requestScheduleDay(context, date, variant, diagnostics)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (firstError == null) firstError = e
                 return@forEachIndexed
@@ -400,6 +404,8 @@ object HanaAcademicApi {
             requestScheduleDay(context, date, scheduleVariants[mainIndex], diagnostics)
                 .entries
                 .filter { it.code == SUPERVISION_CODE }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return entries
         }
@@ -538,6 +544,8 @@ object HanaAcademicRepository {
         val fresh = try {
             // 오늘-1 ~ 오늘+13 (2주) 를 하루씩 질의합니다 — 요약이 아닌 상세 학사일정.
             HanaAcademicApi.fetchSchedule(context, today.minusDays(1), today.plusDays(13))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             stored?.let { return decodeSchedule(it.value) }
             throw e
@@ -600,6 +608,8 @@ object HanaAcademicRepository {
             }
             PlanStore.writeCachedJson(context, name, encode(fresh))
             fresh
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             stored?.let { return decode(it.value) }
             throw e

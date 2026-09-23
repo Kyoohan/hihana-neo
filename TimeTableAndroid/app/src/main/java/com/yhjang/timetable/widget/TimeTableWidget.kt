@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.glance.LocalContext
 import androidx.compose.ui.graphics.toArgb
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.systemAccentColor
@@ -229,6 +230,25 @@ private fun isDinnerWindow(block: Block?): Boolean {
 private fun displayBoundary(block: Block, now: LocalDateTime, meal: Meal?): LocalDateTime? {
     val target = if (meal != null && meal != Meal.SNACK) block.end.minusMinutes(10) else block.end
     return target.takeIf { it.isAfter(now) }
+}
+
+/** 위젯 알레르기 경고 글자색 — 밝은·어두운 위젯 바탕 모두에서 읽히는 빨강. */
+private val AllergyRed = Color(0xFFEF4444)
+
+/** 급식 줄 RemoteViews — [prefix](알레르기 경고)는 빨간 굵은 글씨, 이어서 [menu]. */
+private fun mealRemoteViews(context: Context, prefix: String, menu: String, textColor: Int, fontSizeSp: Float, maxLines: Int): RemoteViews {
+    val text = android.text.SpannableStringBuilder().apply {
+        append(prefix, android.text.style.ForegroundColorSpan(AllergyRed.toArgb()), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, prefix.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        append(" ")
+        append(menu)
+    }
+    return RemoteViews(context.packageName, R.layout.widget_meal_text).apply {
+        setTextViewText(R.id.widget_meal_text, text)
+        setTextColor(R.id.widget_meal_text, textColor)
+        setTextViewTextSize(R.id.widget_meal_text, android.util.TypedValue.COMPLEX_UNIT_SP, fontSizeSp)
+        setInt(R.id.widget_meal_text, "setMaxLines", maxLines)
+    }
 }
 
 /** 위젯용 짧은 경고 접두사 — 선택된 알레르기만, 견과는 묶어 가운뎃점으로 구분합니다 */
@@ -517,13 +537,29 @@ private fun MealOrNextContent(
     allergyPrefix: String = "",
 ) {
     if (mealText != null) {
-        // 알레르기 종류를 구분한 짧은 경고 표식만 메뉴 앞에 덧붙입니다 (줄 수 유지).
-        Text(
-            text = if (allergyPrefix.isNotEmpty()) "$allergyPrefix$mealText" else mealText,
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
-            maxLines = maxLines,
-            modifier = GlanceModifier.clickable(openTabAction(MainActivity.TAB_MEAL)),
-        )
+        if (allergyPrefix.isEmpty()) {
+            Text(
+                text = mealText,
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
+                maxLines = maxLines,
+                modifier = GlanceModifier.clickable(openTabAction(MainActivity.TAB_MEAL)),
+            )
+        } else {
+            // 알레르기 경고만 빨간 굵은 글씨로, 메뉴는 그 뒤에 같은 줄로 이어 흐르게 — Glance Text 는 한 줄 안에서 색을
+            // 나눌 수 없어 이 줄만 RemoteViews TextView(색 구간 지정)로 그립니다. 가중치 계산이 깨지지 않게 Box 로 감쌉니다.
+            val context = LocalContext.current
+            val views = mealRemoteViews(
+                context,
+                prefix = allergyPrefix.trimEnd(),
+                menu = mealText,
+                textColor = GlanceTheme.colors.onSurface.getColor(context).toArgb(),
+                fontSizeSp = fontSize.value,
+                maxLines = maxLines,
+            )
+            Box(modifier = GlanceModifier.fillMaxWidth().clickable(openTabAction(MainActivity.TAB_MEAL))) {
+                AndroidRemoteViews(remoteViews = views, modifier = GlanceModifier.fillMaxWidth())
+            }
+        }
     } else {
         NextRow(nextTitle, nextRoom, fontSize, maxLines)
     }
