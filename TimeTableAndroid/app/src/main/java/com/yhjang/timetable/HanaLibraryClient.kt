@@ -290,7 +290,11 @@ object HanaLibraryApi {
         val seats = seatsRaw.map { seat ->
             if (seat.memberName == null && seat.studentNumber != null) {
                 // 내장 디렉터리(학번→이름) → 면학실에서 배운 캐시 순.
-                seat.copy(memberName = StudentDirectory.name(context, seat.studentNumber) ?: StudentNameCache.name(context, seat.studentNumber))
+                seat.copy(
+                    memberName = StudentDirectory.name(context, seat.studentNumber)
+                        // 기기에 저장한 학번·이름(Dev 탭에서 불러오기/면학실에서 익힌 것)은 dev 빌드에서만 씁니다 — 릴리스는 학번만.
+                        ?: StudentNameCache.name(context, seat.studentNumber).takeIf { BuildConfig.DEBUG },
+                )
             } else {
                 seat
             }

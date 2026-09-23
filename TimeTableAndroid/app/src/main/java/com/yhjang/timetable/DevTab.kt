@@ -1,6 +1,10 @@
 package com.yhjang.timetable
 
 import android.content.Context
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +49,7 @@ fun DevTab(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var sampleDialog by remember { mutableStateOf(false) }
+    var devNotice by remember { mutableStateOf<String?>(null) }
     Column(
         Modifier
             .fillMaxSize()
@@ -92,6 +97,42 @@ fun DevTab(
         }
         Spacer(Modifier.height(16.dp))
 
+        // 학번·이름 — 도서관 좌석은 이름을 비워 주므로 기기에 저장한 표로 채웁니다 (dev 빌드 전용, 릴리스는 학번만).
+        OneUiSectionTitle("학번·이름")
+        var nameCount by remember { mutableStateOf(StudentNameCache.count(context)) }
+        val pickNames = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                }
+                devNotice = if (text == null) {
+                    "파일을 읽지 못했습니다"
+                } else {
+                    val added = StudentNameCache.importText(context, text)
+                    nameCount = StudentNameCache.count(context)
+                    if (added == 0) "학번·이름 쌍을 찾지 못했습니다" else "$added 명 불러옴 (총 $nameCount 명)"
+                }
+            }
+        }
+        OneUiGroupColumn {
+            OneUiListItem(
+                title = "학번·이름 파일 불러오기",
+                subtitle = "저장된 이름 $nameCount 명 · 디렉터리 복사 텍스트 / '학번,이름' 줄 / JSON — 이 기기에만 저장",
+                onClick = { pickNames.launch(arrayOf("text/*", "application/json", "*/*")) },
+            )
+            OneUiDivider()
+            OneUiListItem(
+                title = "학번·이름 지우기",
+                onClick = {
+                    StudentNameCache.clear(context)
+                    nameCount = 0
+                    devNotice = "지웠습니다"
+                },
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+
         OneUiSectionTitle("실시간 일정")
         var liveTempUntil by remember { mutableStateOf(LiveActivity.tempUntil(context)) }
         OneUiGroupColumn {
@@ -127,6 +168,14 @@ fun DevTab(
             OneUiListItem(title = "계정 시트 열기", onClick = onOpenAccount)
         }
         Spacer(Modifier.height(40.dp))
+    }
+
+    devNotice?.let { message ->
+        OneUiDialog(
+            onDismissRequest = { devNotice = null },
+            title = "학번·이름",
+            buttons = listOf(OneUiDialogButton("확인", { devNotice = null })),
+        ) { Text(message, style = MaterialTheme.typography.bodyMedium) }
     }
 
     if (sampleDialog) {

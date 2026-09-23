@@ -53,9 +53,13 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val states = remember { mutableStateMapOf<ApplyService, ApplyHistoryState>() }
+    var showingClassroomStatus by remember { mutableStateOf(false) }
+    if (showingClassroomStatus) ClassroomStatusScreen(onDismiss = { showingClassroomStatus = false })
 
     // 아직 API 를 모르는 페이지의 엔드포인트를 로그로 조사합니다 (프로세스당 한 번, 실패해도 조용히).
-    LaunchedEffect(Unit) { runCatching { HanaApplyApi.discoverEndpoints(context) } }
+    LaunchedEffect(Unit) {
+        runCatching { HanaApplyApi.discoverEndpoints(context) }
+    }
 
     fun openHistory(service: ApplyService) {
         onOpenWeb("$PORTAL_BASE${service.historyPath}", "${service.label} 내역")
@@ -87,6 +91,8 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
             ApplyServiceCard(
                 service = service,
                 state = states[service] ?: ApplyHistoryState.Idle,
+                // 교과교실은 "누가 어느 교실에 있는지" 현황 조회를 하나 더.
+                onStatus = if (service == ApplyService.CLASSROOM) ({ showingClassroomStatus = true }) else null,
                 // 면학실 내역은 포털 페이지가 더 보기 좋아 바로 웹뷰로.
                 onHistory = { if (service == ApplyService.STUDY_ROOM) openHistory(service) else loadHistory(service) },
                 // 도서관·면학실은 앱 안 좌석 화면, 교과교실·외출외박은 포털 신청 페이지.
@@ -99,8 +105,21 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
                 },
             )
         }
+        // 심야면학은 학교 포털이 아니라 기숙사 쪽 별도 사이트(자체 로그인)라 API 없이 신청 페이지만 엽니다.
+        OneUiCard(modifier = Modifier.fillMaxWidth()) {
+            Text("심야면학", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(14.dp))
+            OneUiButton(
+                text = "신청 페이지 열기",
+                onClick = { onOpenWeb(MIDNIGHT_STUDY_URL, "심야면학") },
+                style = OneUiButtonStyle.Neutral,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
+
+private const val MIDNIGHT_STUDY_URL = "https://midnight-study.vercel.app/"
 
 @Composable
 private fun ApplyServiceCard(
@@ -108,6 +127,7 @@ private fun ApplyServiceCard(
     state: ApplyHistoryState?,
     onHistory: () -> Unit,
     onApply: () -> Unit,
+    onStatus: (() -> Unit)? = null,
 ) {
     // 내역 조회와 신청하기는 같은 급의 동작이라, 카드 아래에 같은 모양·같은 폭의 알약 버튼 두 개로 나란히 둡니다.
     val historyLabel = when (state) {
@@ -136,6 +156,15 @@ private fun ApplyServiceCard(
                 onClick = onApply,
                 style = OneUiButtonStyle.Neutral,
                 modifier = Modifier.weight(1f),
+            )
+        }
+        if (onStatus != null) {
+            Spacer(Modifier.height(10.dp))
+            OneUiButton(
+                text = "교실별 현황",
+                onClick = onStatus,
+                style = OneUiButtonStyle.Neutral,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

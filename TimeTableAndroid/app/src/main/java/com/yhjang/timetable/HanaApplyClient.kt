@@ -132,6 +132,35 @@ object HanaApplyApi {
         }
     }
 
+    /**
+     * (디버그 빌드 조사용) 포털 페이지 HTML 과 그 페이지가 부르는 /static JS 를 통째로 앱 파일(files/portal_dump)에 씁니다 —
+     * logcat 은 길이 제한·버퍼 밀림 때문에 페이지 스크립트 전체를 보기 어렵습니다. adb run-as 로 꺼내 봅니다.
+     */
+    suspend fun dumpPagesToFiles(context: Context, paths: List<String>) = withContext(Dispatchers.IO) {
+        val dir = java.io.File(context.filesDir, "portal_dump").apply { mkdirs() }
+        val client = HanaPortalClient.get()
+        val scriptRegex = Regex("""<script[^>]+src=["']([^"']+\.js)[^"']*["']""")
+        val seenScripts = mutableSetOf<String>()
+        for (path in paths) {
+            val name = path.trim('/').replace('/', '_')
+            val html = runCatching { client.authenticatedHtml(context, path) }.getOrElse {
+                Log.d("HanaDiscover", "dump $path 실패: ${it.message}"); continue
+            }
+            java.io.File(dir, "$name.html").writeText(html)
+            runCatching { client.authenticatedText(context, path) }.getOrNull()?.let {
+                java.io.File(dir, "$name.accept-json.txt").writeText(it)
+            }
+            scriptRegex.findAll(html).map { it.groupValues[1] }
+                .filter { it.startsWith("/") && !it.contains("jquery", ignoreCase = true) && seenScripts.add(it) }
+                .forEach { src ->
+                    runCatching { client.authenticatedText(context, src) }.getOrNull()?.let {
+                        java.io.File(dir, "js_" + src.trim('/').replace('/', '_')).writeText(it)
+                    }
+                }
+            Log.d("HanaDiscover", "dump $path → ${html.length} chars")
+        }
+    }
+
     @Volatile private var discovered = false
     suspend fun discoverEndpoints(context: Context) = withContext(Dispatchers.IO) {
         if (discovered) return@withContext
