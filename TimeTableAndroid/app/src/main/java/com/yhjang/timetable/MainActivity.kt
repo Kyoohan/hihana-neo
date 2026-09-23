@@ -2124,7 +2124,7 @@ private fun AppNavBar(
     }
 }
 
-/** 하단 바 탭 순서 — 홈 · 신청내역 · 게시판 · 급식 · 일정 (디버그 빌드는 끝에 Dev). */
+/** 하단 바 탭 순서 — 홈 · 신청·내역 · 게시판 · 급식 · 일정 (디버그 빌드는 끝에 Dev). */
 object TabIndex {
     const val HOME = 0
     const val APPLY = 1
@@ -2132,7 +2132,7 @@ object TabIndex {
     const val MEAL = 3
     const val SCHEDULE = 4
     const val DEV = 5
-    val titles = listOf("홈", "신청내역", "게시판", "급식", "일정")
+    val titles = listOf("홈", "신청·내역", "게시판", "급식", "일정")
 }
 
 /** 일정 탭 위의 시간표 / 학사일정 칩 줄 (높이 [ScheduleSubTabsHeight]). */
@@ -2154,7 +2154,7 @@ private fun ScheduleSubTabs(selected: Int, onSelect: (Int) -> Unit) {
 private fun NavIcon(index: Int, tint: Color) {
     when (index) {
         TabIndex.HOME -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
-        TabIndex.APPLY -> Icon(Icons.Outlined.Edit, contentDescription = "신청내역", tint = tint)
+        TabIndex.APPLY -> Icon(Icons.Outlined.Edit, contentDescription = "신청·내역", tint = tint)
         TabIndex.BOARD -> Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "게시판", tint = tint)
         TabIndex.MEAL -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
         TabIndex.SCHEDULE -> Icon(Icons.Outlined.DateRange, contentDescription = "일정", tint = tint)
