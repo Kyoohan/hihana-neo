@@ -89,7 +89,6 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OneUiSectionTitle("신청·내역")
         ApplyService.entries.forEach { service ->
             ApplyServiceCard(
                 service = service,

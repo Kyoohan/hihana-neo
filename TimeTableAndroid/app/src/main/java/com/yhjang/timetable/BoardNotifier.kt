@@ -97,7 +97,7 @@ object BoardNotifier {
         val first = fresh.first()
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(MainActivity.EXTRA_OPEN_TAB, MainActivity.TAB_ACADEMIC)
+            putExtra(MainActivity.EXTRA_OPEN_TAB, MainActivity.TAB_BOARD)
             putExtra(EXTRA_OPEN_BOARD, category.ordinal)
             // 한 건이면 그 글을 바로 열고, 여럿이면 게시판 목록으로 갑니다.
             if (fresh.size == 1) putExtra(EXTRA_OPEN_POST_URL, first.url)

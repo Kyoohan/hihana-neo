@@ -119,8 +119,8 @@ private fun scheduleTime(entry: HanaScheduleEntry): String? {
 /** 학사 탭 — 학사일정 / 게시판 두 하위 탭을 한 화면에서 전환합니다. */
 @Composable
 fun AcademicTab(
+    /** 0 학사일정, 1 게시판, 2 신청·내역 — 각각 하단 바의 일정·게시판·신청내역 탭에서 씁니다. */
     subTab: Int,
-    onSubTabChange: (Int) -> Unit,
     schedule: List<HanaScheduleEntry>,
     scheduleLoading: Boolean,
     scheduleError: String?,
@@ -141,6 +141,8 @@ fun AcademicTab(
     /** 헤더가 접혀 있는 만큼(dp) — "다 들어가는지"는 헤더가 펼쳐진 상태의 높이로 판단해야 합니다. */
     headerCollapsedBy: Dp = 0.dp,
     onFitsWithoutScroll: () -> Unit = {},
+    /** 목록 맨 위에 얹을 내용(예: 일정 탭의 시간표/학사일정 칩). */
+    topContent: (@Composable () -> Unit)? = null,
 ) {
     // 신청·내역은 카드 몇 장뿐이라 시간표 탭처럼 화면에 다 들어가면 스크롤(과 헤더 접힘)을 두지 않습니다 —
     // 내용 높이를 재 보고 넘칠 때만 스크롤을 켭니다. 높이는 항상 스크롤 컨테이너 안에서(제한 없이) 재야 합니다:
@@ -161,7 +163,7 @@ fun AcademicTab(
                     .padding(contentPadding),
             ) {
                 Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {
-                    AcademicSubTabs(subTab, onSubTabChange)
+                    topContent?.invoke()
                     ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenSeats = onOpenSeats)
                 }
             }
@@ -170,7 +172,7 @@ fun AcademicTab(
     }
 
     LazyColumn(modifier = modifier, contentPadding = contentPadding) {
-        item { AcademicSubTabs(subTab, onSubTabChange) }
+        topContent?.let { content -> item { content() } }
 
         if (subTab == 0) {
             if (scheduleError != null) {
@@ -231,19 +233,6 @@ fun AcademicTab(
                 }
             }
         }
-    }
-}
-
-/** 학사 하위 탭 칩 — 게시판이 기본이라 맨 앞 (인덱스는 저장 호환을 위해 그대로: 0=학사일정, 1=게시판, 2=신청·내역). */
-@Composable
-private fun AcademicSubTabs(subTab: Int, onSubTabChange: (Int) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OneUiChip(selected = subTab == 1, onClick = { onSubTabChange(1) }, label = "게시판")
-        OneUiChip(selected = subTab == 2, onClick = { onSubTabChange(2) }, label = "신청·내역")
-        OneUiChip(selected = subTab == 0, onClick = { onSubTabChange(0) }, label = "학사일정")
     }
 }
 

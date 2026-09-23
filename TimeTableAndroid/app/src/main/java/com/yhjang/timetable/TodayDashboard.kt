@@ -114,7 +114,7 @@ internal fun TodayDashboard(
         item(span = StaggeredGridItemSpan.FullLine, key = "meal") {
             MealMiniCard(
                 meals, allergyCodes, isLoadingMeals,
-                onClick = { onNavigateToTab(2) },
+                onClick = { onNavigateToTab(TabIndex.MEAL) },
                 modifier = Modifier.fillMaxWidth(),
             )
         }

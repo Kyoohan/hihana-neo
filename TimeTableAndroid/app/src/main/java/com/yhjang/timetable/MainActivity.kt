@@ -94,6 +94,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -297,6 +299,7 @@ class MainActivity : ComponentActivity() {
         /** 위젯 탭 → 앱에서 열 탭 지정용 extra 키와 값. 위젯(TimeTableWidget)도 함께 씁니다. */
         const val EXTRA_OPEN_TAB = "open_tab"
         const val TAB_TODAY = "today"
+        const val TAB_BOARD = "board"
         const val TAB_MEAL = "meal"
         const val TAB_ACADEMIC = "academic"
     }
@@ -432,13 +435,14 @@ private fun TimeTableAppContent(
 
     // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/시간표/급식/학사 네 개입니다.
     // 디버그 빌드에는 새 기능을 바로 눌러 볼 수 있는 Dev 탭이 하나 더 있습니다.
-    val tabTitles = if (BuildConfig.DEBUG) listOf("홈", "시간표", "급식", "학사", "Dev") else listOf("홈", "시간표", "급식", "학사")
+    val tabTitles = if (BuildConfig.DEBUG) TabIndex.titles + "Dev" else TabIndex.titles
     // 이전 버전 저장 상태(설정=3, 학사=4)가 복원돼도 범위를 벗어나지 않게 보정합니다.
     if (tab !in tabTitles.indices) tab = 0
 
     // 학사 탭
     // 게시판(1)을 기본으로 — 학사 탭에 들어오면 게시판이 먼저 보입니다.
-    var academicSubTab by rememberSaveable { mutableStateOf(1) }
+    // 일정 탭 안의 선택 — 0 시간표, 1 학사일정.
+    var scheduleSubTab by rememberSaveable { mutableStateOf(0) }
     var scheduleEntries by remember { mutableStateOf<List<HanaScheduleEntry>>(emptyList()) }
     var scheduleLoading by remember { mutableStateOf(false) }
     var scheduleError by remember { mutableStateOf<String?>(null) }
@@ -694,12 +698,13 @@ private fun TimeTableAppContent(
         }
     }
 
-    // 위젯 탭으로 들어온 요청을 소비해 해당 탭을 엽니다 (오늘=0, 급식=2, 학사=3).
+    // 위젯·알림으로 들어온 요청을 소비해 해당 탭을 엽니다.
     LaunchedEffect(openTabRequest.value) {
         when (openTabRequest.value) {
-            MainActivity.TAB_MEAL -> tab = 2
-            MainActivity.TAB_ACADEMIC -> tab = 3
-            MainActivity.TAB_TODAY -> tab = 0
+            MainActivity.TAB_MEAL -> tab = TabIndex.MEAL
+            // 예전 "학사" 요청(설치돼 있던 알림 등)은 게시판으로.
+            MainActivity.TAB_ACADEMIC, MainActivity.TAB_BOARD -> tab = TabIndex.BOARD
+            MainActivity.TAB_TODAY -> tab = TabIndex.HOME
         }
         openTabRequest.value = null
     }
@@ -709,8 +714,7 @@ private fun TimeTableAppContent(
         openBoardRequest.value?.let { ordinal ->
             boardCategoryIndex = ordinal.coerceIn(0, BoardCategory.entries.lastIndex)
             boardPosts = emptyList()
-            academicSubTab = 1
-            tab = 3
+            tab = TabIndex.BOARD
             openBoardRequest.value = null
             runCatching { loadBoard(false) }
         }
@@ -722,7 +726,7 @@ private fun TimeTableAppContent(
 
     // 급식 탭에 들어오거나 주간 보기를 켜면 최신 식단으로 갱신
     LaunchedEffect(tab, mealWeekMode, selectedMealDay) {
-        if (tab != 2) return@LaunchedEffect
+        if (tab != TabIndex.MEAL) return@LaunchedEffect
         if (mealWeekMode) {
             val base = PlanStore.today()
             for (offset in 0 until 7) {
@@ -737,14 +741,11 @@ private fun TimeTableAppContent(
         }
     }
 
-    // 학사 탭에 들어올 때 데이터 로드
-    LaunchedEffect(tab, academicSubTab) {
-        if (tab != 3) return@LaunchedEffect
-        when (academicSubTab) {
-            0 -> if (scheduleEntries.isEmpty()) loadSchedule(false)
-            1 -> loadBoard(false)
-            // 2(신청·내역)는 섹션 컴포저블이 자체적으로 조회합니다.
-            else -> Unit
+    // 게시판·학사일정 탭에 들어올 때 데이터 로드 (신청내역은 섹션 컴포저블이 자체적으로 조회합니다).
+    LaunchedEffect(tab, scheduleSubTab) {
+        when {
+            tab == TabIndex.BOARD -> loadBoard(false)
+            tab == TabIndex.SCHEDULE && scheduleSubTab == 1 -> if (scheduleEntries.isEmpty()) loadSchedule(false)
         }
     }
 
@@ -753,7 +754,7 @@ private fun TimeTableAppContent(
     // (세션이 없을 때 받은 응답일 수 있음) 이번 실행에 한 번은 강제로 새로 받아 옵니다.
     var boardForcedOnce by remember { mutableStateOf(false) }
     LaunchedEffect(tab) {
-        if (tab != 0) return@LaunchedEffect
+        if (tab != TabIndex.HOME) return@LaunchedEffect
         if (!HanaCredentialStore.hasCredentials(context)) return@LaunchedEffect
         if (scheduleEntries.isEmpty()) runCatching { loadSchedule(false) }
         if (boardPosts.isEmpty()) runCatching { loadBoard(false) }
@@ -825,11 +826,9 @@ private fun TimeTableAppContent(
             }
             syncMidnight()
             loadAlim(true)
-            if (tab == 3) {
-                when (academicSubTab) {
-                    0 -> loadSchedule(true)
-                    1 -> loadBoard(true)
-                }
+            when {
+                tab == TabIndex.BOARD -> loadBoard(true)
+                tab == TabIndex.SCHEDULE && scheduleSubTab == 1 -> loadSchedule(true)
             }
         } finally {
             isRefreshingAll = false
@@ -995,13 +994,114 @@ private fun TimeTableAppContent(
             val isActivePage = page == tab && !pagerState.isScrollInProgress
             key(pageVisits[page] ?: 0) {
             when (page) {
+                TabIndex.MEAL -> MealTab(
+                    dayMeals = mealDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)],
+                    isLoading = isLoadingMeals,
+                    allergyCodes = allergyCodes,
+                    weekMode = mealWeekMode,
+                    onToggleWeek = {
+                        mealWeekMode = !mealWeekMode
+                        // 일간 보기로 돌아오면 주간에서 고른 날짜를 버리고 오늘로 돌아갑니다.
+                        if (!mealWeekMode) selectedMealDay = PlanStore.dayKey(PlanStore.today())
+                    },
+                    weekDates = mealWeekDates,
+                    selectedDate = selectedMealDate,
+                    availableDays = availableMealDays,
+                    onSelectDate = { selectedMealDay = PlanStore.dayKey(it) },
+                    contentPadding = tabContentPadding,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                TabIndex.DEV -> DevTab(
+                    contentPadding = tabContentPadding,
+                    onShowExactAlarmPrompt = { showingExactAlarmPrompt = true },
+                    onOpenSeats = { seatService = it },
+                    onOpenSettings = { showingSettings = true },
+                    onOpenAccount = { showingAccountSheet = true },
+                    onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
+                )
+                TabIndex.APPLY -> AcademicTab(
+                    subTab = 2,
+                    schedule = scheduleEntries,
+                    scheduleLoading = scheduleLoading,
+                    scheduleError = scheduleError,
+                    onRetrySchedule = { scope.launch { loadSchedule(true) } },
+                    studentGrade = studentGrade,
+                    boardCategoryIndex = boardCategoryIndex,
+                    onBoardCategoryChange = { index ->
+                        boardCategoryIndex = index
+                        boardPosts = emptyList()
+                        scope.launch { loadBoard(false) }
+                    },
+                    boardPosts = boardPosts,
+                    boardLoading = boardLoading,
+                    boardError = boardError,
+                    onRetryBoard = { scope.launch { loadBoard(true) } },
+                    onOpenPost = { openBoardPost(it) },
+                    onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
+                    onOpenSeats = { seatService = it },
+                    onOpenAccount = { showingAccountSheet = true },
+                    contentPadding = tabContentPadding,
+                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
+                    onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                TabIndex.BOARD -> AcademicTab(
+                    subTab = 1,
+                    schedule = scheduleEntries,
+                    scheduleLoading = scheduleLoading,
+                    scheduleError = scheduleError,
+                    onRetrySchedule = { scope.launch { loadSchedule(true) } },
+                    studentGrade = studentGrade,
+                    boardCategoryIndex = boardCategoryIndex,
+                    onBoardCategoryChange = { index ->
+                        boardCategoryIndex = index
+                        boardPosts = emptyList()
+                        scope.launch { loadBoard(false) }
+                    },
+                    boardPosts = boardPosts,
+                    boardLoading = boardLoading,
+                    boardError = boardError,
+                    onRetryBoard = { scope.launch { loadBoard(true) } },
+                    onOpenPost = { openBoardPost(it) },
+                    onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
+                    onOpenSeats = { seatService = it },
+                    onOpenAccount = { showingAccountSheet = true },
+                    contentPadding = tabContentPadding,
+                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
+                    onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
+                    modifier = Modifier.fillMaxSize(),
+                )
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
-                1 -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                TabIndex.SCHEDULE -> if (scheduleSubTab == 1) {
+                    AcademicTab(
+                        subTab = 0,
+                        topContent = { ScheduleSubTabs(scheduleSubTab) { scheduleSubTab = it } },
+                        schedule = scheduleEntries,
+                        scheduleLoading = scheduleLoading,
+                        scheduleError = scheduleError,
+                        onRetrySchedule = { scope.launch { loadSchedule(true) } },
+                        studentGrade = studentGrade,
+                        boardCategoryIndex = boardCategoryIndex,
+                        onBoardCategoryChange = {},
+                        boardPosts = boardPosts,
+                        boardLoading = boardLoading,
+                        boardError = boardError,
+                        onRetryBoard = {},
+                        onOpenPost = { openBoardPost(it) },
+                        onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
+                        onOpenSeats = { seatService = it },
+                        onOpenAccount = { showingAccountSheet = true },
+                        contentPadding = tabContentPadding,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else BoxWithConstraints(Modifier.fillMaxSize()) {
                     val timetableInstalled = remember(timetableRevision) { Timetable.fetchedWeek() != null }
                     // 표가 화면에 다 들어가면 스크롤(그리고 그에 딸린 헤더 접힘)을 아예 두지 않습니다 — 행 높이를
                     // 남는 높이에 맞춰 56~78dp 사이로 정하고, 그래도 넘칠 때만 스크롤을 붙입니다.
                     val periodRows = remember(timetableRevision) { Timetable.activePeriodTimes.size + 1 }
-                    val cardChrome = 16.dp
+                    // 위의 시간표/학사일정 칩 줄 높이만큼도 뺍니다.
+                    val cardChrome = 16.dp + ScheduleSubTabsHeight
                     // 헤더가 접혀 있으면 maxHeight 가 그만큼 커지는데, 그걸 기준으로 "다 들어간다"고 판단하면 스크롤이
                     // 사라지면서 헤더를 다시 펼칠 방법이 없어집니다 — 헤더가 펼쳐진 상태의 높이로 계산합니다.
                     val collapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() }
@@ -1016,6 +1116,7 @@ private fun TimeTableAppContent(
                             .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
                             .padding(tabContentPadding),
                     ) {
+                        ScheduleSubTabs(scheduleSubTab) { scheduleSubTab = it }
                         OneUiCard(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(if (timetableInstalled) 8.dp else 24.dp),
@@ -1063,60 +1164,6 @@ private fun TimeTableAppContent(
                     }
                 }
 
-                2 -> MealTab(
-                    dayMeals = mealDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)],
-                    isLoading = isLoadingMeals,
-                    allergyCodes = allergyCodes,
-                    weekMode = mealWeekMode,
-                    onToggleWeek = {
-                        mealWeekMode = !mealWeekMode
-                        // 일간 보기로 돌아오면 주간에서 고른 날짜를 버리고 오늘로 돌아갑니다.
-                        if (!mealWeekMode) selectedMealDay = PlanStore.dayKey(PlanStore.today())
-                    },
-                    weekDates = mealWeekDates,
-                    selectedDate = selectedMealDate,
-                    availableDays = availableMealDays,
-                    onSelectDate = { selectedMealDay = PlanStore.dayKey(it) },
-                    contentPadding = tabContentPadding,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                4 -> DevTab(
-                    contentPadding = tabContentPadding,
-                    onShowExactAlarmPrompt = { showingExactAlarmPrompt = true },
-                    onOpenSeats = { seatService = it },
-                    onOpenSettings = { showingSettings = true },
-                    onOpenAccount = { showingAccountSheet = true },
-                    onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
-                )
-                3 -> AcademicTab(
-                    subTab = academicSubTab,
-                    onSubTabChange = { academicSubTab = it },
-                    schedule = scheduleEntries,
-                    scheduleLoading = scheduleLoading,
-                    scheduleError = scheduleError,
-                    onRetrySchedule = { scope.launch { loadSchedule(true) } },
-                    studentGrade = studentGrade,
-                    boardCategoryIndex = boardCategoryIndex,
-                    onBoardCategoryChange = { index ->
-                        boardCategoryIndex = index
-                        boardPosts = emptyList()
-                        scope.launch { loadBoard(false) }
-                    },
-                    boardPosts = boardPosts,
-                    boardLoading = boardLoading,
-                    boardError = boardError,
-                    onRetryBoard = { scope.launch { loadBoard(true) } },
-                    onOpenPost = { openBoardPost(it) },
-                    onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
-                    onOpenSeats = { seatService = it },
-                    onOpenAccount = { showingAccountSheet = true },
-                    contentPadding = tabContentPadding,
-                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
-                    onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
-                    modifier = Modifier.fillMaxSize(),
-                )
-
                 else -> TodayDashboard(
                     today = today,
                     hasTimetable = hasTimetable,
@@ -1148,13 +1195,10 @@ private fun TimeTableAppContent(
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
                     onOpenPost = { openBoardPost(it) },
-                    onOpenBoardList = {
-                        academicSubTab = 1
-                        tab = 3
-                    },
+                    onOpenBoardList = { tab = TabIndex.BOARD },
                     onOpenSchedule = {
-                        academicSubTab = 0
-                        tab = 3
+                        scheduleSubTab = 1
+                        tab = TabIndex.SCHEDULE
                     },
                     onNavigateToTab = { tab = it },
                     contentPadding = tabContentPadding,
@@ -1833,7 +1877,7 @@ private fun AppNavBar(
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
-    val labels = if (BuildConfig.DEBUG) listOf("홈", "시간표", "급식", "학사", "Dev") else listOf("홈", "시간표", "급식", "학사")
+    val labels = if (BuildConfig.DEBUG) TabIndex.titles + "Dev" else TabIndex.titles
     val count = labels.size
 
     // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
@@ -2080,13 +2124,40 @@ private fun AppNavBar(
     }
 }
 
+/** 하단 바 탭 순서 — 홈 · 신청내역 · 게시판 · 급식 · 일정 (디버그 빌드는 끝에 Dev). */
+object TabIndex {
+    const val HOME = 0
+    const val APPLY = 1
+    const val BOARD = 2
+    const val MEAL = 3
+    const val SCHEDULE = 4
+    const val DEV = 5
+    val titles = listOf("홈", "신청내역", "게시판", "급식", "일정")
+}
+
+/** 일정 탭 위의 시간표 / 학사일정 칩 줄 (높이 [ScheduleSubTabsHeight]). */
+private val ScheduleSubTabsHeight = 52.dp
+
+@Composable
+private fun ScheduleSubTabs(selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(ScheduleSubTabsHeight).padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OneUiChip(selected = selected == 0, onClick = { onSelect(0) }, label = "시간표")
+        OneUiChip(selected = selected == 1, onClick = { onSelect(1) }, label = "학사일정")
+    }
+}
+
 @Composable
 private fun NavIcon(index: Int, tint: Color) {
     when (index) {
-        0 -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
-        1 -> Icon(Icons.Outlined.DateRange, contentDescription = "시간표", tint = tint)
-        2 -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
-        3 -> Icon(painter = painterResource(R.drawable.ic_academic), contentDescription = "학사", tint = tint)
+        TabIndex.HOME -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
+        TabIndex.APPLY -> Icon(Icons.Outlined.Edit, contentDescription = "신청내역", tint = tint)
+        TabIndex.BOARD -> Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "게시판", tint = tint)
+        TabIndex.MEAL -> Icon(painter = painterResource(R.drawable.ic_meal), contentDescription = "급식", tint = tint)
+        TabIndex.SCHEDULE -> Icon(Icons.Outlined.DateRange, contentDescription = "일정", tint = tint)
         else -> Icon(Icons.Outlined.Build, contentDescription = "Dev", tint = tint)
     }
 }
