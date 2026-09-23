@@ -13,8 +13,8 @@ android {
         applicationId = "com.yhjang.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 103
-        versionName = "10.3"
+        versionCode = 110
+        versionName = "11.0"
 
         // 앱 내 업데이트가 최신 릴리스를 읽을 GitHub 저장소(owner/repo). gradle.properties 의 updateRepo 로 지정하며,
         // 비어 있으면 업데이트 확인을 건너뜁니다.
