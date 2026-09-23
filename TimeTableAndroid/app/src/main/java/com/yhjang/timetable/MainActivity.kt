@@ -768,8 +768,6 @@ private fun TimeTableAppContent(
             HanaSyncApplier.apply(context, sync, date)
             // 시간표도 함께, 항상 새로(캐시 아님) 받아옵니다 — 실패해도 예외를 던지지 않습니다.
             HanaTimetableSync.refresh(context, date, force = true)
-            // 심야면학(선택)은 로그인해 둔 경우에만 — 실패해도 동기화 전체를 막지 않습니다.
-            runCatching { MidnightSchedule.refresh(context) }
             timetableRevision++
             syncEverywhere()
             offline = false
@@ -785,12 +783,34 @@ private fun TimeTableAppContent(
         }
     }
 
+    /**
+     * 심야면학 현황 — 학사시스템 동기화와 따로 돕니다 (한쪽이 실패해도 다른 쪽은 그대로). 로그인해 둔 경우에만.
+     * 바뀌면 MidnightSchedule 이 revision 을 올리고 Now Bar·위젯을 다시 그립니다.
+     */
+    suspend fun syncMidnight() {
+        if (!MidnightSessionStore.isLoggedIn(context)) return
+        try {
+            MidnightSchedule.refresh(context)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.d("Midnight", "refresh failed: ${e.message}")
+        }
+    }
+
     /** 오른쪽 위 새로고침 아이콘과 아래로 당겨 새로고침이 같이 쓰는 전체 갱신 — 현재 탭의 학사 목록까지 새로 받습니다. */
     suspend fun refreshAll() {
         isRefreshingAll = true
         try {
             loadMealDay(today, force = true)
-            syncFromHana()
+            // 학사시스템과 심야면학은 서로 독립 — 학사시스템에서 오류가 나도 심야면학은 이어서 확인합니다.
+            try {
+                syncFromHana()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+            syncMidnight()
             loadAlim(true)
             if (tab == 3) {
                 when (academicSubTab) {
@@ -820,9 +840,12 @@ private fun TimeTableAppContent(
     // 외부 브라우저/포털에서 신청 후 앱으로 돌아오면 새로 받아 오늘·주·위젯을 갱신합니다.
     LaunchedEffect(resumeSyncRequest.value) {
         if (resumeSyncRequest.value == 0) return@LaunchedEffect
-        if (!HanaCredentialStore.hasCredentials(context)) return@LaunchedEffect
-        loadMealDay(PlanStore.today(), force = true)
-        syncFromHana()
+        if (HanaCredentialStore.hasCredentials(context)) {
+            loadMealDay(PlanStore.today(), force = true)
+            runCatching { syncFromHana() }
+        }
+        // 학사시스템 계정 유무·동기화 결과와 상관없이 따로.
+        syncMidnight()
     }
 
     val slots = PlanSlot.slots(today)
