@@ -791,6 +791,7 @@ private fun TimeTableAppContent(
         if (!MidnightSessionStore.isLoggedIn(context)) return
         try {
             MidnightSchedule.refresh(context)
+            android.util.Log.d("Midnight", "refresh ok")
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
