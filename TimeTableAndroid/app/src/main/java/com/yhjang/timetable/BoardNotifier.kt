@@ -53,7 +53,7 @@ object BoardNotifier {
     private fun seen(context: Context, category: BoardCategory): Set<String> =
         prefs(context).getStringSet(seenKey(category), emptySet()).orEmpty()
 
-    /** 앱에서 목록을 열었거나 알림을 보낸 글을 본 것으로 기록합니다. */
+    /** 알림을 보낸(또는 기준선으로 잡은) 글을 기록합니다 — 앱에서 글을 봤는지와는 무관합니다. */
     fun markSeen(context: Context, category: BoardCategory, posts: List<HanaBoardPost>) {
         if (posts.isEmpty() && hasBaseline(context, category)) return
         val merged = (seen(context, category) + posts.map { it.key }).toList().takeLast(MAX_KEEP).toSet()

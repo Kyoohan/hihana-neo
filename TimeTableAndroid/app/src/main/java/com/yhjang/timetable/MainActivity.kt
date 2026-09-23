@@ -515,8 +515,8 @@ private fun TimeTableAppContent(
         try {
             val category = BoardCategory.entries[boardCategoryIndex]
             boardPosts = HanaAcademicRepository.board(context, category, force)
-            // 앱에서 목록을 봤으면 그 글들은 새 글 알림 대상에서 제외합니다.
-            BoardNotifier.markSeen(context, category, boardPosts)
+            // 앱에서 목록을 본 것과 새 글 알림은 별개입니다 — 여기서 "본 글"로 기록하지 않아, 앱을 먼저 열었더라도
+            // 백그라운드 확인 때 알림이 옵니다.
         } catch (e: HanaPortalException.MissingCredentials) {
             boardError = ACADEMIC_NEEDS_LOGIN
         } catch (e: HanaPortalException.LoginFailed) {
