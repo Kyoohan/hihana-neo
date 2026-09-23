@@ -2124,15 +2124,15 @@ private fun AppNavBar(
     }
 }
 
-/** 하단 바 탭 순서 — 홈 · 신청·내역 · 게시판 · 급식 · 일정 (디버그 빌드는 끝에 Dev). */
+/** 하단 바 탭 순서 — 홈 · 신청·내역 · 급식 · 게시판 · 일정 (디버그 빌드는 끝에 Dev). */
 object TabIndex {
     const val HOME = 0
     const val APPLY = 1
-    const val BOARD = 2
-    const val MEAL = 3
+    const val MEAL = 2
+    const val BOARD = 3
     const val SCHEDULE = 4
     const val DEV = 5
-    val titles = listOf("홈", "신청·내역", "게시판", "급식", "일정")
+    val titles = listOf("홈", "신청·내역", "급식", "게시판", "일정")
 }
 
 /** 일정 탭 위의 시간표 / 학사일정 칩 줄 (높이 [ScheduleSubTabsHeight]). */
