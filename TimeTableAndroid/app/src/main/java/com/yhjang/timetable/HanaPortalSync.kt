@@ -324,8 +324,26 @@ class HanaPortalClient private constructor() {
 
     // MARK: 로그인
 
-    /** 로그인 페이지를 새로 받을 때마다 X-Hana-Login-Token 값이 바뀌므로, 매 시도마다 새로 읽어옵니다. */
+    private val loginLock = Any()
+    @Volatile private var lastLoginAt = 0L
+
+    /**
+     * 로그인은 한 번에 하나만 합니다. 앱을 열면 시간표·게시판·급식·요약 등이 동시에 포털을 부르고, 세션이 끊겨 있으면
+     * 저마다 로그인을 시작하는데 — 로그인 토큰은 세션 쿠키마다 발급돼서, 두 로그인이 엇갈리면(A 토큰 받음 → B 가
+     * 쿠키를 덮어씀 → A 가 자기 토큰을 B 쿠키로 보냄) 포털이 404 로 거절했습니다. 기다리는 동안 다른 요청이
+     * 로그인을 마쳤으면 그 세션을 그대로 씁니다.
+     */
     private fun login(context: Context) {
+        val requestedAt = System.currentTimeMillis()
+        synchronized(loginLock) {
+            if (lastLoginAt >= requestedAt) return
+            performLogin(context)
+            lastLoginAt = System.currentTimeMillis()
+        }
+    }
+
+    /** 로그인 페이지를 새로 받을 때마다 X-Hana-Login-Token 값이 바뀌므로, 매 시도마다 새로 읽어옵니다. */
+    private fun performLogin(context: Context) {
         if (!HanaCredentialStore.hasCredentials(context)) throw HanaPortalException.MissingCredentials
         val memId = HanaCredentialStore.memId(context)!!
         val memPwd = HanaCredentialStore.memPwd(context)!!
