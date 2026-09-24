@@ -55,8 +55,8 @@ fun DevTab(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(contentPadding)
-            .padding(horizontal = OneUi.PagePadding),
+            // contentPadding 에 이미 좌우 페이지 여백이 들어 있어 더하지 않습니다 — 두 번 받아 다른 탭보다 좁았습니다.
+            .padding(contentPadding),
     ) {
         Text(
             "디버그 빌드 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
