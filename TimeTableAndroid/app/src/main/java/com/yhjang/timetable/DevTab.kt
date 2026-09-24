@@ -69,13 +69,13 @@ fun DevTab(
         OneUiGroupColumn {
             OneUiListItem(
                 title = "새로 설치 투어",
-                subtitle = "소개 → 개인정보 보호 → 권한 → 로그인 → 완료 (연동돼 있으면 로그인은 '이미 연결됨')",
+                subtitle = "소개 → 개인정보 보호 → 권한 → 로그인 → 완료 (이미 허용한 권한·연동된 계정이면 그 장은 빠짐)",
                 onClick = { onStartTour(TourKind.WELCOME) },
             )
             OneUiDivider()
             OneUiListItem(
                 title = "업데이트 투어 (11.0 → 11.1)",
-                subtitle = "바뀐 것만 — 게시판·하단 바·귀가 기간·개인정보 보호",
+                subtitle = "바뀐 것만 — 게시판·학사 탭·귀가 기간·개인정보 보호 (+ 권한이 빠졌으면 권한)",
                 onClick = { onStartTour(TourKind.UPDATE) },
             )
         }

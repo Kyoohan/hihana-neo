@@ -6,7 +6,15 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -76,6 +84,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -98,7 +107,8 @@ import kotlinx.coroutines.withContext
 /**
  * 첫 실행 투어 — 옆으로 넘기는 전체 화면. [TourKind.WELCOME] 은 새로 설치한 사람에게 기능 소개 → 개인정보 보호 →
  * 권한 → 로그인 → 완료를, [TourKind.UPDATE] 는 이미 쓰던 사람에게 이번 버전에서 바뀐 것만 보여 줍니다.
- * 권한·로그인은 거절하거나 건너뛰어도 앱을 그대로 쓸 수 있고, 오른쪽 위 '건너뛰기'로 언제든 끝납니다.
+ * 투어 자체는 건너뛸 수 없고 끝까지 넘겨야 닫힙니다(뒤로 가기도 앞 장으로만). 권한을 이미 모두 허용했거나 이미 로그인돼
+ * 있으면 그 장은 처음부터 빠집니다. 권한은 허용하지 않고 넘어갈 수 있고, 로그인은 '나중에'로 미룰 수 있습니다.
  */
 enum class TourKind { WELCOME, UPDATE }
 
@@ -124,20 +134,20 @@ private fun notificationsGranted(context: android.content.Context): Boolean =
 fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
+    // 투어를 여는 순간 한 번만 정합니다 — 권한 장에서 허용하자마자 그 장이 사라져 페이지가 밀리지 않게.
     val pages = remember(kind) {
+        val needsPermissions = !notificationsGranted(context) || !ExactAlarmPermission.isGranted(context)
+        val needsLogin = !HanaCredentialStore.hasCredentials(context)
         when (kind) {
-            TourKind.WELCOME -> listOf(
-                TourPage.HELLO, TourPage.HOME, TourPage.APPLY, TourPage.BOARD,
-                TourPage.PRIVACY, TourPage.PERMISSIONS, TourPage.LOGIN, TourPage.DONE,
-            )
-            // 이미 쓰던 사람 — 알림이 꺼져 있을 때만 권한 한 장을 끼웁니다.
+            TourKind.WELCOME -> buildList {
+                addAll(listOf(TourPage.HELLO, TourPage.HOME, TourPage.APPLY, TourPage.BOARD, TourPage.PRIVACY))
+                if (needsPermissions) add(TourPage.PERMISSIONS)
+                if (needsLogin) add(TourPage.LOGIN)
+                add(TourPage.DONE)
+            }
             TourKind.UPDATE -> buildList {
-                add(TourPage.UPDATE_SUMMARY)
-                add(TourPage.UPDATE_BOARD)
-                add(TourPage.UPDATE_TABS)
-                add(TourPage.UPDATE_HOME_STAY)
-                add(TourPage.PRIVACY)
-                if (!notificationsGranted(context)) add(TourPage.PERMISSIONS)
+                addAll(listOf(TourPage.UPDATE_SUMMARY, TourPage.UPDATE_BOARD, TourPage.UPDATE_TABS, TourPage.UPDATE_HOME_STAY, TourPage.PRIVACY))
+                if (needsPermissions) add(TourPage.PERMISSIONS)
             }
         }
     }
@@ -153,12 +163,13 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
     }
 
     Dialog(
-        onDismissRequest = onFinish,
+        // 건너뛸 수 없으므로 바깥 터치·뒤로 가기로 닫히지 않습니다.
+        onDismissRequest = {},
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
     ) {
-        // 뒤로 가기는 앞 장으로, 첫 장에서는 투어를 닫습니다 (다이얼로그 안에 둬야 다이얼로그 창의 뒤로 가기를 받습니다).
+        // 뒤로 가기는 앞 장으로만, 첫 장에서는 아무 일도 하지 않습니다 (다이얼로그 안에 둬야 다이얼로그 창의 뒤로 가기를 받습니다).
         BackHandler {
-            if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } else onFinish()
+            if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
         }
         val view = LocalView.current
         val dark = scheme.isDark
@@ -180,21 +191,21 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
                     .oneUiPageBackground()
                     .padding(top = statusTop + 12.dp, bottom = navBottom + 16.dp),
             ) {
-                // 위: 진행 점 + 건너뛰기
+                // 위: 진행 점 + (로그인 장에서만) 나중에
                 Row(
                     Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 24.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TourDots(count = pages.size, current = pagerState.currentPage)
                     Spacer(Modifier.weight(1f))
-                    if (page != TourPage.DONE && pagerState.currentPage != pages.lastIndex) {
+                    if (page == TourPage.LOGIN) {
                         Text(
-                            if (page == TourPage.LOGIN) "나중에" else "건너뛰기",
+                            "나중에",
                             style = MaterialTheme.typography.bodyMedium,
                             color = scheme.onSurfaceVariant,
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable { if (page == TourPage.LOGIN) next() else onFinish() }
+                                .clickable { next() }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                     }
@@ -800,10 +811,12 @@ private fun ColumnScope.UpdateTabsPage() {
             step = (step + 1) % highlights.size
         }
     }
-    var chip by remember { mutableIntStateOf(1) }
-    LaunchedEffect(Unit) {
+    var chip by remember { mutableIntStateOf(0) }
+    // 칩을 직접 누르면 자동 전환 타이머를 처음부터 다시 셉니다(누르자마자 저절로 되돌아가지 않게).
+    var chipTaps by remember { mutableIntStateOf(0) }
+    LaunchedEffect(chipTaps) {
         while (true) {
-            delay(2_000)
+            delay(2_400)
             chip = 1 - chip
         }
     }
@@ -826,7 +839,109 @@ private fun ColumnScope.UpdateTabsPage() {
     Spacer(Modifier.height(14.dp))
     TourCaption("일정 탭")
     Box(Modifier.padding(horizontal = 6.dp)) {
-        ScheduleSubTabs(chip) { chip = it }
+        ScheduleSubTabs(chip) {
+            chip = it
+            chipTaps++
+        }
+    }
+    // 칩에 따라 아래 내용이 옆으로 밀려 바뀝니다 — 시간표는 왼쪽, 학사일정은 오른쪽.
+    AnimatedContent(
+        targetState = chip,
+        transitionSpec = {
+            val dir = if (targetState > initialState) 1 else -1
+            val slide = spring<IntOffset>(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
+            (slideInHorizontally(slide) { it / 3 * dir } + fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(slide) { -it / 3 * dir } + fadeOut(tween(160))) using
+                SizeTransform(clip = false)
+        },
+        label = "scheduleChip",
+        modifier = Modifier.fillMaxWidth(),
+    ) { selected ->
+        if (selected == 0) MiniTimetable() else MiniAcademicSchedule()
+    }
+}
+
+/** 일정 탭 · 시간표 칩 그림 — 요일 × 교시 작은 표. */
+@Composable
+private fun MiniTimetable() {
+    val scheme = MaterialTheme.colorScheme
+    val rows = listOf(
+        listOf("국어", "수학", "영어", "물리", "정보"),
+        listOf("영어", "화학", "수학", "국어", "체육"),
+        listOf("한국사", "국어", "물리", "영어", "수학"),
+        listOf("수학", "체육", "화학", "한국사", "영어"),
+    )
+    val tints = mapOf(
+        "국어" to TourPink, "수학" to TourBlue, "영어" to TourViolet, "물리" to TourGreen,
+        "화학" to TourYellow, "한국사" to TourOrange, "정보" to TourSlate, "체육" to TourGreen,
+    )
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(12.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Spacer(Modifier.width(18.dp))
+            listOf("월", "화", "수", "목", "금").forEach { day ->
+                Text(
+                    day,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        rows.forEachIndexed { period, subjects ->
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${period + 1}", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.width(18.dp))
+                subjects.forEach { subject ->
+                    Text(
+                        subject,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 2.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background((tints[subject] ?: TourSlate).copy(alpha = 0.22f))
+                            .padding(vertical = 7.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 일정 탭 · 학사일정 칩 그림 — D-day 와 다가오는 일정 목록. */
+@Composable
+private fun MiniAcademicSchedule() {
+    val scheme = MaterialTheme.colorScheme
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "D-18",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = scheme.primary,
+                modifier = Modifier.clip(CircleShape).background(scheme.primary.copy(alpha = 0.16f)).padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text("중간고사", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(12.dp))
+        listOf(
+            Triple("9/27 (일)", "귀교(1,2,3)", TourGreen),
+            Triple("10/3 (토)", "개천절", TourOrange),
+            Triple("10/12 (월)", "중간고사", TourBlue),
+        ).forEachIndexed { i, (date, name, dot) ->
+            if (i > 0) Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+                Spacer(Modifier.width(10.dp))
+                Text(date, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, modifier = Modifier.width(76.dp))
+                Text(name, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 
