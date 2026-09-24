@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -181,10 +182,12 @@ data class PostSummary(val line: String, val points: List<String>)
 object PostSummarizer {
     private const val TAG = "PostSummary"
     private const val ENDPOINT = "https://hihana-summary.kyoohan0711ultra.workers.dev/summarize"
-    private const val PREFS = "post_summaries_v3"
+    private const val PREFS = "post_summaries_v4"
     private const val MAX_CACHED = 300
     /** 이보다 짧은 글은 AI 없이 본문 앞부분을 한 줄 요약으로 씁니다. */
-    const val MIN_CHARS = 200
+    const val MIN_CHARS = 100
+    /** 이보다 짧은 글은 한 줄 요약만 쓰고, 글 화면의 자세한 요약 카드는 숨깁니다(본문이 곧 요약). */
+    private const val MIN_CARD_CHARS = 250
     private const val MAX_INPUT_CHARS = 6000
 
     private val client = OkHttpClient.Builder()
@@ -239,10 +242,10 @@ object PostSummarizer {
     /** 저장된 요약이 있으면 그것을, 없으면 만들어(짧은 글은 본문 앞부분) 저장하고 돌려줍니다. 실패하면 예외. */
     suspend fun ensure(context: Context, key: String, title: String, text: String): PostSummary {
         cached(context, key)?.let { return it }
-        val summary = if (text.length < MIN_CHARS) {
-            PostSummary(HanaPostApi.excerpt(text, 80), emptyList())
-        } else {
-            request(title, text)
+        val summary = when {
+            text.length < MIN_CHARS -> PostSummary(HanaPostApi.excerpt(text, 40), emptyList())
+            text.length < MIN_CARD_CHARS -> request(title, text).copy(points = emptyList())
+            else -> request(title, text)
         }
         store(context, key, summary)
         return summary
@@ -265,8 +268,14 @@ object PostSummarizer {
     /** 글 화면용 — 상태를 차례로 알려 줍니다. */
     suspend fun summarize(context: Context, key: String, title: String, text: String, onState: (State) -> Unit) {
         cached(context, key)?.let { onState(if (it.points.isEmpty()) State.Hidden else State.Done(it)); return }
-        if (text.length < MIN_CHARS) {
-            ensure(context, key, title, text)
+        if (text.length < MIN_CARD_CHARS) {
+            try {
+                ensure(context, key, title, text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "short summary failed", e)
+            }
             onState(State.Hidden)
             return
         }
@@ -568,7 +577,9 @@ private fun PostBody(html: String, onImage: (String) -> Unit) {
     var heightDp by remember(html) { mutableIntStateOf(0) }
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val linkColor = MaterialTheme.colorScheme.primary.toArgb()
-    val doc = remember(html, textColor, linkColor) { wrapBody(html, textColor, linkColor) }
+    // 다크 여부는 폰 시스템 설정이 아니라 앱 테마(카드 바탕색)로 판단합니다 — 둘이 다를 수 있습니다.
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val doc = remember(html, textColor, linkColor, dark) { wrapBody(html, textColor, linkColor, dark) }
     OneUiCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = OneUi.PagePadding, vertical = 8.dp),
     ) {
@@ -581,7 +592,9 @@ private fun PostBody(html: String, onImage: (String) -> Unit) {
                     settings.javaScriptEnabled = true
                     settings.userAgentString = HanaPortalClient.UA
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-                        WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
+                        // 웹뷰의 자동 어둡게 하기는 폰 시스템 다크 모드를 따라가 앱 테마와 어긋납니다(밝은 앱에서 글자가
+                        // 흰색으로 뒤집힘). 끄고, 다크 테마일 때만 아래 스크립트가 본문 색을 직접 맞춥니다.
+                        WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false)
                     }
                     addJavascriptInterface(object {
                         @JavascriptInterface
@@ -603,7 +616,15 @@ private fun PostBody(html: String, onImage: (String) -> Unit) {
                             return true
                         }
                     }
+                    tag = doc
                     loadDataWithBaseURL("https://hh.hana.hs.kr/", doc, "text/html", "utf-8", null)
+                }
+            },
+            // 앱 테마를 바꾸면 새 색으로 다시 그립니다.
+            update = { view ->
+                if (view.tag != doc) {
+                    view.tag = doc
+                    view.loadDataWithBaseURL("https://hh.hana.hs.kr/", doc, "text/html", "utf-8", null)
                 }
             },
             modifier = Modifier.fillMaxWidth().height(if (heightDp > 0) heightDp.dp else 120.dp),
@@ -614,7 +635,7 @@ private fun PostBody(html: String, onImage: (String) -> Unit) {
 private fun cssColor(argb: Int) =
     "rgb(${(argb shr 16) and 0xFF},${(argb shr 8) and 0xFF},${argb and 0xFF})"
 
-private fun wrapBody(html: String, textColor: Int, linkColor: Int): String = """
+private fun wrapBody(html: String, textColor: Int, linkColor: Int, dark: Boolean): String = """
 <!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -623,6 +644,8 @@ private fun wrapBody(html: String, textColor: Int, linkColor: Int): String = """
          font-family: sans-serif; font-size: 15px; line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
   body * { font-family: inherit !important; max-width: 100%; }
   p { margin: 0 0 2px; margin-left: 0 !important; margin-right: 0 !important; }
+  /* 포털 편집기가 본문을 큰 여백(2.5rem 4rem 등)으로 감싸 둡니다 — 카드 안에서는 여백을 걷어 냅니다. */
+  #c div, #c section, #c article { padding: 0 !important; margin-left: 0 !important; margin-right: 0 !important; margin-top: 0 !important; margin-bottom: 0 !important; }
   img { height: auto !important; border-radius: 8px; cursor: zoom-in; }
   table { display: block; overflow-x: auto; border-collapse: collapse; }
   td, th { border: 1px solid rgba(128,128,128,.35); padding: 4px 6px; }
@@ -632,6 +655,38 @@ private fun wrapBody(html: String, textColor: Int, linkColor: Int): String = """
   (function () {
     var c = document.getElementById('c');
     function report() { PostBody.height(c.getBoundingClientRect().height); }
+    // 빈 껍데기(첨부 자리의 빈 목록, 빈 div)와 글 앞뒤의 빈 문단을 걷어 내 카드에 빈 공간이 생기지 않게 합니다.
+    function blank(el) { return !el.textContent.trim() && !el.querySelector('img,table,iframe,video,hr'); }
+    c.querySelectorAll('ul,ol,div').forEach(function (el) { if (blank(el)) el.remove(); });
+    var ps = Array.prototype.slice.call(c.querySelectorAll('p'));
+    for (var i = 0; i < ps.length && blank(ps[i]); i++) ps[i].remove();
+    for (var j = ps.length - 1; j >= i && blank(ps[j]); j--) ps[j].remove();
+
+    // 다크 테마: 편집기가 박아 넣은 색(검은 글자, 흰·회색 칸 바탕, 검은 테두리)만 골라 어두운 바탕에 맞게 바꿉니다.
+    // 빨강·파랑 같은 강조색 글자는 밝기가 충분하면 그대로 둡니다.
+    if ($dark) {
+      var TEXT = '${cssColor(textColor)}';
+      function rgb(v) {
+        var m = v && v.match(/rgba?\(([^)]+)\)/);
+        if (!m) return null;
+        var p = m[1].split(',').map(parseFloat);
+        return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+      }
+      function lum(c) { return (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255; }
+      c.querySelectorAll('*').forEach(function (el) {
+        if (el.tagName === 'IMG') return;
+        var cs = getComputedStyle(el);
+        var fg = rgb(cs.color);
+        var colorful = fg && Math.max(fg.r, fg.g, fg.b) - Math.min(fg.r, fg.g, fg.b) > 80;
+        if (fg && !colorful && lum(fg) < 0.55) el.style.setProperty('color', TEXT, 'important');
+        var bg = rgb(cs.backgroundColor);
+        if (bg && bg.a > 0 && lum(bg) > 0.3) el.style.setProperty('background-color', 'rgba(255,255,255,' + (lum(bg) > 0.85 ? 0.04 : 0.1) + ')', 'important');
+        ['Top', 'Right', 'Bottom', 'Left'].forEach(function (side) {
+          var bc = rgb(cs['border' + side + 'Color']);
+          if (bc && parseFloat(cs['border' + side + 'Width']) > 0 && lum(bc) < 0.5) el.style.setProperty('border-' + side.toLowerCase() + '-color', 'rgba(255,255,255,0.22)', 'important');
+        });
+      });
+    }
     new ResizeObserver(report).observe(c);
     // 이미지를 누르면 앱의 확대 보기로 — 링크로 감싼 이미지도 확대를 우선합니다.
     document.addEventListener('click', function (e) {
