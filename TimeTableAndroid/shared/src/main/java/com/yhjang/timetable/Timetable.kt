@@ -161,6 +161,20 @@ data class StudySession(val name: String, val start: Int, val end: Int)
 data class Lesson(val subject: String, val room: String?) {
     val isFree: Boolean get() = room == null
 
+    /**
+     * 포털 과목명은 "스포츠 생활1(남)(5반) 김응주 /" 처럼 끝에 담당 선생님과 빗금이 붙어 옵니다.
+     * [title] 은 그걸 뗀 과목명, [teacher] 는 선생님 이름(없으면 null) — 표시용이고 [subject] 원값은 그대로 둡니다.
+     */
+    val title: String get() = split.first
+    val teacher: String? get() = split.second
+
+    private val split: Pair<String, String?>
+        get() {
+            val trimmed = subject.trim().removeSuffix("/").trim()
+            val match = TEACHER_SUFFIX.matchEntire(trimmed) ?: return trimmed to null
+            return match.groupValues[1].trim() to match.groupValues[2]
+        }
+
     /** 위젯에 표시할 과목별 아이콘 키 — 매칭되는 과목이 없으면 기본값(menu_book)을 씁니다 */
     val iconKey: String
         get() = when {
@@ -178,6 +192,9 @@ data class Lesson(val subject: String, val room: String?) {
 
     companion object {
         val FREE = Lesson("공강", null)
+
+        /** "과목(반) 이름" — 괄호로 끝나는 과목명 뒤의 2~4글자 한글 이름. */
+        private val TEACHER_SUFFIX = Regex("""^(.*\))\s+([가-힣]{2,4})$""")
     }
 }
 

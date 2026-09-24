@@ -632,6 +632,8 @@ internal data class UpcomingGroup(
     val iconKey: String = "",
     /** 아이콘 원 색을 고를 종류 — 쉬는 시간·식사처럼 기다리는 구간이 다음 일정과 합쳐지면 그 다음 일정의 종류. */
     val accent: Accent = Accent.IDLE,
+    /** 수업 담당 선생님 — 과목명에서 떼어 시간 줄에 붙입니다. */
+    val teacher: String? = null,
 )
 
 /**
@@ -657,13 +659,19 @@ internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
     for (block in blocks) {
         val supervision = isWeekday1StudyRoom(block)
         val isGap = block.kind is BlockKind.GapKind
+        // 수업은 과목명 끝의 "선생님 /" 을 떼고, 선생님은 시간 줄에 따로 붙입니다.
+        val lesson = when (val kind = block.kind) {
+            is BlockKind.LessonKind -> kind.lesson
+            is BlockKind.GapKind -> (kind.gap.next as? NextUp.LessonNext)?.lesson
+            else -> null
+        }
         val title = when (val kind = block.kind) {
             is BlockKind.StudyKind -> "${kind.session.name.removePrefix("면학 ")} · ${block.title}"
             is BlockKind.GapKind -> when (val next = kind.gap.next) {
                 is NextUp.StudyNext -> "${next.session.name.removePrefix("면학 ")} · ${block.title}"
-                else -> block.title
+                else -> lesson?.title ?: block.title
             }
-            else -> block.title
+            else -> lesson?.title ?: block.title
         }
         val last = result.lastOrNull()
         if (last != null && lastOpen && last.title == title && last.room == block.room && last.end == block.start) {
@@ -673,10 +681,11 @@ internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
                 // 기다리던 구간 뒤에 실제 일정이 붙으면 그 일정의 아이콘·색으로.
                 iconKey = if (isGap) last.iconKey else block.iconKey.ifEmpty { last.iconKey },
                 accent = if (isGap) last.accent else block.accent,
+                teacher = last.teacher ?: lesson?.teacher,
             )
             lastOpen = isGap
         } else {
-            result += UpcomingGroup(title, block.room, block.start, block.end, supervision, block.iconKey, block.accent)
+            result += UpcomingGroup(title, block.room, block.start, block.end, supervision, block.iconKey, block.accent, lesson?.teacher)
             lastOpen = isGap
         }
     }
@@ -729,6 +738,7 @@ private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?, tint: C
             Text(
                 buildString {
                     append(group.start.format(formatter)).append(" ~ ").append(group.end.format(formatter))
+                    group.teacher?.let { append(" · ").append(it) }
                     if (supervision != null) append(" · 감독 ").append(supervision)
                 },
                 style = MaterialTheme.typography.labelMedium,
