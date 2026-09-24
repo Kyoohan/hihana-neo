@@ -3,7 +3,6 @@ package com.yhjang.timetable
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -99,6 +98,9 @@ import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiPageBackground
+import androidx.compose.foundation.layout.offset
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -114,7 +116,7 @@ import kotlinx.coroutines.withContext
 enum class TourKind { WELCOME, UPDATE }
 
 private enum class TourPage {
-    HELLO, HOME, APPLY, BOARD, PRIVACY, PERMISSIONS, LOGIN, DONE,
+    HELLO, GLANCE, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
     UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_HOME_STAY,
 }
 
@@ -137,6 +139,8 @@ fun OnboardingTour(
     onFinish: () -> Unit,
     /** 로그인 장에서 실제로 로그인에 성공한 순간 — 투어가 끝나길 기다리지 않고 바로 시간표·일정 등을 받아 옵니다. */
     onAccountLinked: () -> Unit = {},
+    /** 테마·강조색·배경화면 장 — 설정과 같은 값·동작. 고르는 즉시 앱(투어 포함) 색이 바뀝니다. */
+    appearance: TourAppearance? = null,
 ) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
@@ -145,7 +149,12 @@ fun OnboardingTour(
         val needsPermissions = !notificationsGranted(context) || !ExactAlarmPermission.isGranted(context)
         when (kind) {
             TourKind.WELCOME -> buildList {
-                addAll(listOf(TourPage.HELLO, TourPage.HOME, TourPage.APPLY, TourPage.BOARD, TourPage.PRIVACY))
+                addAll(
+                    listOf(
+                        TourPage.HELLO, TourPage.GLANCE, TourPage.APPLY, TourPage.MEAL, TourPage.BOARD,
+                        TourPage.PERSONALIZE, TourPage.GLASS, TourPage.PRIVACY,
+                    ),
+                )
                 if (needsPermissions) add(TourPage.PERMISSIONS)
                 add(TourPage.LOGIN)
                 add(TourPage.DONE)
@@ -168,15 +177,14 @@ fun OnboardingTour(
     }
 
     Dialog(
-        // 건너뛸 수 없으므로 바깥 터치·뒤로 가기로 닫히지 않습니다 (dev 빌드는 확인하기 편하게 닫힘).
-        onDismissRequest = { if (BuildConfig.DEBUG) onFinish() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
-    ) {
-        // 뒤로 가기는 앞 장으로만, 첫 장에서는 아무 일도 하지 않습니다 (다이얼로그 안에 둬야 다이얼로그 창의 뒤로 가기를 받습니다).
-        BackHandler {
+        // 다이얼로그 창의 뒤로 가기는 여기로만 옵니다(안쪽 BackHandler 는 액티비티 쪽에 걸려 받지 못했습니다).
+        // 앞 장으로만 가고, 첫 장에서는 닫히지 않습니다 — 건너뛸 수 없으니까요 (dev 빌드는 확인하기 편하게 닫힘).
+        onDismissRequest = {
             if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
             else if (BuildConfig.DEBUG) onFinish()
-        }
+        },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
+    ) {
         val view = LocalView.current
         val dark = scheme.isDark
         SideEffect {
@@ -240,9 +248,12 @@ fun OnboardingTour(
                     ) {
                         when (pages[index]) {
                             TourPage.HELLO -> HelloPage()
-                            TourPage.HOME -> HomePage()
+                            TourPage.GLANCE -> GlancePage()
                             TourPage.APPLY -> ApplyPage()
+                            TourPage.MEAL -> MealPage()
                             TourPage.BOARD -> BoardPage()
+                            TourPage.PERSONALIZE -> PersonalizePage(appearance)
+                            TourPage.GLASS -> GlassPage()
                             TourPage.PRIVACY -> PrivacyPage(beforeLogin = kind == TourKind.WELCOME, onMore = { showingPrivacy = true })
                             TourPage.PERMISSIONS -> PermissionsPage()
                             TourPage.LOGIN -> LoginPage(onReady = { loginAction = it }, onLinked = onAccountLinked, onLoggedIn = ::next)
@@ -407,6 +418,17 @@ private fun GrantChip(granted: Boolean, label: String, onClick: () -> Unit) {
 }
 
 // MARK: - 새로 설치
+// 투어 문구 규칙: 제목은 명사형(문장 X), 설명은 문장으로. 로그인 장의 '학사시스템에 로그인하세요'만 예외.
+
+/** 테마·강조색·배경화면 장이 쓰는 설정 값과 바꾸는 동작 — MainActivity 의 설정 화면과 같은 것을 넘겨받습니다. */
+class TourAppearance(
+    val accentArgb: Int,
+    val onAccentChange: (Int) -> Unit,
+    val appTheme: String,
+    val onAppThemeChange: (String) -> Unit,
+    val hasBackgroundPhoto: Boolean,
+    val onBackgroundChanged: () -> Unit,
+)
 
 @Composable
 private fun ColumnScope.HelloPage() {
@@ -420,36 +442,78 @@ private fun ColumnScope.HelloPage() {
         Icon(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.requiredSize(120.dp))
     }
     PageHead(
-        eyebrow = "하이하나 Neo",
-        title = "지금 어디로 가야 하는지,\n한 화면에서",
-        desc = "시간표, 면학 위치, 급식, 게시판, 신청을 하나고 학사시스템과 연결해 한곳에 모았습니다.",
+        eyebrow = "환영합니다",
+        title = "하이하나 Neo",
+        desc = "시간표, 면학 위치, 신청, 급식, 게시판을 하나고 학사시스템과 연결해 한곳에 모았습니다. 주요 기능을 차례로 소개합니다.",
     )
 }
 
 @Composable
-private fun ColumnScope.HomePage() {
-    PageHead("홈", "수업·면학 장소와\n남은 시간을 바로", "지금 있어야 할 곳, 다음 일정, 오늘 급식이 첫 화면에 뜹니다.")
-    OneUiCard(Modifier.fillMaxWidth()) {
-        Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
-        Text("면학 1타임 · 도서관", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text("2층 B-14", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(6.dp))
-        Row {
-            Text("19:00 – 21:00", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(10.dp))
-            Text("48분 남음", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))) {
-            Box(Modifier.fillMaxWidth(0.6f).height(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+private fun ColumnScope.GlancePage() {
+    PageHead(
+        "위젯 · Now Bar",
+        "앱을 열지 않고 보는 지금 일정",
+        "홈 화면 위젯과 잠금화면의 Now Bar에 지금 있어야 할 장소와 남은 시간이 표시됩니다. 수업, 면학, 식사 시간에 맞춰 저절로 바뀝니다.",
+    )
+    // 홈 화면처럼 보이도록 배경 위에 위젯과 Now Bar 를 얹습니다 (실제 위젯·Now Bar 모양을 옮긴 그림).
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(Color(0xFF1B4A7A), Color(0xFF2E6FA6), Color(0xFFE39A5B)),
+                ),
+            )
+            .padding(16.dp),
+    ) {
+        Column {
+            // Now Bar — 검은 알약: 색 원 아이콘 · 장소 · 구간/시간 · 남은 시간
+            Row(
+                Modifier.fillMaxWidth().clip(CircleShape).background(Color.Black).padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircleIcon(painterResource(R.drawable.ic_local_library), TourBlue, size = 34.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("도서관 2층 B-14", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("면학 1타임 · 19:00 – 21:00", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB9C0C8))
+                }
+                Text("48분", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF9FB4FF))
+            }
+            Spacer(Modifier.height(14.dp))
+            // 위젯 — 2×2 유리 카드: 구간 · 장소 · 다음 · 카운트다운
+            Column(
+                Modifier
+                    .size(168.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(Color.Black.copy(alpha = 0.42f))
+                    .padding(16.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(TourBlue))
+                    Spacer(Modifier.width(6.dp))
+                    Text("면학 1타임", style = MaterialTheme.typography.labelMedium, color = Color(0xFFB9C0C8))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("도서관", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                Spacer(Modifier.height(6.dp))
+                Text("→ 2층 B-14", style = MaterialTheme.typography.labelMedium, color = Color.White)
+                Spacer(Modifier.weight(1f))
+                Text("0:48:12", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+            }
         }
     }
 }
 
 @Composable
 private fun ColumnScope.ApplyPage() {
-    PageHead("신청·내역", "면학실·도서관 자리를\n배치도에서 바로 신청", "빈 자리를 누르면 신청, 내 자리를 누르면 취소. 심야면학과 교과교실 현황도 여기서 봅니다.")
+    PageHead(
+        "신청·내역",
+        "면학실·도서관·심야면학 신청",
+        "배치도에서 빈 자리를 눌러 바로 신청하고, 내 자리를 눌러 취소합니다. 심야면학도 앱 안에서 로그인해 좌석을 신청할 수 있고, " +
+            "신청한 심야 타임은 오늘 일정과 Now Bar, 위젯에 함께 표시됩니다.",
+    )
     OneUiCard(Modifier.fillMaxWidth()) {
         Text("면학실 3층 · 1타임", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(10.dp))
@@ -472,21 +536,180 @@ private fun ColumnScope.ApplyPage() {
             }
         }
     }
+    Spacer(Modifier.height(10.dp))
+    // 심야면학 — 별도 사이트지만 앱 안에서 로그인·신청하고, 신청하면 오늘 일정 끝에 심야 타임이 붙습니다.
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(painterResource(R.drawable.ic_bedtime), TourViolet, "심야면학 1타임", "3층 12번 · 신청됨") {
+            Text(
+                "취소",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)).padding(horizontal = 13.dp, vertical = 7.dp),
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
+        Spacer(Modifier.height(12.dp))
+        Text("오늘 남은 일정", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        listOf("면학 2타임 · 면학실 3층 A-07", "휴식", "심야 1타임 · 3층 12번").forEach { line ->
+            Text(line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.MealPage() {
+    PageHead(
+        "급식",
+        "주간 급식과 영양 정보",
+        "이번 주 급식을 끼니별로 보고, 급식 사진과 칼로리, 영양성분, 원산지까지 확인할 수 있습니다. 알레르기 재료를 설정하면 해당 메뉴를 빨간색으로 표시합니다.",
+    )
+    val context = LocalContext.current
+    // 실제 최근 급식 — 사진이 있는 가장 가까운 지난 점심을 찾아 그 날의 영양 정보와 함께 실제 급식 카드로 보여 줍니다.
+    var sample by remember { mutableStateOf<TourMealSample?>(null) }
+    var searched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        sample = findTourMealSample(context)
+        searched = true
+    }
+    val found = sample
+    when {
+        found != null -> {
+            TourCaption("${found.date.monthValue}월 ${found.date.dayOfMonth}일(${found.date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN)}) ${found.meal.label}")
+            MealCard(found.meal, found.items, found.photoFile, allergyCodes = emptySet(), info = found.info)
+        }
+        !searched -> OneUiCard(Modifier.fillMaxWidth().height(260.dp)) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { OneUiLoading() }
+        }
+        else -> OneUiCard(Modifier.fillMaxWidth()) {
+            TourRow(painterResource(R.drawable.ic_settings_meal), TourYellow, "점심 · 812 kcal", "사진 · 메뉴 · 영양성분 · 원산지")
+        }
+    }
+}
+
+private class TourMealSample(
+    val date: java.time.LocalDate,
+    val meal: Meal,
+    val items: List<MealItem>,
+    val photoFile: String?,
+    val info: NeisMealInfo?,
+)
+
+/** 오늘부터 거꾸로 열흘 동안 사진이 있는 점심(없으면 다른 끼니)을 찾습니다 — 캐시를 먼저 보고, 없으면 받아 봅니다. */
+private suspend fun findTourMealSample(context: android.content.Context): TourMealSample? {
+    val today = PlanStore.today()
+    var fetched = 0
+    for (back in 0L..10L) {
+        val date = today.minusDays(back)
+        if (date.dayOfWeek.value >= 6) continue
+        var day = MealCache.load(context, date)
+        if (day == null && fetched < 5) {
+            fetched++
+            runCatching { HanaMealSync.refresh(context, date) }
+            day = MealCache.load(context, date)
+        }
+        day ?: continue
+        val order = listOf(Meal.LUNCH) + Meal.entries.filter { it != Meal.LUNCH && it != Meal.SNACK }
+        val meal = order.firstOrNull { !day.photos[it.key].isNullOrBlank() && day.items[it.key].orEmpty().isNotEmpty() } ?: continue
+        val info = runCatching { NeisMeal.load(context, date)[meal.key] }.getOrNull()
+        return TourMealSample(date, meal, day.items[meal.key].orEmpty(), day.photos[meal.key], info)
+    }
+    return null
 }
 
 @Composable
 private fun ColumnScope.BoardPage() {
-    PageHead("게시판", "새 공지는 요약과 함께\n알림으로", "글마다 AI 한 줄 요약이 붙고, 가정통신문 이미지도 읽어 요약합니다. 설정에서 끌 수 있습니다.")
+    PageHead(
+        "게시판",
+        "새 글 알림과 AI 요약",
+        "고른 게시판에 새 글이 올라오면 알림으로 알려 드립니다. 글마다 구글의 최신 LLM인 Gemma 4가 핵심을 요약하고, 이미지뿐인 가정통신문도 읽어 요약합니다.",
+    )
+    OneUiCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(16.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF1F5A3C)))
+            Spacer(Modifier.width(7.dp))
+            Text("하이하나 Neo · 학생공지 · 방금", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text("2학기 교내 수학경시대회 참가 신청 안내", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text("10/7(수)까지 포털 신청, 10/14 시청각실", style = MaterialTheme.typography.bodySmall)
+    }
+    Spacer(Modifier.height(10.dp))
     OneUiCard(Modifier.fillMaxWidth()) {
         Text("2학기 교내 수학경시대회 참가 신청 안내", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
         AiSummaryPill("10/7(수)까지 포털 신청, 10/14 시청각실", Modifier.padding(top = 9.dp))
     }
-    Spacer(Modifier.height(10.dp))
-    OneUiCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Text("하이하나 Neo · 학생공지 · 방금", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(4.dp))
-        Text("방과후학교 수강 정산 안내", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-        Text("환불 금액은 마이페이지에서 확인", style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun ColumnScope.PersonalizePage(appearance: TourAppearance?) {
+    PageHead(
+        "화면",
+        "테마·강조색·배경화면",
+        "라이트·다크 테마와 강조색을 고르고, 원하는 사진을 배경화면으로 쓸 수 있습니다. 지금 골라 보세요. 나중에 설정에서도 바꿀 수 있습니다.",
+    )
+    if (appearance == null) return
+    // 설정 → 화면 과 같은 부품·같은 저장 — 고르는 즉시 이 투어 화면부터 색과 배경이 바뀝니다.
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+        AccentPickerRow(selectedArgb = appearance.accentArgb, onSelect = appearance.onAccentChange)
+        com.yhjang.timetable.ui.OneUiDivider()
+        PlanStore.themes.forEach { option ->
+            com.yhjang.timetable.ui.OneUiRadioRow(
+                selected = appearance.appTheme == option,
+                label = PlanStore.themeLabel(option),
+                onClick = { appearance.onAppThemeChange(option) },
+            )
+        }
+        com.yhjang.timetable.ui.OneUiDivider()
+        BackgroundPhotoRows(appearance.hasBackgroundPhoto, appearance.onBackgroundChanged)
+    }
+}
+
+@Composable
+private fun ColumnScope.GlassPage() {
+    PageHead(
+        "디자인",
+        "리퀴드 글래스",
+        "하단 바와 버튼이 뒤 화면을 흐리고 굴절시키는 유리처럼 그려집니다. 아래 하단 바의 선택 표시를 좌우로 끌어 보세요.",
+    )
+    // 실제 하단 바를 알록달록한 화면 위에 띄워, 끌면 캡슐이 뒤 화면을 굴절시키는 모습을 직접 봅니다.
+    val glassState = remember { HazeState() }
+    var selected by remember { mutableIntStateOf(0) }
+    BoxWithConstraints(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(28.dp))) {
+        val boxWidth = maxWidth
+        Box(
+            Modifier
+                .fillMaxSize()
+                .hazeSource(glassState)
+                .background(Color(0xFF0E1A2B)),
+        ) {
+            // 굴절이 잘 보이도록 선명한 색 덩어리와 글자를 깔아 둡니다.
+            Box(Modifier.offset(x = (-30).dp, y = 20.dp).size(180.dp).clip(CircleShape).background(Color(0xFF3E7BFF)))
+            Box(Modifier.offset(x = 140.dp, y = 90.dp).size(160.dp).clip(CircleShape).background(Color(0xFFEC5881)))
+            Box(Modifier.offset(x = 60.dp, y = 150.dp).size(140.dp).clip(CircleShape).background(Color(0xFFFDBE4E)))
+            Text(
+                "하이하나 Neo",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center).offset(y = 30.dp),
+            )
+        }
+        CompositionLocalProvider(LocalHazeState provides glassState) {
+            Box(
+                Modifier.fillMaxWidth().align(Alignment.BottomCenter).consumeWindowInsets(WindowInsets.navigationBars),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppNavBar(
+                    selected = selected,
+                    onSelect = { selected = it },
+                    modifier = Modifier.requiredWidth(boxWidth + 16.dp),
+                    showDev = false,
+                )
+            }
+        }
     }
 }
 
@@ -714,7 +937,11 @@ private fun ColumnScope.DonePage() {
     Box(Modifier.size(68.dp).clip(CircleShape).background(TourGreen.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
         Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF8FDC6B), modifier = Modifier.size(34.dp))
     }
-    PageHead("", "준비됐습니다", "홈 화면에 위젯을 추가하면 앱을 열지 않아도 지금 일정을 볼 수 있습니다. 홈 화면 빈 곳을 길게 누르고 위젯 → 하이하나 Neo를 고르세요.")
+    PageHead(
+        "시작",
+        "준비 완료",
+        "홈 화면에 위젯을 추가하면 앱을 열지 않아도 지금 일정을 볼 수 있습니다. 홈 화면 빈 곳을 길게 누르고 위젯에서 하이하나 Neo를 고르세요.",
+    )
 }
 
 // MARK: - 업데이트 (11.1)

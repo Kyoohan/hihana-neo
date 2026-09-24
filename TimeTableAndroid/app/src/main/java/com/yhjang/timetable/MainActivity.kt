@@ -1380,6 +1380,21 @@ private fun TimeTableAppContent(
                     runCatching { loadAlim(true) }
                 }
             },
+            // 설정 → 화면과 같은 값·저장 방식.
+            appearance = TourAppearance(
+                accentArgb = accentArgb,
+                onAccentChange = { argb ->
+                    onAccentChange(argb)
+                    scope.launch { PlanStore.setAccentColor(context, argb) }
+                },
+                appTheme = appTheme,
+                onAppThemeChange = { option ->
+                    onAppThemeChange(option)
+                    scope.launch { PlanStore.setAppTheme(context, option) }
+                },
+                hasBackgroundPhoto = hasBackgroundPhoto,
+                onBackgroundChanged = onBackgroundChanged,
+            ),
         )
     }
 
@@ -1792,50 +1807,7 @@ private fun SettingsScreen(
                         )
                     }
                     OneUiDivider()
-                    // 배경 사진 — 시스템 사진 선택기로 한 장 고르면 줄여서 앱 안에 저장합니다.
-                    // 고른 뒤에는 자르기 화면에서 위치·크기를 맞추고 저장합니다 (EXIF 회전도 여기서 바로잡음).
-                    var cropSource by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-                    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-                        if (uri != null) {
-                            scope.launch { cropSource = PageBackgroundStore.load(context, uri) }
-                        }
-                    }
-                    cropSource?.let { source ->
-                        BackgroundCropDialog(
-                            bitmap = source,
-                            onDismiss = { cropSource = null },
-                            onApply = { cropped ->
-                                cropSource = null
-                                scope.launch {
-                                    if (PageBackgroundStore.saveBitmap(context, cropped)) onBackgroundChanged()
-                                }
-                            },
-                        )
-                    }
-                    OneUiListItem(
-                        title = "배경 이미지",
-                        subtitle = if (hasBackgroundPhoto) "사진" else "기본",
-                        trailing = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        onClick = {
-                            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
-                    )
-                    if (hasBackgroundPhoto) {
-                        OneUiDivider()
-                        OneUiListItem(
-                            title = "기본 배경으로 되돌리기",
-                            onClick = {
-                                PageBackgroundStore.clear(context)
-                                onBackgroundChanged()
-                            },
-                        )
-                    }
+                    BackgroundPhotoRows(hasBackgroundPhoto, onBackgroundChanged)
                 }
                     }
                     SettingsPage.WIDGET -> item {
@@ -2008,6 +1980,59 @@ private fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * 배경 이미지 고르기·되돌리기 줄 — 설정의 화면 페이지와 첫 실행 투어가 함께 씁니다.
+ */
+@Composable
+internal fun BackgroundPhotoRows(hasBackgroundPhoto: Boolean, onBackgroundChanged: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 배경 사진 — 시스템 사진 선택기로 한 장 고르면 줄여서 앱 안에 저장합니다.
+    // 고른 뒤에는 자르기 화면에서 위치·크기를 맞추고 저장합니다 (EXIF 회전도 여기서 바로잡음).
+    var cropSource by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch { cropSource = PageBackgroundStore.load(context, uri) }
+        }
+    }
+    cropSource?.let { source ->
+        BackgroundCropDialog(
+            bitmap = source,
+            onDismiss = { cropSource = null },
+            onApply = { cropped ->
+                cropSource = null
+                scope.launch {
+                    if (PageBackgroundStore.saveBitmap(context, cropped)) onBackgroundChanged()
+                }
+            },
+        )
+    }
+    OneUiListItem(
+        title = "배경 이미지",
+        subtitle = if (hasBackgroundPhoto) "사진" else "기본",
+        trailing = {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        onClick = {
+            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        },
+    )
+    if (hasBackgroundPhoto) {
+        OneUiDivider()
+        OneUiListItem(
+            title = "기본 배경으로 되돌리기",
+            onClick = {
+                PageBackgroundStore.clear(context)
+                onBackgroundChanged()
+            },
+        )
     }
 }
 
@@ -2592,7 +2617,7 @@ private fun MealPhotoViewer(urls: List<String>, onDismiss: () -> Unit) {
  * 메뉴 항목마다 그 항목에 붙은 코드(또는 이름 키워드)로 경고를 답니다.
  */
 @Composable
-private fun MealCard(
+internal fun MealCard(
     meal: Meal,
     items: List<MealItem>,
     photoFile: String?,
@@ -2851,7 +2876,7 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
+internal fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
     var showingPicker by remember { mutableStateOf(false) }
     val isPreset = AccentPresets.any { it.toArgb() == selectedArgb }
     val isCustom = selectedArgb != PlanStore.AUTO_ACCENT_COLOR && !isPreset
