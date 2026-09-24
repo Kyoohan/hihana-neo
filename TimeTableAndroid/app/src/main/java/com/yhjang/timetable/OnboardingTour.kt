@@ -101,6 +101,15 @@ import com.yhjang.timetable.ui.oneUiPageBackground
 import androidx.compose.foundation.layout.offset
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -116,7 +125,7 @@ import kotlinx.coroutines.withContext
 enum class TourKind { WELCOME, UPDATE }
 
 private enum class TourPage {
-    HELLO, GLANCE, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
+    HELLO, WIDGET, NOW_BAR, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
     UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_HOME_STAY,
 }
 
@@ -151,7 +160,7 @@ fun OnboardingTour(
             TourKind.WELCOME -> buildList {
                 addAll(
                     listOf(
-                        TourPage.HELLO, TourPage.GLANCE, TourPage.APPLY, TourPage.MEAL, TourPage.BOARD,
+                        TourPage.HELLO, TourPage.WIDGET, TourPage.NOW_BAR, TourPage.APPLY, TourPage.MEAL, TourPage.BOARD,
                         TourPage.PERSONALIZE, TourPage.GLASS, TourPage.PRIVACY,
                     ),
                 )
@@ -248,7 +257,8 @@ fun OnboardingTour(
                     ) {
                         when (pages[index]) {
                             TourPage.HELLO -> HelloPage()
-                            TourPage.GLANCE -> GlancePage()
+                            TourPage.WIDGET -> WidgetPage()
+                            TourPage.NOW_BAR -> NowBarPage()
                             TourPage.APPLY -> ApplyPage()
                             TourPage.MEAL -> MealPage()
                             TourPage.BOARD -> BoardPage()
@@ -448,15 +458,10 @@ private fun ColumnScope.HelloPage() {
     )
 }
 
+/** 홈 화면 배경을 흉내 낸 판 — 위젯·Now Bar 그림을 얹습니다. */
 @Composable
-private fun ColumnScope.GlancePage() {
-    PageHead(
-        "위젯 · Now Bar",
-        "앱을 열지 않고 보는 지금 일정",
-        "홈 화면 위젯과 잠금화면의 Now Bar에 지금 있어야 할 장소와 남은 시간이 표시됩니다. 수업, 면학, 식사 시간에 맞춰 저절로 바뀝니다.",
-    )
-    // 홈 화면처럼 보이도록 배경 위에 위젯과 Now Bar 를 얹습니다 (실제 위젯·Now Bar 모양을 옮긴 그림).
-    Box(
+private fun WallpaperPanel(content: @Composable ColumnScope.() -> Unit) {
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
@@ -466,41 +471,133 @@ private fun ColumnScope.GlancePage() {
                 ),
             )
             .padding(16.dp),
+        content = content,
+    )
+}
+
+/** 실제 위젯(2×2)의 모양 — 상태 점·구간, 장소(크게), 다음 줄, 아래 내용. */
+@Composable
+private fun WidgetMock(status: String, dot: Color, hero: String, modifier: Modifier = Modifier, body: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.Black.copy(alpha = 0.42f))
+            .padding(14.dp),
     ) {
-        Column {
-            // Now Bar — 검은 알약: 색 원 아이콘 · 장소 · 구간/시간 · 남은 시간
-            Row(
-                Modifier.fillMaxWidth().clip(CircleShape).background(Color.Black).padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircleIcon(painterResource(R.drawable.ic_local_library), TourBlue, size = 34.dp)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("도서관 2층 B-14", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("면학 1타임 · 19:00 – 21:00", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB9C0C8))
-                }
-                Text("48분", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF9FB4FF))
-            }
-            Spacer(Modifier.height(14.dp))
-            // 위젯 — 2×2 유리 카드: 구간 · 장소 · 다음 · 카운트다운
-            Column(
-                Modifier
-                    .size(168.dp)
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(Color.Black.copy(alpha = 0.42f))
-                    .padding(16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(TourBlue))
-                    Spacer(Modifier.width(6.dp))
-                    Text("면학 1타임", style = MaterialTheme.typography.labelMedium, color = Color(0xFFB9C0C8))
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("도서관", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+            Spacer(Modifier.width(6.dp))
+            Text(status, style = MaterialTheme.typography.labelMedium, color = Color(0xFFB9C0C8), maxLines = 1)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(hero, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+        Spacer(Modifier.height(6.dp))
+        body()
+    }
+}
+
+@Composable
+private fun ColumnScope.WidgetPage() {
+    PageHead(
+        "위젯",
+        "홈 화면 위젯",
+        "홈 화면 위젯에 지금 있어야 할 장소와 다음 장소, 남은 시간이 표시됩니다. 수업, 면학, 식사 시간에 맞춰 저절로 바뀌고, 식사 시간에는 그 끼니의 메뉴를 보여 줍니다.",
+    )
+    WallpaperPanel {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            WidgetMock("면학 1타임", TourBlue, "도서관", Modifier.weight(1f)) {
                 Text("→ 2층 B-14", style = MaterialTheme.typography.labelMedium, color = Color.White)
                 Spacer(Modifier.weight(1f))
-                Text("0:48:12", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+                Text("0:48:12", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+            }
+            // 식사 시간 — 다음 장소를 크게, 그 아래 메뉴(알레르기 재료는 빨간 글씨로 앞에).
+            WidgetMock("저녁", TourOrange, "도서관", Modifier.weight(1f)) {
+                Text(
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFFEF4444), fontWeight = FontWeight.Bold))
+                        append("⚠새우 ")
+                        pop()
+                        append("잡곡밥, 된장찌개, 제육볶음, 새우튀김")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    maxLines = 3,
+                )
+                Spacer(Modifier.weight(1f))
+                Text("→ 2층 B-14", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB9C0C8))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.NowBarPage() {
+    PageHead(
+        "Now Bar",
+        "Now Bar 실시간 일정",
+        "화면 위쪽과 잠금화면의 Now Bar에 지금 있어야 할 장소와 남은 시간이 실시간으로 표시됩니다. 설정의 알림 메뉴에서 켤 수 있습니다.",
+    )
+    // 남은 시간과 진행 막대가 실제처럼 흐릅니다 (1초마다).
+    var remaining by remember { mutableIntStateOf(48 * 60 + 12) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            remaining = if (remaining <= 0) 48 * 60 + 12 else remaining - 1
+        }
+    }
+    val total = 120 * 60
+    WallpaperPanel {
+        Text("10:45", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Light, color = Color.White, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Text("9월 24일 목요일", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(18.dp))
+        NowBarMock(
+            icon = painterResource(R.drawable.ic_local_library),
+            tint = TourBlue,
+            title = "도서관 2층 B-14",
+            countdown = "%d:%02d".format(remaining / 60, remaining % 60),
+            subtitle = "면학 1타임 · 19:00 – 21:00",
+            progress = 1f - remaining.toFloat() / total,
+        )
+    }
+}
+
+/**
+ * 실제 Now Bar(실시간 알림) 모양 — 어두운 둥근 카드 왼쪽에 종류 색이 번지고, 큰 색 원 아이콘 · 장소 + 남은 시간 ·
+ * 구간과 시각 · 지난 만큼 흰색, 남은 만큼 회색인 굵은 진행 막대.
+ */
+@Composable
+private fun NowBarMock(icon: Painter, tint: Color, title: String, countdown: String, subtitle: String, progress: Float) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(34.dp))
+            .background(Color(0xFF191C1B))
+            .background(
+                androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    0f to tint.copy(alpha = 0.38f),
+                    0.45f to Color.Transparent,
+                ),
+            )
+            .padding(start = 14.dp, end = 18.dp, top = 14.dp, bottom = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            CircleIcon(icon, tint, size = 46.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
+                    Text(countdown, style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(bottom = 1.dp))
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val done = progress.coerceIn(0.02f, 0.98f)
+                    Box(Modifier.weight(done).height(6.dp).clip(CircleShape).background(Color.White))
+                    Box(Modifier.weight(1f - done).height(6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.45f)))
+                }
             }
         }
     }
@@ -567,25 +664,114 @@ private fun ColumnScope.MealPage() {
         "이번 주 급식을 끼니별로 보고, 급식 사진과 칼로리, 영양성분, 원산지까지 확인할 수 있습니다. 알레르기 재료를 설정하면 해당 메뉴를 빨간색으로 표시합니다.",
     )
     val context = LocalContext.current
-    // 실제 최근 급식 — 사진이 있는 가장 가까운 지난 점심을 찾아 그 날의 영양 정보와 함께 실제 급식 카드로 보여 줍니다.
+    // 사진·메뉴·칼로리·영양은 가장 가까운 지난 급식에서 가져와 핵심만 간략히 — 없으면 예시 값.
     var sample by remember { mutableStateOf<TourMealSample?>(null) }
-    var searched by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        sample = findTourMealSample(context)
-        searched = true
-    }
+    LaunchedEffect(Unit) { sample = findTourMealSample(context) }
     val found = sample
-    when {
-        found != null -> {
-            TourCaption("${found.date.monthValue}월 ${found.date.dayOfMonth}일(${found.date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN)}) ${found.meal.label}")
-            MealCard(found.meal, found.items, found.photoFile, allergyCodes = emptySet(), info = found.info)
+    val scheme = MaterialTheme.colorScheme
+
+    // 주간 — 요일 칩
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        val selectedDay = (found?.date?.dayOfWeek?.value ?: 3).coerceIn(1, 5)
+        listOf("월", "화", "수", "목", "금").forEachIndexed { index, day ->
+            val on = index + 1 == selectedDay
+            Text(
+                day,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = if (on) scheme.surface else scheme.onSurface,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(CircleShape)
+                    .background(if (on) scheme.onSurface else scheme.onSurface.copy(alpha = 0.08f))
+                    .padding(vertical = 8.dp),
+            )
         }
-        !searched -> OneUiCard(Modifier.fillMaxWidth().height(260.dp)) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { OneUiLoading() }
+    }
+    Spacer(Modifier.height(10.dp))
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Row {
+            val thumb = HanaMealClient.mealPhotoThumbUrl(found?.photoFile)
+            Box(
+                Modifier.size(92.dp).clip(RoundedCornerShape(16.dp)).background(scheme.onSurface.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (thumb != null) RemoteThumbnail(listOf(thumb), Modifier.fillMaxSize())
+                else Icon(painterResource(R.drawable.ic_meal), contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(found?.meal?.label ?: "점심", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    val kcal = found?.info?.kcal?.toDoubleOrNull()?.let { "%,.0f kcal".format(it) } ?: "812 kcal"
+                    Text(
+                        kcal,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TourOrange,
+                        modifier = Modifier.clip(CircleShape).background(TourOrange.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                // 메뉴 세 줄 — 알레르기 재료가 든 첫 메뉴는 빨간 글씨와 재료 이름으로.
+                val items = found?.items?.take(3)
+                    ?: listOf(MealItem("잡곡밥", emptySet()), MealItem("새우튀김", setOf(9)), MealItem("배추김치", emptySet()))
+                val flaggedIndex = items.indexOfFirst { detectedAllergies(it.codes, it.name, ALLERGY_LEGEND.keys).isNotEmpty() }
+                items.forEachIndexed { index, item ->
+                    val flagged = index == flaggedIndex
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            item.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (flagged) FontWeight.Bold else FontWeight.Normal,
+                            color = if (flagged) scheme.error else scheme.onSurface,
+                            maxLines = 1,
+                        )
+                        if (flagged) {
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                "⚠ " + shortAllergyLabels(detectedAllergies(item.codes, item.name, ALLERGY_LEGEND.keys)).take(2).joinToString("·"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = scheme.error,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
         }
-        else -> OneUiCard(Modifier.fillMaxWidth()) {
-            TourRow(painterResource(R.drawable.ic_settings_meal), TourYellow, "점심 · 812 kcal", "사진 · 메뉴 · 영양성분 · 원산지")
+        Spacer(Modifier.height(14.dp))
+        // 영양성분 세 칸
+        val nutrients = found?.info?.nutrients?.take(3)?.takeIf { it.size == 3 }
+            ?: listOf("탄수화물(g)" to "112.4", "단백질(g)" to "38.1", "지방(g)" to "21.7")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            nutrients.forEach { (name, value) ->
+                val unit = name.substringAfter("(", "").removeSuffix(")")
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(scheme.onSurface.copy(alpha = 0.06f)).padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    Text(name.substringBefore("("), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
+                    Text(
+                        "${value.toDoubleOrNull()?.let { "%.0f".format(it) } ?: value}$unit",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
+        Spacer(Modifier.height(10.dp))
+        // 원산지 한 줄
+        val origins = found?.info?.origins?.take(2)?.takeIf { it.isNotEmpty() } ?: listOf("쌀" to "국내산", "돼지고기" to "국내산")
+        Text(
+            "원산지 · " + origins.joinToString(", ") { (item, origin) -> "$item $origin" },
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 
@@ -672,42 +858,139 @@ private fun ColumnScope.GlassPage() {
     PageHead(
         "디자인",
         "리퀴드 글래스",
-        "하단 바와 버튼이 뒤 화면을 흐리고 굴절시키는 유리처럼 그려집니다. 아래 하단 바의 선택 표시를 좌우로 끌어 보세요.",
+        "스크롤하면 큰 제목과 메뉴가 유리 섬으로 접히고, 하단 바와 함께 뒤 화면을 흐리고 굴절시킵니다. 아래 화면을 직접 스크롤하거나 하단 바의 선택 표시를 끌어 보세요.",
     )
-    // 실제 하단 바를 알록달록한 화면 위에 띄워, 끌면 캡슐이 뒤 화면을 굴절시키는 모습을 직접 봅니다.
+    GlassDemo()
+}
+
+/**
+ * 리퀴드 글래스 시연 — 실제 헤더([OneUiCollapsingHeader])·메뉴 알약([OneUiActionPill])·하단 바([AppNavBar])를 작은 화면 안에
+ * 그대로 띄웁니다. 처음엔 저절로 내려갔다 올라오며 제목이 섬으로 접히는 모습을 보여 주고, 손을 대면 멈춰 직접 스크롤하게 둡니다.
+ */
+@Composable
+private fun GlassDemo() {
     val glassState = remember { HazeState() }
+    val headerState = com.yhjang.timetable.ui.rememberOneUiHeaderState()
+    val scroll = rememberScrollState()
     var selected by remember { mutableIntStateOf(0) }
-    BoxWithConstraints(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(28.dp))) {
-        val boxWidth = maxWidth
-        Box(
-            Modifier
-                .fillMaxSize()
-                .hazeSource(glassState)
-                .background(Color(0xFF0E1A2B)),
-        ) {
-            // 굴절이 잘 보이도록 선명한 색 덩어리와 글자를 깔아 둡니다.
-            Box(Modifier.offset(x = (-30).dp, y = 20.dp).size(180.dp).clip(CircleShape).background(Color(0xFF3E7BFF)))
-            Box(Modifier.offset(x = 140.dp, y = 90.dp).size(160.dp).clip(CircleShape).background(Color(0xFFEC5881)))
-            Box(Modifier.offset(x = 60.dp, y = 150.dp).size(140.dp).clip(CircleShape).background(Color(0xFFFDBE4E)))
-            Text(
-                "하이하나 Neo",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Black,
-                color = Color.White,
-                modifier = Modifier.align(Alignment.Center).offset(y = 30.dp),
-            )
+    var autoplay by remember { mutableStateOf(true) }
+    LaunchedEffect(autoplay) {
+        if (!autoplay) return@LaunchedEffect
+        // 프로그램으로 움직이는 스크롤은 헤더 연결(nestedScroll)을 거치지 않아, 헤더 접힘도 같이 움직여 줍니다.
+        while (true) {
+            delay(900)
+            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(1_300)) { f, _ ->
+                headerState.restore(-headerState.rangePx * f)
+            }
+            scroll.animateScrollTo(scroll.maxValue.coerceAtMost(900), tween(1_800))
+            delay(900)
+            scroll.animateScrollTo(0, tween(1_400))
+            androidx.compose.animation.core.animate(1f, 0f, animationSpec = tween(900)) { f, _ ->
+                headerState.restore(-headerState.rangePx * f)
+            }
         }
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(460.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .consumeWindowInsets(WindowInsets.statusBars)
+            .consumeWindowInsets(WindowInsets.navigationBars)
+            .pointerInput(Unit) {
+                // 손을 대는 순간 자동 시연을 멈춥니다.
+                awaitPointerEventScope {
+                    awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    autoplay = false
+                }
+            },
+    ) {
         CompositionLocalProvider(LocalHazeState provides glassState) {
+            // 뒤 화면 — 과목 색 칸 시간표와 카드. 색과 글자가 유리 아래로 지나가며 흐림·굴절이 보입니다.
             Box(
-                Modifier.fillMaxWidth().align(Alignment.BottomCenter).consumeWindowInsets(WindowInsets.navigationBars),
-                contentAlignment = Alignment.Center,
+                Modifier
+                    .fillMaxSize()
+                    .nestedScroll(headerState.connection)
+                    .hazeSource(glassState)
+                    .oneUiPageBackground(),
             ) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(horizontal = 14.dp)
+                        .padding(top = com.yhjang.timetable.ui.OneUiCompactBarHeight + com.yhjang.timetable.ui.OneUiHeaderExpandedExtra + 8.dp, bottom = 96.dp),
+                ) {
+                    SubjectRows()
+                }
+            }
+            com.yhjang.timetable.ui.OneUiCollapsingHeader(state = headerState, title = "홈", subtitle = "9월 24일 목요일")
+            com.yhjang.timetable.ui.OneUiActionPill(
+                pillAlpha = ((headerState.fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 10.dp),
+            ) {
+                listOf(Icons.Default.Refresh, Icons.Default.Notifications, Icons.Default.AccountCircle, Icons.Default.Settings).forEach { icon ->
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth().align(Alignment.BottomCenter), contentAlignment = Alignment.Center) {
+                val width = maxWidth
                 AppNavBar(
                     selected = selected,
                     onSelect = { selected = it },
-                    modifier = Modifier.requiredWidth(boxWidth + 16.dp),
+                    modifier = Modifier.requiredWidth(width + 16.dp),
                     showDev = false,
                 )
+            }
+        }
+    }
+}
+
+/** 시연 화면의 내용 — 실제 앱처럼 과목 색 칸 시간표와 카드 몇 장. */
+@Composable
+private fun SubjectRows() {
+    val scheme = MaterialTheme.colorScheme
+    val week = listOf(
+        listOf("국어", "수학", "영어", "물리", "정보"),
+        listOf("영어", "화학", "수학", "국어", "체육"),
+        listOf("한국사", "국어", "물리", "영어", "수학"),
+        listOf("수학", "체육", "화학", "한국사", "영어"),
+        listOf("물리", "영어", "국어", "수학", "화학"),
+        listOf("정보", "한국사", "체육", "물리", "국어"),
+        listOf("영어", "수학", "정보", "화학", "한국사"),
+    )
+    val tints = mapOf(
+        "국어" to TourPink, "수학" to TourBlue, "영어" to TourViolet, "물리" to TourGreen,
+        "화학" to TourYellow, "한국사" to TourOrange, "정보" to TourSlate, "체육" to Color(0xFF2FB8A6),
+    )
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Text("지금", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        Text("면학 1타임 · 도서관", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("2층 B-14", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = scheme.primary)
+    }
+    Spacer(Modifier.height(10.dp))
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(10.dp)) {
+        repeat(2) {
+            week.forEachIndexed { period, row ->
+                Row(Modifier.fillMaxWidth().height(38.dp).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${period + 1}", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.width(16.dp))
+                    row.forEach { subject ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(horizontal = 2.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(tints[subject] ?: TourSlate),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(subject, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                        }
+                    }
+                }
             }
         }
     }
