@@ -213,6 +213,24 @@ object PostSummarizer {
     private var linesLoaded = false
     private val inFlight = mutableSetOf<String>()
 
+    // MARK: 켜고 끄기 (설정 › 게시판 › AI 요약)
+
+    private const val SETTINGS = "post_summary_settings"
+    private var enabledState: androidx.compose.runtime.MutableState<Boolean>? = null
+
+    private fun enabledState(context: Context): androidx.compose.runtime.MutableState<Boolean> =
+        enabledState ?: mutableStateOf(
+            context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).getBoolean("enabled", true),
+        ).also { enabledState = it }
+
+    /** 꺼 두면 목록·글 화면·알림 어디에도 요약이 보이지 않고, 게시글을 요약 서버로 보내지도 않습니다. 목록 행이 이 값을 구독합니다. */
+    fun isEnabled(context: Context): Boolean = enabledState(context).value
+
+    fun setEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
+        enabledState(context).value = enabled
+    }
+
     sealed interface State {
         data object Loading : State
         data class Done(val summary: PostSummary) : State
@@ -231,6 +249,7 @@ object PostSummarizer {
 
     /** 목록 행에서 부르는 한 줄 요약. 아직 없으면 null. */
     fun line(context: Context, url: String): String? {
+        if (!isEnabled(context)) return null
         if (!linesLoaded) {
             linesLoaded = true
             prefs(context).all.forEach { (k, v) ->
@@ -286,6 +305,7 @@ object PostSummarizer {
 
     /** 글 화면용 — 상태를 차례로 알려 줍니다. */
     suspend fun summarize(context: Context, key: String, title: String, text: String, images: List<String>, onState: (State) -> Unit) {
+        if (!isEnabled(context)) { onState(State.Hidden); return }
         cached(context, key)?.let { onState(if (it.points.isEmpty()) State.Hidden else State.Done(it)); return }
         if (text.length < MIN_CARD_CHARS && images.isEmpty() || text.isBlank() && images.isEmpty()) {
             try {
@@ -315,6 +335,7 @@ object PostSummarizer {
      * 한 글이 실패해도 나머지는 계속합니다.
      */
     suspend fun prefetch(context: Context, posts: List<HanaBoardPost>) {
+        if (!isEnabled(context)) return
         line(context, "")
         for (post in posts) {
             val key = key(post.url)

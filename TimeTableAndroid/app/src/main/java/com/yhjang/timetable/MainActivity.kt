@@ -152,6 +152,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -1618,18 +1619,133 @@ private fun SettingsScreen(
     // 설정에서 돌아올 때 권한 상태가 바뀌었을 수 있어 매 그리기마다 다시 읽습니다 (가벼운 시스템 조회).
     val exactAlarmGranted = ExactAlarmPermission.isGranted(context)
 
+    // 첫 화면은 분류만 보여 주고(삼성 설정처럼), 누르면 그 분류의 세부 화면이 위에 열립니다.
+    var page by remember { mutableStateOf<SettingsPage?>(null) }
+    val liveOnNow = LiveActivity.isEnabled(context)
+    val boardNotifyCount = BoardNotifier.enabledCategories(context).size
+    val aiSummaryOn = PostSummarizer.isEnabled(context)
+
     OneUiFullScreen(title = "설정", onDismiss = onDismiss) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = OneUi.PagePadding,
                 end = OneUi.PagePadding,
-                top = toolbar.calculateTopPadding() + 4.dp,
+                top = toolbar.calculateTopPadding() + 12.dp,
                 bottom = toolbar.calculateBottomPadding() + 32.dp,
             ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                OneUiSectionTitle("화면")
+                OneUiGroupColumn {
+                    SettingsCategoryRow(
+                        page = SettingsPage.ACCOUNT,
+                        summary = if (connected) "하이하나 계정 연결됨 · ${studentGrade}학년" else "로그인이 필요합니다 · ${studentGrade}학년",
+                        onClick = { page = SettingsPage.ACCOUNT },
+                    )
+                }
+            }
+            item {
+                OneUiGroupColumn {
+                    SettingsCategoryRow(
+                        page = SettingsPage.DISPLAY,
+                        summary = "${PlanStore.themeLabel(appTheme)} · 배경 ${if (hasBackgroundPhoto) "사진" else "기본"}",
+                        onClick = { page = SettingsPage.DISPLAY },
+                    )
+                    OneUiDivider(startIndent = SettingsCategoryIndent)
+                    SettingsCategoryRow(
+                        page = SettingsPage.WIDGET,
+                        summary = "테마, 색, 투명도" + if (!exactAlarmGranted) " · 권한 필요" else "",
+                        badgeDot = !exactAlarmGranted,
+                        onClick = { page = SettingsPage.WIDGET },
+                    )
+                }
+            }
+            item {
+                OneUiGroupColumn {
+                    SettingsCategoryRow(
+                        page = SettingsPage.NOTIFY,
+                        summary = listOf(
+                            if (liveOnNow) "Now Bar 켬" else "Now Bar 끔",
+                            if (boardNotifyCount > 0) "게시판 새 글 ${boardNotifyCount}곳" else "게시판 새 글 끔",
+                        ).joinToString(" · "),
+                        onClick = { page = SettingsPage.NOTIFY },
+                    )
+                    OneUiDivider(startIndent = SettingsCategoryIndent)
+                    SettingsCategoryRow(
+                        page = SettingsPage.BOARD,
+                        summary = if (aiSummaryOn) "AI 요약 켬" else "AI 요약 끔",
+                        onClick = { page = SettingsPage.BOARD },
+                    )
+                    OneUiDivider(startIndent = SettingsCategoryIndent)
+                    SettingsCategoryRow(
+                        page = SettingsPage.MEAL,
+                        summary = allergySummary(allergyCodes),
+                        onClick = { page = SettingsPage.MEAL },
+                    )
+                }
+            }
+            item {
+                OneUiGroupColumn {
+                    // 갤러리 설정의 "갤러리 정보•" — 버전만 적고, 상세(업데이트·변경 사항)는 정보 화면에서.
+                    SettingsCategoryRow(
+                        page = SettingsPage.ABOUT,
+                        title = "${context.getString(R.string.app_name)} 정보",
+                        summary = "버전 ${BuildConfig.VERSION_NAME}",
+                        badgeDot = updateAvailable,
+                        onClick = onOpenAppInfo,
+                    )
+                }
+            }
+        }
+    }
+
+    page?.let { current ->
+        OneUiFullScreen(title = current.title, onDismiss = { page = null }) { toolbar ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = OneUi.PagePadding,
+                    end = OneUi.PagePadding,
+                    top = toolbar.calculateTopPadding() + 4.dp,
+                    bottom = toolbar.calculateBottomPadding() + 32.dp,
+                ),
+            ) {
+                when (current) {
+                    SettingsPage.ACCOUNT -> item {
+                OneUiSectionTitle("학사")
+                OneUiGroupColumn {
+                    OneUiListItem(
+                        title = "학사시스템 연동",
+                        subtitle = if (connected) "하이하나 계정으로 로그인됨" else "로그인이 필요합니다",
+                        leading = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                        trailing = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        onClick = onOpenAccount,
+                    )
+                    OneUiDivider()
+                    Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
+                        Text("학년", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (1..3).forEach { grade ->
+                                OneUiChip(
+                                    selected = studentGrade == grade,
+                                    onClick = { onStudentGradeChange(grade) },
+                                    label = "$grade 학년",
+                                )
+                            }
+                        }
+                    }
+                }
+                    }
+                    SettingsPage.DISPLAY -> item {
+                OneUiSectionTitle("테마·색")
                 OneUiGroupColumn {
                     AccentPickerRow(selectedArgb = accentArgb, onSelect = onAccentChange)
                     OneUiDivider()
@@ -1686,42 +1802,8 @@ private fun SettingsScreen(
                         )
                     }
                 }
-            }
-
-            item {
-                OneUiSectionTitle("학사")
-                OneUiGroupColumn {
-                    OneUiListItem(
-                        title = "학사시스템 연동",
-                        subtitle = if (connected) "하이하나 계정으로 로그인됨" else "로그인이 필요합니다",
-                        leading = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
-                        trailing = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        onClick = onOpenAccount,
-                    )
-                    OneUiDivider()
-                    Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
-                        Text("학년", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            (1..3).forEach { grade ->
-                                OneUiChip(
-                                    selected = studentGrade == grade,
-                                    onClick = { onStudentGradeChange(grade) },
-                                    label = "$grade 학년",
-                                )
-                            }
-                        }
                     }
-                }
-            }
-
-            item {
+                    SettingsPage.WIDGET -> item {
                 OneUiSectionTitle("위젯")
                 OneUiGroupColumn {
                     WidgetSettingsSection(
@@ -1752,9 +1834,9 @@ private fun SettingsScreen(
                         )
                     }
                 }
-            }
-
-            item {
+                    }
+                    SettingsPage.NOTIFY -> {
+                        item {
                 OneUiSectionTitle("실시간 일정")
                 // Now Bar(Android 16 실시간 업데이트) — 평일 아침시간~2타임, 주말 1~4타임 동안 지금 구간과 남은 시간.
                 var liveOn by remember { mutableStateOf(LiveActivity.isEnabled(context)) }
@@ -1809,10 +1891,9 @@ private fun SettingsScreen(
                         )
                     }
                 }
-            }
-
-            item {
-                OneUiSectionTitle("알림")
+                        }
+                        item {
+                OneUiSectionTitle("게시판 새 글")
                 // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
                 var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
                 OneUiGroupColumn {
@@ -1837,9 +1918,32 @@ private fun SettingsScreen(
                         if (index != BoardCategory.entries.lastIndex) OneUiDivider()
                     }
                 }
-            }
-
-            item {
+                        }
+                    }
+                    SettingsPage.BOARD -> item {
+                        OneUiSectionTitle("AI 요약")
+                        var aiOn by remember { mutableStateOf(PostSummarizer.isEnabled(context)) }
+                        OneUiGroupColumn {
+                            OneUiListItem(
+                                title = "AI 요약 사용",
+                                subtitle = "게시판 목록, 게시글, 새 글 알림에 생성형 AI가 만든 요약을 표시합니다. 끄면 게시글을 요약 서버로 보내지 않습니다.",
+                                trailing = {
+                                    OneUiSwitch(
+                                        checked = aiOn,
+                                        onCheckedChange = { on ->
+                                            PostSummarizer.setEnabled(context, on)
+                                            aiOn = on
+                                        },
+                                    )
+                                },
+                                onClick = {
+                                    PostSummarizer.setEnabled(context, !aiOn)
+                                    aiOn = !aiOn
+                                },
+                            )
+                        }
+                    }
+                    SettingsPage.MEAL -> item {
                 OneUiSectionTitle("급식")
                 OneUiGroupColumn {
                     Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
@@ -1864,28 +1968,76 @@ private fun SettingsScreen(
                         }
                     }
                 }
-            }
-
-            item {
-                OneUiSectionTitle("정보")
-                OneUiGroupColumn {
-                    // 갤러리 설정의 "갤러리 정보•" — 버전만 적고, 상세(업데이트·변경 사항)는 정보 화면에서.
-                    OneUiListItem(
-                        title = "${context.getString(R.string.app_name)} 정보",
-                        subtitle = "버전 ${BuildConfig.VERSION_NAME}",
-                        badgeDot = updateAvailable,
-                        trailing = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        onClick = onOpenAppInfo,
-                    )
+                    }
+                    SettingsPage.ABOUT -> Unit
                 }
             }
         }
+    }
+}
+
+/** 설정 첫 화면의 분류 — 세부 화면 제목, 아이콘, 아이콘 원 색. */
+private enum class SettingsPage(val title: String, val icon: Int?, val tint: Color) {
+    ACCOUNT("계정·학년", null, Color(0xFF3E91FF)),
+    DISPLAY("화면", R.drawable.ic_palette, Color(0xFFB16CEB)),
+    WIDGET("위젯", R.drawable.ic_widgets, Color(0xFF2FB8A6)),
+    NOTIFY("알림", null, Color(0xFFFF8A3D)),
+    BOARD("게시판", R.drawable.ic_menu_book, Color(0xFF4CAF6A)),
+    MEAL("급식", R.drawable.ic_meal, Color(0xFFF2B01E)),
+    ABOUT("정보", null, Color(0xFF8E96A6)),
+}
+
+/** 아이콘 원(36dp) + 여백만큼 구분선을 들여 글자와 맞춥니다. */
+private val SettingsCategoryIndent = OneUi.RowPadding + 36.dp + 16.dp
+
+/** 설정 첫 화면의 한 줄 — 색 원 안의 아이콘, 분류 이름, 지금 상태 한 줄, 오른쪽 화살표. */
+@Composable
+private fun SettingsCategoryRow(
+    page: SettingsPage,
+    summary: String,
+    onClick: () -> Unit,
+    title: String = page.title,
+    badgeDot: Boolean = false,
+) {
+    OneUiListItem(
+        title = title,
+        subtitle = summary,
+        badgeDot = badgeDot,
+        leading = {
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(page.tint),
+                contentAlignment = Alignment.Center,
+            ) {
+                val iconModifier = Modifier.size(20.dp)
+                when {
+                    page.icon != null -> Icon(painterResource(page.icon), contentDescription = null, tint = Color.White, modifier = iconModifier)
+                    page == SettingsPage.ACCOUNT -> Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.White, modifier = iconModifier)
+                    page == SettingsPage.NOTIFY -> Icon(Icons.Default.Notifications, contentDescription = null, tint = Color.White, modifier = iconModifier)
+                    else -> Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = iconModifier)
+                }
+            }
+        },
+        trailing = {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        onClick = onClick,
+    )
+}
+
+/** "알레르기 새우 외 2개" / "알레르기 표시 안 함" */
+private fun allergySummary(codes: Set<Int>): String {
+    val names = ALLERGY_LEGEND.filterKeys { it in codes }.values.toList()
+    return when (names.size) {
+        0 -> "알레르기 표시 안 함"
+        1 -> "알레르기 ${names[0]}"
+        else -> "알레르기 ${names[0]} 외 ${names.size - 1}개"
     }
 }
 

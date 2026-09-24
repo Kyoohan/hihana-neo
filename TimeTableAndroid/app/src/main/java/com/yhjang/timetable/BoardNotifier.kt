@@ -118,7 +118,7 @@ object BoardNotifier {
             // 요약 서버가 늦거나 실패하면 본문 앞부분으로 대신하고, 그것도 안 되면 게시판 이름만 둡니다.
             val postTitle = first.title.ifEmpty { "(제목 없음)" }
             val detail = runCatching { HanaPostApi.detail(context, first.url) }.getOrNull()
-            val summary = detail?.let { d ->
+            val summary = detail?.takeIf { PostSummarizer.isEnabled(context) }?.let { d ->
                 // 이미지뿐인 가정통신문은 이미지를 읽느라 오래 걸릴 수 있어 넉넉히 기다립니다(백그라운드라 화면을 막지 않음).
                 withTimeoutOrNull(90_000) {
                     runCatching { PostSummarizer.ensure(context, PostSummarizer.key(first.url), d.title.ifEmpty { first.title }, d.text, d.images) }.getOrNull()
