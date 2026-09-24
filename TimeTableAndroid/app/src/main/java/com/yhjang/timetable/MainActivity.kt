@@ -2079,12 +2079,14 @@ private val AppNavBarHeight = 64.dp
 private val AppNavBarMargin = 10.dp
 
 @Composable
-private fun AppNavBar(
+internal fun AppNavBar(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     pagePosition: Float = selected.toFloat(),
     following: Boolean = false,
+    /** Dev 칸 표시 — 디버그 빌드에서만. 투어 그림은 정식 버전과 같게 끕니다. */
+    showDev: Boolean = BuildConfig.DEBUG,
 ) {
     // 시스템 설정이 아니라 앱에 적용된 테마를 따라야, 앱을 라이트로 고정했을 때 바만 어둡게 남지 않습니다.
     val isDark = MaterialTheme.colorScheme.isDark
@@ -2093,7 +2095,7 @@ private fun AppNavBar(
     val activeTint = if (isDark) Color.White else Color(0xFF1A1A1C)
     val inactiveTint = if (isDark) Color(0xFFA3A3AD) else Color(0xFF8E8E93)
 
-    val labels = if (BuildConfig.DEBUG) TabIndex.titles + "Dev" else TabIndex.titles
+    val labels = if (showDev) TabIndex.titles + "Dev" else TabIndex.titles
     val count = labels.size
 
     // 선택 캡슐은 항목들 뒤에 따로 두고, 탭하거나 옆으로 끌면 그 자리로 미끄러집니다 (삼성 헬스와 같은 동작).
@@ -2355,7 +2357,7 @@ object TabIndex {
 private val ScheduleSubTabsHeight = 52.dp
 
 @Composable
-private fun ScheduleSubTabs(selected: Int, onSelect: (Int) -> Unit) {
+internal fun ScheduleSubTabs(selected: Int, onSelect: (Int) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().height(ScheduleSubTabsHeight).padding(bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

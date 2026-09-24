@@ -513,7 +513,12 @@ fun AiSummaryPill(text: String, modifier: Modifier = Modifier) {
 
 /** 글 화면 위 AI 요약 카드 — 그라데이션 테두리, 모서리에서 은은하게 번지는 빛, 한 줄 요약 + 자세한 글머리표. */
 @Composable
-private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
+internal fun SummaryCard(
+    state: PostSummarizer.State?,
+    onRetry: () -> Unit,
+    /** 카드 바깥 좌우 여백 — 글 화면은 페이지 여백, 투어의 작은 글 화면 그림은 그보다 좁게. */
+    horizontalPadding: Dp = OneUi.PagePadding,
+) {
     val visible = state != null && state !is PostSummarizer.State.Hidden
     AnimatedVisibility(
         visible = visible,
@@ -523,7 +528,7 @@ private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = OneUi.PagePadding, vertical = 8.dp)
+                .padding(horizontal = horizontalPadding, vertical = 8.dp)
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surface)
                 .drawBehind {

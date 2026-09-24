@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -71,6 +75,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -78,6 +83,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.yhjang.timetable.ui.LocalHazeState
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiLoading
@@ -85,6 +91,7 @@ import com.yhjang.timetable.ui.OneUiTextField
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiPageBackground
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -459,9 +466,9 @@ private fun ColumnScope.BoardPage() {
 private fun ColumnScope.PrivacyPage(beforeLogin: Boolean, onMore: () -> Unit) {
     PageHead(
         "개인정보 보호",
-        "비밀번호는 이 폰과\n학교 서버만 압니다",
-        if (beforeLogin) "로그인하기 전에, 계정 정보를 어떻게 다루는지 먼저 알려 드립니다."
-        else "학교 계정으로 로그인하는 앱이라, 계정 정보를 어떻게 다루는지 알려 드립니다.",
+        "계정 정보 보호",
+        (if (beforeLogin) "로그인하기 전에 계정 정보를 어떻게 다루는지 알려 드립니다. " else "") +
+            "하이하나 비밀번호는 이 폰에 암호화해 저장하고 학교 학사시스템에만 보냅니다. 개발자를 포함해 다른 누구에게도 전달되지 않습니다.",
     )
     OneUiCard(Modifier.fillMaxWidth()) {
         TourRow(rememberVectorPainter(Icons.Default.Lock), TourBlue, "이 폰에만 암호화해 저장", "안드로이드 키스토어 키로 잠그고, 백업·기기 이전에도 넣지 않습니다.")
@@ -509,7 +516,7 @@ private fun ColumnScope.PermissionsPage() {
         if (!granted) LiveActivity.openNotificationSettings(context)
     }
 
-    PageHead("권한", "알림과 위젯이 제때\n뜨도록 허용해 주세요", "필요한 것만 묻습니다. 나중에 설정에서도 바꿀 수 있습니다.")
+    PageHead("권한", "권한 설정", "알림과 위젯이 제때 뜨려면 아래 권한이 필요합니다. 나중에 설정에서도 바꿀 수 있습니다.")
     OneUiCard(Modifier.fillMaxWidth()) {
         TourRow(rememberVectorPainter(Icons.Default.Notifications), TourOrange, "알림", "게시판 새 글, 알리미, Now Bar") {
             GrantChip(notifications, "허용") {
@@ -648,17 +655,18 @@ private fun ColumnScope.DonePage() {
 }
 
 // MARK: - 업데이트 (11.1)
+// 투어 문구 규칙: 제목은 명사형(문장 X), 설명은 문장으로.
 
 @Composable
 private fun ColumnScope.UpdateSummaryPage() {
     // 이 장들은 11.1 에서 바뀐 것을 소개하므로 버전을 고정해 적습니다 — 다음 큰 업데이트 때 내용과 함께 바꿉니다.
-    PageHead("11.1 업데이트", "게시판과 하단 바가\n달라졌습니다")
+    PageHead("새 버전", "11.1 업데이트", "게시판, 학사 탭, 귀가 기간의 일정 표시가 달라졌습니다. 주요 변경 사항을 차례로 소개합니다.")
     OneUiCard(Modifier.fillMaxWidth()) {
-        TourRow(painterResource(R.drawable.ic_settings_book), TourViolet, "게시글을 앱 안에서 · AI 요약")
+        TourRow(painterResource(R.drawable.ic_settings_book), TourViolet, "앱 내 게시글과 AI 요약")
         RowGap()
-        TourRow(painterResource(R.drawable.ic_widgets), TourBlue, "하단 바 새 구성")
+        TourRow(painterResource(R.drawable.ic_widgets), TourBlue, "학사 탭 개편")
         RowGap()
-        TourRow(painterResource(R.drawable.ic_home_stay), TourGreen, "귀가 기간엔 일정 쉬기")
+        TourRow(painterResource(R.drawable.ic_home_stay), TourGreen, "귀가 기간 일정 자동 해제")
         RowGap()
         TourRow(painterResource(R.drawable.ic_settings_meal), TourYellow, "급식 칼로리·영양·원산지")
         RowGap()
@@ -668,55 +676,168 @@ private fun ColumnScope.UpdateSummaryPage() {
 
 @Composable
 private fun ColumnScope.UpdateBoardPage() {
-    PageHead("게시판", "글을 앱 안에서 열고\n요약부터 봅니다", "목록엔 한 줄 요약, 글 위엔 자세한 요약. 이미지뿐인 가정통신문도 읽어 요약합니다.", isNew = true)
+    PageHead(
+        "게시판",
+        "앱 내에서 열리는 게시글과 AI 요약",
+        "이제 게시글이 브라우저로 하이하나를 띄우는 대신 앱 안에서 바로 열립니다. 요약은 구글의 최신 LLM인 Gemma 4로 만들고, " +
+            "이미지만 있는 글도 이미지를 인식해 요약합니다.",
+        isNew = true,
+    )
+    // 목록 — 한 줄 요약 알약.
+    TourCaption("게시판 목록")
     OneUiCard(Modifier.fillMaxWidth()) {
-        Text("9월 5주차 주간영양량 및 원산지", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-        AiSummaryPill("자세한 내용은 첨부파일 참고", Modifier.padding(top = 9.dp))
-        Spacer(Modifier.height(16.dp))
-        Text("방과후학교 수익자부담교육비 정산 내역 안내", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-        AiSummaryPill("환불 금액은 하이하나 마이페이지에서 확인", Modifier.padding(top = 9.dp))
+        Text("2학기 교내 수학경시대회 참가 신청 안내", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+        AiSummaryPill("10/7(수)까지 포털 신청, 10/14 시청각실", Modifier.padding(top = 9.dp))
+    }
+    Spacer(Modifier.height(18.dp))
+    // 글 화면 — 예전엔 브라우저 주소창이 떴던 자리에 이제 앱 화면이 그대로 열립니다.
+    TourCaption("이전에는 브라우저로")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .alpha(0.55f)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "hh.hana.hs.kr/main/board/board_view.do",
+            style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.LineThrough),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+    Spacer(Modifier.height(18.dp))
+    TourCaption("이제는 앱 안에서")
+    InAppPostPreview()
+}
+
+/** 그림 위 작은 설명 글씨. */
+@Composable
+private fun TourCaption(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
+    )
+}
+
+/** 앱 안 글 화면을 줄여 그린 그림 — 뒤로 버튼·제목·실제 AI 요약 카드·본문·첨부. */
+@Composable
+private fun InAppPostPreview() {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(scheme.onSurface.copy(alpha = 0.05f))
+            .padding(vertical = 14.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(17.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text("학생공지", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(12.dp))
+        Column(Modifier.padding(horizontal = 18.dp)) {
+            Text("2학기 교내 수학경시대회 참가 신청 안내", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text("교무기획부 · 2026-09-22 · 조회 312", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        }
+        SummaryCard(
+            state = PostSummarizer.State.Done(
+                PostSummary(
+                    line = "10/7(수)까지 포털 신청, 10/14 시청각실",
+                    points = listOf("2학년 희망자 대상, 포털 신청·내역에서 신청함", "대회는 10/14(수) 7교시, 시청각실에서 진행함"),
+                ),
+            ),
+            onRetry = {},
+            horizontalPadding = 10.dp,
+        )
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf(1f, 0.92f, 0.66f).forEach { w ->
+                Box(Modifier.fillMaxWidth(w).height(8.dp).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.1f)))
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier
+                .padding(horizontal = 14.dp)
+                .clip(CircleShape)
+                .background(scheme.onSurface.copy(alpha = 0.08f))
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_tour_attach), contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(5.dp))
+            Text("참가신청서.hwp", style = MaterialTheme.typography.labelMedium)
+        }
     }
 }
 
 @Composable
 private fun ColumnScope.UpdateTabsPage() {
-    PageHead("하단 바", "학사 탭이 신청·내역과\n게시판으로 나뉘었습니다", "시간표와 학사일정은 '일정' 탭에서 위쪽 칩으로 바꿔 봅니다.")
-    OneUiCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth()) {
-            listOf("홈" to false, "신청·내역" to true, "급식" to false, "게시판" to true, "일정" to true).forEach { (name, changed) ->
-                Text(
-                    name,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (changed) FontWeight.Bold else FontWeight.Medium,
-                    color = if (changed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+    PageHead(
+        "하단 바",
+        "학사 탭 개편",
+        "학사 탭이 신청·내역과 게시판으로 나뉘었습니다. 시간표와 학사일정은 일정 탭 위쪽의 칩으로 바꿔 볼 수 있습니다.",
+    )
+    // 실제 하단 바·칩을 그대로 그립니다 — 새로 생긴 칸(신청·내역 → 게시판 → 일정)을 차례로 짚어 줍니다.
+    val highlights = listOf(TabIndex.APPLY, TabIndex.BOARD, TabIndex.SCHEDULE)
+    var step by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_600)
+            step = (step + 1) % highlights.size
         }
     }
-    Spacer(Modifier.height(10.dp))
-    OneUiCard(Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("시간표" to false, "학사일정" to true).forEach { (name, on) ->
-                Text(
-                    name,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (on) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
+    var chip by remember { mutableIntStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2_000)
+            chip = 1 - chip
         }
+    }
+    TourCaption("하단 바")
+    // 탐색 바 자체의 시스템 바 여백과 뒤 화면 유리 효과는 빼고(투어 창 안이라) 모양만 그대로.
+    // 바는 원래 화면 가장자리에서 20dp 안쪽에 뜨므로, 페이지 여백(24dp)을 넘어 그만큼 넓혀 실제와 같은 폭으로 그립니다.
+    CompositionLocalProvider(LocalHazeState provides null) {
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().consumeWindowInsets(WindowInsets.navigationBars),
+            contentAlignment = Alignment.Center,
+        ) {
+            AppNavBar(
+                selected = highlights[step],
+                onSelect = { index -> highlights.indexOf(index).takeIf { it >= 0 }?.let { step = it } },
+                modifier = Modifier.requiredWidth(maxWidth + 48.dp),
+                showDev = false,
+            )
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    TourCaption("일정 탭")
+    Box(Modifier.padding(horizontal = 6.dp)) {
+        ScheduleSubTabs(chip) { chip = it }
     }
 }
 
 @Composable
 private fun ColumnScope.UpdateHomeStayPage() {
-    PageHead("귀가 기간", "집에 있는 동안엔\n일정도 쉽니다", "학사일정의 귀가·귀교에 맞춰 일정과 Now Bar를 끄고, 귀교일 마지막 타임부터 다시 켭니다.", isNew = true)
+    PageHead(
+        "일정",
+        "귀가 기간 일정 자동 해제",
+        "학사일정의 귀가·귀교에 맞춰 집에 있는 동안에는 일정과 Now Bar가 꺼집니다. 귀교일에는 마지막 타임부터 다시 표시됩니다.",
+        isNew = true,
+    )
     OneUiCard(Modifier.fillMaxWidth()) {
         Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
