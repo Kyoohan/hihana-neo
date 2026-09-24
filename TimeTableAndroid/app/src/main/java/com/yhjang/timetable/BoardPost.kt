@@ -545,7 +545,7 @@ private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "생성형 AI가 만든 요약으로, 틀린 내용이 있을 수 있습니다. 중요한 내용은 원문을 확인하세요.",
+                            "생성형 AI가 만든 요약으로, 부정확하거나 원문과 다를 수 있습니다. 중요한 내용은 원문을 확인하세요.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
