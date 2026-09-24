@@ -343,16 +343,9 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
                 Text("N", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
             }
         }
-        // AI 한 줄 요약 — 목록을 여는 동안 한 건씩 채워지며, 자리를 미리 비워 두지 않아 없는 글은 예전처럼 보입니다.
+        // AI 한 줄 요약 알약 — 목록을 여는 동안 한 건씩 채워지며, 없는 글은 자리를 비워 두지 않고 예전처럼 보입니다.
         PostSummarizer.line(LocalContext.current, post.url)?.let { line ->
-            Spacer(Modifier.height(3.dp))
-            Text(
-                line,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            AiSummaryPill(line, Modifier.padding(top = 9.dp))
         }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

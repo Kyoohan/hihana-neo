@@ -59,6 +59,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -173,7 +181,7 @@ data class PostSummary(val line: String, val points: List<String>)
 object PostSummarizer {
     private const val TAG = "PostSummary"
     private const val ENDPOINT = "https://hihana-summary.kyoohan0711ultra.workers.dev/summarize"
-    private const val PREFS = "post_summaries_v2"
+    private const val PREFS = "post_summaries_v3"
     private const val MAX_CACHED = 300
     /** 이보다 짧은 글은 AI 없이 본문 앞부분을 한 줄 요약으로 씁니다. */
     const val MIN_CHARS = 200
@@ -401,6 +409,59 @@ private fun PostHeader(title: String, meta: String?) {
     }
 }
 
+// MARK: - AI 표식 (그라데이션)
+
+/** AI 요약에만 쓰는 파랑 → 보라 → 분홍 그라데이션. 앱 강조색과 섞이지 않게 따로 둡니다. */
+private val AiBlue = Color(0xFF6EA8FF)
+private val AiViolet = Color(0xFFA78BFA)
+private val AiPink = Color(0xFFF29FC8)
+private val AiGradient = Brush.linearGradient(listOf(AiBlue, AiViolet, AiPink))
+private val AiTint = Brush.linearGradient(listOf(AiBlue.copy(alpha = 0.14f), AiViolet.copy(alpha = 0.11f), AiPink.copy(alpha = 0.10f)))
+
+/** 큰 별 + 작은 별 반짝이 — 그라데이션으로 칠합니다. */
+private val AiSparkle: ImageVector by lazy {
+    ImageVector.Builder("AiSparkle", 24.dp, 24.dp, 24f, 24f)
+        .addPath(
+            addPathNodes("M12 2.5c.5 4.6 2.9 7 7.5 7.5-4.6.5-7 2.9-7.5 7.5-.5-4.6-2.9-7-7.5-7.5 4.6-.5 7-2.9 7.5-7.5Z"),
+            fill = AiGradient,
+        )
+        .addPath(
+            addPathNodes("M19 15.5c.2 1.9 1.1 2.8 3 3-1.9.2-2.8 1.1-3 3-.2-1.9-1.1-2.8-3-3 1.9-.2 2.8-1.1 3-3Z"),
+            fill = AiGradient,
+            fillAlpha = 0.85f,
+        )
+        .build()
+}
+
+@Composable
+private fun AiSparkleIcon(size: Dp) {
+    Image(AiSparkle, contentDescription = null, modifier = Modifier.size(size))
+}
+
+/** 게시판 목록의 한 줄 요약 알약 — 그라데이션 테두리와 옅은 그라데이션 바탕, 최대 두 줄. */
+@Composable
+fun AiSummaryPill(text: String, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier
+            .clip(shape)
+            .background(AiTint)
+            .border(1.dp, AiGradient, shape)
+            .padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+    ) {
+        Box(Modifier.padding(top = 2.dp)) { AiSparkleIcon(15.dp) }
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 글 화면 위 AI 요약 카드 — 그라데이션 테두리, 모서리에서 은은하게 번지는 빛, 한 줄 요약 + 자세한 글머리표. */
 @Composable
 private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
     val visible = state != null && state !is PostSummarizer.State.Hidden
@@ -408,29 +469,40 @@ private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
         visible = visible,
         enter = fadeIn(tween(220)) + expandVertically(spring(stiffness = 500f, dampingRatio = 0.9f)),
     ) {
-        OneUiCard(
-            modifier = Modifier
+        val shape = RoundedCornerShape(OneUi.CornerLarge)
+        Column(
+            Modifier
                 .fillMaxWidth()
                 .padding(horizontal = OneUi.PagePadding, vertical = 8.dp)
-                .animateContentSize(spring(stiffness = 400f, dampingRatio = 0.9f)),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surface)
+                .drawBehind {
+                    val r = size.maxDimension
+                    drawRect(Brush.radialGradient(listOf(AiBlue.copy(alpha = 0.22f), Color.Transparent), Offset.Zero, r * 0.75f))
+                    drawRect(Brush.radialGradient(listOf(AiViolet.copy(alpha = 0.18f), Color.Transparent), Offset(size.width, size.height * 0.1f), r * 0.65f))
+                    drawRect(Brush.radialGradient(listOf(AiPink.copy(alpha = 0.14f), Color.Transparent), Offset(size.width * 0.8f, size.height * 1.1f), r * 0.7f))
+                }
+                .border(1.dp, AiGradient, shape)
+                .animateContentSize(spring(stiffness = 400f, dampingRatio = 0.9f))
+                .padding(OneUi.CardPadding),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
-                Spacer(Modifier.width(8.dp))
+                AiSparkleIcon(17.dp)
+                Spacer(Modifier.width(7.dp))
                 Text(
                     "AI 요약",
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelLarge.copy(brush = AiGradient),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
                 )
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             when (state) {
                 is PostSummarizer.State.Done -> {
-                    Text(state.summary.line, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Text(state.summary.line, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (state.summary.points.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
+                        Spacer(Modifier.height(12.dp))
                         SummaryLines(state.summary.points)
                     }
                 }
@@ -452,12 +524,12 @@ private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
 
 @Composable
 private fun SummaryLines(lines: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         lines.forEach { line ->
             Row {
-                Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(8.dp))
-                Text(line, style = MaterialTheme.typography.bodyMedium)
+                Box(Modifier.padding(top = 8.dp).size(5.dp).clip(CircleShape).background(AiGradient))
+                Spacer(Modifier.width(9.dp))
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f))
             }
         }
     }
