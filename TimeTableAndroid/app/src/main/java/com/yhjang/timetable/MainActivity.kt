@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -1976,19 +1977,27 @@ private fun SettingsScreen(
     }
 }
 
-/** 설정 첫 화면의 분류 — 세부 화면 제목, 아이콘, 아이콘 원 색. */
+/**
+ * 설정 첫 화면의 분류 — 세부 화면 제목, 아이콘, 아이콘 원 색.
+ * 색은 One UI 9 설정 앱 아이콘에서 그대로 따왔습니다(계정 파랑, 디스플레이 연두, 테마 분홍, 알림 주황,
+ * 보안·소리 보라, 유용한 기능 노랑, 폰 정보 회보라).
+ */
 private enum class SettingsPage(val title: String, val icon: Int?, val tint: Color) {
-    ACCOUNT("계정·학년", null, Color(0xFF3E91FF)),
-    DISPLAY("화면", R.drawable.ic_palette, Color(0xFFB16CEB)),
-    WIDGET("위젯", R.drawable.ic_widgets, Color(0xFF2FB8A6)),
-    NOTIFY("알림", null, Color(0xFFFF8A3D)),
-    BOARD("게시판", R.drawable.ic_menu_book, Color(0xFF4CAF6A)),
-    MEAL("급식", R.drawable.ic_meal, Color(0xFFF2B01E)),
-    ABOUT("정보", null, Color(0xFF8E96A6)),
+    ACCOUNT("계정·학년", R.drawable.ic_settings_person, Color(0xFF387AFF)),
+    DISPLAY("화면", R.drawable.ic_settings_display, Color(0xFFA4D925)),
+    WIDGET("위젯", R.drawable.ic_widgets, Color(0xFFEC5881)),
+    NOTIFY("알림", null, Color(0xFFE65B17)),
+    BOARD("게시판", R.drawable.ic_menu_book, Color(0xFF715AFF)),
+    MEAL("급식", R.drawable.ic_settings_meal, Color(0xFFFDBE4E)),
+    ABOUT("정보", R.drawable.ic_settings_info, Color(0xFF6868A3)),
 }
 
-/** 아이콘 원(36dp) + 여백만큼 구분선을 들여 글자와 맞춥니다. */
-private val SettingsCategoryIndent = OneUi.RowPadding + 36.dp + 16.dp
+/** One UI 설정처럼 26dp 원 안에 지름의 절반이 조금 안 되는 흰 아이콘. */
+private val SettingsIconCircle = 26.dp
+private val SettingsIconGlyph = 15.dp
+
+/** 목록 줄의 아이콘 칸(24dp) + 여백만큼 구분선을 들여 글자와 맞춥니다. */
+private val SettingsCategoryIndent = OneUi.RowPadding + 24.dp + 16.dp
 
 /** 설정 첫 화면의 한 줄 — 색 원 안의 아이콘, 분류 이름, 지금 상태 한 줄, 오른쪽 화살표. */
 @Composable
@@ -2004,19 +2013,19 @@ private fun SettingsCategoryRow(
         subtitle = summary,
         badgeDot = badgeDot,
         leading = {
+            // 목록의 아이콘 칸은 24dp 라서, 원은 칸보다 살짝 크게 그립니다(양옆 1dp).
             Box(
                 Modifier
-                    .size(36.dp)
+                    .requiredSize(SettingsIconCircle)
                     .clip(CircleShape)
                     .background(page.tint),
                 contentAlignment = Alignment.Center,
             ) {
-                val iconModifier = Modifier.size(20.dp)
-                when {
-                    page.icon != null -> Icon(painterResource(page.icon), contentDescription = null, tint = Color.White, modifier = iconModifier)
-                    page == SettingsPage.ACCOUNT -> Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.White, modifier = iconModifier)
-                    page == SettingsPage.NOTIFY -> Icon(Icons.Default.Notifications, contentDescription = null, tint = Color.White, modifier = iconModifier)
-                    else -> Icon(Icons.Default.Info, contentDescription = null, tint = Color.White, modifier = iconModifier)
+                val iconModifier = Modifier.size(SettingsIconGlyph)
+                if (page.icon != null) {
+                    Icon(painterResource(page.icon), contentDescription = null, tint = Color.White, modifier = iconModifier)
+                } else {
+                    Icon(Icons.Default.Notifications, contentDescription = null, tint = Color.White, modifier = Modifier.size(SettingsIconGlyph + 2.dp))
                 }
             }
         },
