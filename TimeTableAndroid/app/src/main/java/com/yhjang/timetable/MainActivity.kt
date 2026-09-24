@@ -1145,8 +1145,10 @@ private fun TimeTableAppContent(
                     // 사라지면서 헤더를 다시 펼칠 방법이 없어집니다 — 헤더가 펼쳐진 상태의 높이로 계산합니다.
                     val collapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() }
                     val available = maxHeight - collapsedBy - tabContentPadding.calculateTopPadding() - tabContentPadding.calculateBottomPadding() - cardChrome
-                    val rowHeight = (available / periodRows).coerceIn(56.dp, 78.dp)
-                    val fits = !timetableInstalled || rowHeight * periodRows <= available
+                    // 줄 사이 구분선(0.8dp × 줄 수)도 높이를 차지합니다 — 빼지 않으면 마지막 교시 칸이 카드 끝에 잘렸습니다.
+                    val gridLines = 1.dp * periodRows
+                    val rowHeight = ((available - gridLines) / periodRows).coerceIn(56.dp, 78.dp)
+                    val fits = !timetableInstalled || rowHeight * periodRows + gridLines <= available
                     // 스크롤할 게 없는데 헤더가 접혀 있으면(다른 탭에서 넘어온 경우) 펼쳐 둡니다.
                     LaunchedEffect(fits, isActivePage) { if (fits && isActivePage) headerState.expand() }
                     Column(
@@ -2847,17 +2849,19 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                         if (lesson != null) {
                             Column {
                                 Text(
-                                    lesson.subject,
+                                    lesson.title,
                                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp, lineHeight = 14.sp),
                                     fontWeight = FontWeight.SemiBold,
-                                    maxLines = 3,
+                                    // 선생님·교실 두 줄이 들어가도록 과목명은 선생님이 있으면 두 줄까지.
+                                    maxLines = if (lesson.teacher != null) 2 else 3,
                                     overflow = TextOverflow.Ellipsis,
                                     color = if (lesson.isFree) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                                 )
-                                lesson.room?.let {
+                                // 장소 자리 — 다른 화면은 "선생님 · 교실" 한 줄이지만, 칸이 좁은 주간 표는 한 줄씩 나눠 씁니다.
+                                listOfNotNull(lesson.teacher, lesson.room).forEach {
                                     Text(
                                         it,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
                                         color = MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,

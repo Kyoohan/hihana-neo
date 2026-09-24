@@ -465,7 +465,7 @@ private fun ScheduleContent(
 private fun statusText(block: Block): String {
     val kind = block.kind
     if (kind is BlockKind.LessonKind && !kind.lesson.isFree) {
-        return "${kind.period}교시 · ${kind.lesson.subject}"
+        return "${kind.period}교시 · ${kind.lesson.title}"
     }
     // 공강처럼 교시가 상태 라벨과 겹치면 중복을 피해 교시만 보여줍니다
     if (block.periodNumber != null && block.room == null) return "${block.periodNumber}교시"

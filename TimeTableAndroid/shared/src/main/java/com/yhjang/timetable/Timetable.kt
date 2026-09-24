@@ -168,6 +168,9 @@ data class Lesson(val subject: String, val room: String?) {
     val title: String get() = split.first
     val teacher: String? get() = split.second
 
+    /** 화면에 쓰는 장소 — 선생님이 있으면 "김응주 · 체육관" 처럼 앞에 붙입니다. 교실이 없으면(공강) null. */
+    val place: String? get() = room?.let { r -> listOfNotNull(teacher, r).joinToString(" · ") }
+
     private val split: Pair<String, String?>
         get() {
             val trimmed = subject.trim().removeSuffix("/").trim()
@@ -210,13 +213,13 @@ sealed class NextUp {
 
     val title: String
         get() = when (this) {
-            is LessonNext -> lesson.subject
+            is LessonNext -> lesson.title
             is StudyNext -> place?.name ?: "위치 미설정"
         }
 
     val room: String?
         get() = when (this) {
-            is LessonNext -> lesson.room
+            is LessonNext -> lesson.place
             is StudyNext -> place?.detail
         }
 
@@ -254,7 +257,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
 
     val title: String
         get() = when (kind) {
-            is BlockKind.LessonKind -> kind.lesson.subject
+            is BlockKind.LessonKind -> kind.lesson.title
             is BlockKind.StudyKind -> kind.place?.name ?: "위치 미설정"
             is BlockKind.GapKind -> kind.gap.next?.title ?: kind.gap.fallbackTitle
             BlockKind.BlankKind -> ""
@@ -263,7 +266,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
     /** 이동해야 할 교실 / 자리 (공강·생활관·미설정이면 null → 칩이 숨겨집니다) */
     val room: String?
         get() = when (kind) {
-            is BlockKind.LessonKind -> kind.lesson.room
+            is BlockKind.LessonKind -> kind.lesson.place
             is BlockKind.StudyKind -> kind.place?.detail
             is BlockKind.GapKind -> kind.gap.next?.room
             BlockKind.BlankKind -> null
