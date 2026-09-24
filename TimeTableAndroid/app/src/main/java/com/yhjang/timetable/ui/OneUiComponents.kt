@@ -923,12 +923,11 @@ fun OneUiFullScreen(
                         .padding(start = 10.dp, end = 12.dp, top = statusTop),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // 뒤로가기 — 스크롤하면 글래스 원이 켜집니다.
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .oneUiGlassSurface(CircleShape, alpha = glass, container = scheme.floatingPill, state = hazeState),
-                        contentAlignment = Alignment.Center,
+                    // 뒤로가기 — 스크롤하면 오른쪽 액션 알약과 같은 액체 유리 원(렌즈·림·반사광)이 켜집니다.
+                    OneUiLiquidGlassBox(
+                        modifier = Modifier.size(44.dp),
+                        cornerRadius = 22.dp,
+                        alpha = glass,
                     ) {
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")

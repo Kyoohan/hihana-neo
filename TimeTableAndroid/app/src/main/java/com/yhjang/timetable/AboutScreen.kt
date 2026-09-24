@@ -325,59 +325,73 @@ private fun LicensesScreen(onDismiss: () -> Unit) {
     }
 }
 
-/** 법적 고지의 한 단락 — 제목과 글머리 문장들. */
+/** 법적 고지의 한 조 — 조 제목과 항(①②…) 또는 호(1. 2. …) 문장들. */
 private data class LegalSection(val title: String, val items: List<String>)
 
 /**
- * 법적 고지 — 비공식 앱 안내, 생성형 AI 이용 고지(인공지능기본법 제31조: 생성형 AI 기반 서비스임을 미리 알리고
- * 결과물이 AI 생성물임을 표시), 개인정보·계정 처리, 데이터 출처, 책임의 한계.
- * 앱이 실제로 하는 일(보내는 곳, 저장하는 것)이 바뀌면 이 문구도 함께 고쳐야 합니다.
+ * 법적 고지 — 약관 형식(조·항·호)으로 씁니다. 제3조는 인공지능기본법 제31조의 사전 고지(생성형 AI 기반 서비스임)와
+ * 결과물 표시(AI 생성물임)를 겸합니다. 앱이 실제로 하는 일(보내는 곳, 저장하는 것)이 바뀌면 이 문구도 함께 고쳐야 합니다.
  */
 private val LEGAL_SECTIONS = listOf(
     LegalSection(
-        "비공식 앱 안내",
+        "제1조(서비스의 성격)",
         listOf(
-            "하이하나 Neo는 하나고등학교 학생들의 편의를 위한 비공식 앱이며, 하나고등학교나 하이하나 포털 등 학교 공식 시스템과 제휴하거나 승인받은 앱이 아닙니다.",
-            "'하나고등학교', '하이하나' 등의 명칭과 관련 권리는 각 권리자에게 있습니다.",
-            "시간표·급식·학사일정·게시글·신청 결과 등은 학교 시스템에서 받아 정리해 보여 주는 것이라 원본과 다르거나 늦게 반영될 수 있습니다. 중요한 일정과 신청·예약 결과는 반드시 공식 시스템에서 확인해 주세요.",
+            "① 하이하나 Neo(이하 \"본 앱\"이라 합니다)는 하나고등학교 재학생의 편의를 위하여 개인이 제작·배포하는 비공식 애플리케이션으로서, 하나고등학교 및 하이하나 포털을 포함한 학교의 공식 정보시스템과 제휴하거나 그 승인을 받지 아니하였습니다.",
+            "② \"하나고등학교\", \"하이하나\" 등의 명칭 및 이와 관련된 일체의 권리는 각 권리자에게 귀속됩니다.",
         ),
     ),
     LegalSection(
-        "생성형 AI 이용 안내",
+        "제2조(정보의 정확성)",
         listOf(
-            "게시판의 'AI 요약'(목록의 한 줄 요약, 게시글 위의 자세한 요약, 새 글 알림의 요약)은 Google Gemma 기반 생성형 인공지능이 만든 결과물입니다.",
-            "AI 요약은 참고용이며, 부정확하거나 원문의 의도와 다를 수 있습니다. 중요한 내용은 반드시 원문을 확인해 주세요.",
-            "요약은 Cloudflare Workers AI에서 만들어집니다. 이때 게시글의 제목·본문과 본문 이미지(포털에 올라온 파일)만 요약 서버로 보내며, 계정 정보나 학번 같은 개인정보는 보내지 않습니다.",
-            "만들어진 요약은 같은 글을 여는 다른 사용자와 함께 쓰기 위해 요약 서버에 최대 180일 동안 보관됩니다.",
-            "게시글 요약 외의 기능(시간표, 급식, 신청 등)에는 생성형 AI를 쓰지 않습니다.",
+            "본 앱이 제공하는 시간표, 급식, 학사일정, 게시물, 신청·예약 결과 등의 정보는 학교 정보시스템으로부터 수집하여 가공한 것으로서 원본과 상이하거나 반영이 지연될 수 있습니다. 이용자는 중요한 일정 및 신청·예약 결과를 반드시 학교의 공식 정보시스템을 통하여 확인하여야 합니다.",
         ),
     ),
     LegalSection(
-        "개인정보와 계정",
+        "제3조(생성형 인공지능의 이용)",
         listOf(
-            "하이하나 계정의 아이디·비밀번호는 이 기기 안에 암호화되어 저장되며, 로그인할 때 학교 포털(hh.hana.hs.kr)로만 전송됩니다. 개발자에게 전송되거나 수집되지 않습니다.",
-            "심야면학 로그인 정보는 심야면학 신청 서비스로만 전송되고, 기기에는 로그인 유지를 위한 정보만 암호화되어 저장됩니다.",
-            "계정 정보는 기기 백업에 포함되지 않습니다. 앱을 지우면 함께 삭제됩니다.",
-            "앱에는 광고나 사용자 추적·분석 도구가 없습니다.",
+            "① 본 앱은 「인공지능 발전과 신뢰 기반 조성 등에 관한 기본법」 제31조에 따라 이 조의 사항을 고지합니다.",
+            "② 본 앱의 게시물 요약 기능(게시판 목록의 한 줄 요약, 게시물 상세 화면의 요약 및 새 게시물 알림의 요약을 포함하며, 이하 \"AI 요약\"이라 합니다)은 Google의 Gemma 모델에 기반한 생성형 인공지능을 이용하여 제공되며, AI 요약은 생성형 인공지능에 의하여 생성된 결과물입니다.",
+            "③ AI 요약은 참고 목적으로만 제공되며, 본 앱은 그 정확성 및 완전성을 보증하지 아니합니다. 이용자는 중요한 사항에 관하여 반드시 게시물 원문을 확인하여야 합니다.",
+            "④ AI 요약은 Cloudflare, Inc.가 제공하는 Workers AI를 통하여 생성되며, 이를 위하여 게시물의 제목, 본문 및 본문에 포함된 이미지가 요약 서버로 전송됩니다. 이용자의 계정 정보, 학번 등 개인을 식별할 수 있는 정보는 전송되지 아니합니다.",
+            "⑤ 생성된 AI 요약은 동일한 게시물을 열람하는 다른 이용자에게 제공하기 위하여 요약 서버에 최대 180일간 보관됩니다.",
+            "⑥ 본 앱은 AI 요약 외의 기능에 생성형 인공지능을 이용하지 아니합니다.",
         ),
     ),
     LegalSection(
-        "데이터 출처",
+        "제4조(계정 정보 및 개인정보의 처리)",
         listOf(
-            "시간표·학사일정·게시판·신청·도서관: 하이하나 포털(hh.hana.hs.kr)",
-            "급식 식단: 하나고등학교 홈페이지(www.hana.hs.kr)",
-            "급식 칼로리·영양성분·원산지: 나이스 교육정보 개방 포털(open.neis.go.kr) 공공데이터",
-            "앱 업데이트 확인: GitHub",
+            "① 이용자가 입력한 하이하나 계정의 아이디 및 비밀번호는 이용자의 단말기 내에 암호화하여 저장되며, 로그인을 위하여 하이하나 포털(hh.hana.hs.kr)에만 전송됩니다. 개발자는 이를 수집하거나 보관하지 아니합니다.",
+            "② 심야면학 서비스의 로그인 정보는 해당 서비스에만 전송되며, 단말기에는 로그인 상태의 유지에 필요한 정보만 암호화하여 저장됩니다.",
+            "③ 제1항 및 제2항의 정보는 단말기의 백업 대상에서 제외되며, 본 앱을 삭제하는 경우 함께 삭제됩니다.",
+            "④ 본 앱은 광고 및 이용자의 행태를 추적·분석하는 도구를 포함하지 아니합니다.",
         ),
     ),
     LegalSection(
-        "책임의 한계",
+        "제5조(정보의 출처)",
         listOf(
-            "이 앱은 개인이 무료로 제공하며, 모든 기능이 항상 정확하게 동작함을 보증하지 않습니다.",
-            "앱에 표시된 정보만 믿어 생긴 신청 누락이나 일정 착오 등에 대해서는 책임지기 어렵습니다. 학교 공식 안내를 우선해 주세요.",
+            "본 앱이 제공하는 정보의 출처는 다음 각 호와 같습니다.",
+            "1. 시간표, 학사일정, 게시판, 신청 및 도서관: 하이하나 포털(hh.hana.hs.kr)",
+            "2. 급식 식단: 하나고등학교 홈페이지(www.hana.hs.kr)",
+            "3. 급식의 열량, 영양성분 및 원산지: 나이스 교육정보 개방 포털(open.neis.go.kr)",
+            "4. 앱 업데이트 정보: GitHub",
+        ),
+    ),
+    LegalSection(
+        "제6조(책임의 제한)",
+        listOf(
+            "① 본 앱은 무상으로 제공되며, 개발자는 본 앱이 중단 없이 또는 오류 없이 작동함을 보증하지 아니합니다.",
+            "② 개발자는 이용자가 본 앱에 표시된 정보에 의존함으로써 발생한 신청 누락, 일정 착오 그 밖의 손해에 대하여, 개발자의 고의 또는 중대한 과실이 없는 한 책임을 지지 아니합니다.",
         ),
     ),
 )
+
+/** 항·호 번호(①, 1.)를 떼어 내어 번호는 왼쪽 칸에, 본문은 그 옆에 들여 씁니다. 번호가 없으면 null. */
+private fun splitLegalMarker(line: String): Pair<String, String>? {
+    val first = line.firstOrNull() ?: return null
+    if (first in '\u2460'..'\u2473') return first.toString() to line.drop(1).trim()
+    Regex("^(\\d+\\.)\\s+(.*)$").find(line)?.let { return it.groupValues[1] to it.groupValues[2] }
+    return null
+}
 
 @Composable
 private fun LegalNoticeScreen(onDismiss: () -> Unit) {
@@ -397,23 +411,40 @@ private fun LegalNoticeScreen(onDismiss: () -> Unit) {
                     OneUiSectionTitle(section.title)
                     OneUiCard(modifier = Modifier.fillMaxWidth()) {
                         section.items.forEachIndexed { index, line ->
-                            Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Text("·", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(8.dp))
+                            val marked = splitLegalMarker(line)
+                            if (marked == null) {
                                 Text(line, style = MaterialTheme.typography.bodyMedium)
+                            } else {
+                                Row {
+                                    Text(
+                                        marked.first,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.width(22.dp),
+                                    )
+                                    Text(marked.second, style = MaterialTheme.typography.bodyMedium)
+                                }
                             }
-                            if (index != section.items.lastIndex) Spacer(Modifier.height(4.dp))
+                            if (index != section.items.lastIndex) Spacer(Modifier.height(8.dp))
                         }
                     }
                 }
             }
             item {
-                Text(
-                    "하이하나 Neo ${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = OneUi.RowPadding, top = 20.dp),
-                )
+                Column(Modifier.padding(start = OneUi.RowPadding, top = 20.dp)) {
+                    Text(
+                        "부칙",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "이 고지는 2026년 9월 24일부터 적용합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
