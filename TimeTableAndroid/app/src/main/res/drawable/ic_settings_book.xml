@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 설정 분류 아이콘: 펼친 책 — 양쪽 쪽이 좌우·위아래 모두 가운데(12,12)에 맞게 대칭입니다. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M11.2,6.1C9.5,4.8 7.3,4.25 5,4.3C4.05,4.33 3.1,4.5 2.4,4.75C2.15,4.85 2,5.05 2,5.3V17.9C2,18.25 2.35,18.5 2.7,18.4C3.45,18.2 4.25,18.1 5.05,18.1C7.25,18.1 9.4,18.65 11.2,19.7Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12.8,6.1C14.5,4.8 16.7,4.25 19,4.3C19.95,4.33 20.9,4.5 21.6,4.75C21.85,4.85 22,5.05 22,5.3V17.9C22,18.25 21.65,18.5 21.3,18.4C20.55,18.2 19.75,18.1 18.95,18.1C16.75,18.1 14.6,18.65 12.8,19.7Z" />
+</vector>

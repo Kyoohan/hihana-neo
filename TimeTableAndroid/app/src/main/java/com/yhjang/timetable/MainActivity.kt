@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -1987,17 +1986,17 @@ private enum class SettingsPage(val title: String, val icon: Int?, val tint: Col
     DISPLAY("화면", R.drawable.ic_settings_display, Color(0xFFA4D925)),
     WIDGET("위젯", R.drawable.ic_widgets, Color(0xFFEC5881)),
     NOTIFY("알림", null, Color(0xFFE65B17)),
-    BOARD("게시판", R.drawable.ic_menu_book, Color(0xFF715AFF)),
+    BOARD("게시판", R.drawable.ic_settings_book, Color(0xFF715AFF)),
     MEAL("급식", R.drawable.ic_settings_meal, Color(0xFFFDBE4E)),
     ABOUT("정보", R.drawable.ic_settings_info, Color(0xFF6868A3)),
 }
 
-/** One UI 설정처럼 26dp 원 안에 지름의 절반이 조금 안 되는 흰 아이콘. */
-private val SettingsIconCircle = 26.dp
-private val SettingsIconGlyph = 15.dp
+/** One UI 설정처럼 색 원 안에 지름의 절반보다 조금 큰 흰 아이콘. */
+private val SettingsIconCircle = 32.dp
+private val SettingsIconGlyph = 18.dp
 
-/** 목록 줄의 아이콘 칸(24dp) + 여백만큼 구분선을 들여 글자와 맞춥니다. */
-private val SettingsCategoryIndent = OneUi.RowPadding + 24.dp + 16.dp
+/** 아이콘 원 + 여백만큼 구분선을 들여 글자와 맞춥니다. */
+private val SettingsCategoryIndent = OneUi.RowPadding + SettingsIconCircle + 16.dp
 
 /** 설정 첫 화면의 한 줄 — 색 원 안의 아이콘, 분류 이름, 지금 상태 한 줄, 오른쪽 화살표. */
 @Composable
@@ -2012,11 +2011,11 @@ private fun SettingsCategoryRow(
         title = title,
         subtitle = summary,
         badgeDot = badgeDot,
+        leadingSize = SettingsIconCircle,
         leading = {
-            // 목록의 아이콘 칸은 24dp 라서, 원은 칸보다 살짝 크게 그립니다(양옆 1dp).
             Box(
                 Modifier
-                    .requiredSize(SettingsIconCircle)
+                    .size(SettingsIconCircle)
                     .clip(CircleShape)
                     .background(page.tint),
                 contentAlignment = Alignment.Center,

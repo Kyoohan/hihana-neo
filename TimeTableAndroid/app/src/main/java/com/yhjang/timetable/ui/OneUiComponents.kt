@@ -248,6 +248,8 @@ fun OneUiListItem(
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
     /** 제목 오른쪽에 붙는 주황 점 — 갤러리 설정의 "갤러리 정보•" 처럼 새 소식(업데이트 등)을 알립니다. */
     badgeDot: Boolean = false,
+    /** 왼쪽 아이콘 칸 크기 — 설정 첫 화면의 색 원 아이콘처럼 더 큰 아이콘을 넣을 때만 바꿉니다. */
+    leadingSize: Dp = 24.dp,
 ) {
     Row(
         modifier = modifier
@@ -257,7 +259,7 @@ fun OneUiListItem(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
-            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(leadingSize), contentAlignment = Alignment.Center) {
                 CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
                     leading()
                 }
