@@ -1038,10 +1038,8 @@ private fun ColumnScope.PrivacyPage(beforeLogin: Boolean, onMore: () -> Unit) {
         (if (beforeLogin) "로그인하기 전에 계정 정보를 어떻게 다루는지 알려 드립니다. " else "") +
             "하이하나 비밀번호는 이 폰에 암호화해 저장하고 학교 학사시스템에만 보냅니다. 개발자를 포함해 다른 누구에게도 전달되지 않습니다.",
     )
-    // 개인정보 보호 화면과 같은 네 가지 보안 기술 타일과 개인정보 흐름도.
+    // 개인정보 보호 화면과 같은 네 가지 보안 기술 — 투어에서는 원색 타일로.
     SecuritySpecTiles()
-    Spacer(Modifier.height(14.dp))
-    PrivacyFlowPanel()
     Text(
         "자세히 보기",
         style = MaterialTheme.typography.bodyMedium,
