@@ -97,21 +97,11 @@ data class HomeStayNotice(val title: String, val detail: String, val shortDetail
 fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
     val stay = Timetable.homeStay(today) ?: return null
     val minutes = if (now.toLocalDate() == today) now.hour * 60 + now.minute else 0
-    fun clock(m: Int) = "%d:%02d".format(m / 60, m % 60)
-    /** "21:30 4타임" — 세션 이름 "면학 4타임"에서 타임 부분만. */
-    fun returnSession(date: LocalDate): String {
-        val session = Timetable.homeReturnSession(date)
-        return "${clock(session.start)} ${session.name.removePrefix("면학").trim()}"
-    }
+    // 귀교는 날짜만 알립니다 — 돌아오는 시각은 학생마다 달라 시간은 적지 않습니다.
     return when (stay) {
         Timetable.HomeStay.RETURN -> {
-            val start = Timetable.homeReturnAt(today)
-            if (minutes >= start) null
-            else HomeStayNotice(
-                "조심히 돌아오세요",
-                "오늘 귀교 · ${returnSession(today)}부터 일정이 시작됩니다",
-                "오늘 귀교 · ${returnSession(today)}부터",
-            )
+            if (minutes >= Timetable.homeReturnAt(today)) null
+            else HomeStayNotice("조심히 돌아오세요", "오늘 귀교", "오늘 귀교")
         }
         Timetable.HomeStay.LEAVE, Timetable.HomeStay.AWAY -> {
             if (stay == Timetable.HomeStay.LEAVE && minutes < Timetable.homeLeaveAt(today)) return null
@@ -122,8 +112,8 @@ fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
                 val day = back.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
                 HomeStayNotice(
                     "편안한 귀가 보내세요",
-                    "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교 · ${returnSession(back)}부터 일정이 다시 시작됩니다",
-                    "${back.monthValue}/${back.dayOfMonth}($day) ${clock(Timetable.homeReturnAt(back))} 귀교",
+                    "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교",
+                    "${back.monthValue}/${back.dayOfMonth}($day) 귀교",
                 )
             }
         }
