@@ -1038,15 +1038,10 @@ private fun ColumnScope.PrivacyPage(beforeLogin: Boolean, onMore: () -> Unit) {
         (if (beforeLogin) "로그인하기 전에 계정 정보를 어떻게 다루는지 알려 드립니다. " else "") +
             "하이하나 비밀번호는 이 폰에 암호화해 저장하고 학교 학사시스템에만 보냅니다. 개발자를 포함해 다른 누구에게도 전달되지 않습니다.",
     )
-    OneUiCard(Modifier.fillMaxWidth()) {
-        TourRow(rememberVectorPainter(Icons.Default.Lock), TourBlue, "이 폰에만 암호화해 저장", "안드로이드 키스토어 키로 잠그고, 백업·기기 이전에도 넣지 않습니다.")
-        RowGap()
-        TourRow(painterResource(R.drawable.ic_tour_swap), TourGreen, "학교 서버로만 전송", "로그인은 HTTPS로 학사시스템에 직접 합니다. 개발자 서버를 거치지 않습니다.")
-        RowGap()
-        TourRow(painterResource(R.drawable.ic_tour_eye_off), TourViolet, "개발자도 볼 수 없습니다", "계정 정보를 받는 개발자 서버가 없어, 비밀번호가 개발자에게 갈 길이 없습니다.")
-        RowGap()
-        TourRow(painterResource(R.drawable.ic_tour_code), TourSlate, "코드 공개 · 추적 도구 없음", "모든 코드와 빌드 기록을 GitHub에서 누구나 확인할 수 있습니다.")
-    }
+    // 개인정보 보호 화면과 같은 네 가지 보안 기술 타일과 개인정보 흐름도.
+    SecuritySpecTiles()
+    Spacer(Modifier.height(14.dp))
+    PrivacyFlowPanel()
     Text(
         "자세히 보기",
         style = MaterialTheme.typography.bodyMedium,
