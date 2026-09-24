@@ -81,6 +81,23 @@ fun DevTab(
         }
         Spacer(Modifier.height(16.dp))
 
+        // 오늘이 귀가 기간이면 홈의 남은 일정이 비므로, 다음 평일(귀가 기간 아닌 날) 15:05 기준으로 미리 봅니다.
+        OneUiSectionTitle("홈 남은 일정 미리보기")
+        val previewDate = remember {
+            generateSequence(PlanStore.today().plusDays(1)) { it.plusDays(1) }
+                .take(30)
+                .firstOrNull { it.dayOfWeek.value <= 5 && Timetable.homeStay(it) == null }
+                ?: PlanStore.today()
+        }
+        Text(
+            "${previewDate.monthValue}/${previewDate.dayOfMonth} 15:05 기준",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = OneUi.RowPadding, bottom = 6.dp),
+        )
+        UpcomingPreview(previewDate, previewDate.atTime(15, 5))
+        Spacer(Modifier.height(16.dp))
+
         OneUiSectionTitle("다이얼로그")
         OneUiGroupColumn {
             OneUiListItem(title = "알람 및 리마인더 권한 안내", subtitle = "설치·업데이트 직후 한 번 뜨는 그 다이얼로그", onClick = onShowExactAlarmPrompt)

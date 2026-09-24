@@ -31,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +42,10 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.yhjang.timetable.widget.iconResFor
+import com.yhjang.timetable.widget.WidgetKindColors
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yhjang.timetable.ui.OneUi
 import com.yhjang.timetable.ui.OneUiBadge
@@ -69,6 +75,8 @@ internal fun TodayDashboard(
     places: Map<PlanSlot, StudyPlace?>,
     supervisor: String?,
     upcomingGroups: List<UpcomingGroup>,
+    /** 종류별 색(설정 → 위젯의 '종류별 색') — 남은 일정 아이콘 원 색. */
+    kindColors: Map<Accent, Int>,
     meals: DayMeals?,
     allergyCodes: Set<Int>,
     isLoadingMeals: Boolean,
@@ -110,7 +118,12 @@ internal fun TodayDashboard(
             }
         }
         item(span = StaggeredGridItemSpan.FullLine, key = "upcoming") {
-            UpcomingCard(upcomingGroups, supervisor, emptyText = if (homeStayNotice != null) "귀가 기간에는 일정이 없습니다" else "남은 일정이 없습니다")
+            UpcomingCard(
+                upcomingGroups,
+                supervisor,
+                kindColors,
+                emptyText = if (homeStayNotice != null) "귀가 기간에는 일정이 없습니다" else "남은 일정이 없습니다",
+            )
         }
         // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 전체 폭 한 장으로 둡니다.
         item(span = StaggeredGridItemSpan.FullLine, key = "meal") {
@@ -334,13 +347,18 @@ private fun remainingText(minutes: Long): String =
 
 /** 오늘 남은 일정 — 기존에 합쳐 보여주던 시간대·제목·장소/감독 줄을 전체 폭 카드로. */
 @Composable
-private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?, emptyText: String) {
+private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?, kindColors: Map<Accent, Int>, emptyText: String) {
     DashboardCard(title = "오늘 남은 일정", icon = painterResource(R.drawable.ic_next)) {
         if (groups.isEmpty()) {
             DashboardEmpty(emptyText)
         } else {
             groups.forEach { group ->
-                UpcomingGroupRow(group, supervision = supervisor.takeIf { group.supervisionSlot })
+                UpcomingGroupRow(
+                    group,
+                    supervision = supervisor.takeIf { group.supervisionSlot },
+                    tint = Color(kindColors[group.accent] ?: WidgetKindColors.defaults.getValue(group.accent)),
+                    isLast = group === groups.last(),
+                )
             }
         }
     }
@@ -610,6 +628,10 @@ internal data class UpcomingGroup(
     val end: LocalDateTime,
     /** 1타임 면학실 블록을 포함하는 그룹인지 — 감독 교사를 덧붙일 대상. */
     val supervisionSlot: Boolean = false,
+    /** 위젯·Now Bar 와 같은 상황별 아이콘 키 — 비어 있으면 위치 아이콘. */
+    val iconKey: String = "",
+    /** 아이콘 원 색을 고를 종류 — 쉬는 시간·식사처럼 기다리는 구간이 다음 일정과 합쳐지면 그 다음 일정의 종류. */
+    val accent: Accent = Accent.IDLE,
 )
 
 /**
@@ -648,30 +670,54 @@ internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
             result[result.lastIndex] = last.copy(
                 end = block.end,
                 supervisionSlot = last.supervisionSlot || supervision,
+                // 기다리던 구간 뒤에 실제 일정이 붙으면 그 일정의 아이콘·색으로.
+                iconKey = if (isGap) last.iconKey else block.iconKey.ifEmpty { last.iconKey },
+                accent = if (isGap) last.accent else block.accent,
             )
             lastOpen = isGap
         } else {
-            result += UpcomingGroup(title, block.room, block.start, block.end, supervision)
+            result += UpcomingGroup(title, block.room, block.start, block.end, supervision, block.iconKey, block.accent)
             lastOpen = isGap
         }
     }
     return result
 }
 
+/**
+ * 남은 일정 한 줄 — 타임라인: 왼쪽 시작 시각, 종류별 색 원 아이콘과 다음 줄로 이어지는 선, 제목·장소(와 감독).
+ * 끝 시각은 적지 않습니다 — 다음 줄의 시작이 곧 앞 일정의 끝입니다.
+ */
 @Composable
-private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?) {
+private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?, tint: Color, isLast: Boolean) {
     val formatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         Text(
-            text = "${group.start.format(formatter)} ~ ${group.end.format(formatter)}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(96.dp),
+            text = group.start.format(formatter),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(44.dp).padding(top = 6.dp),
         )
-        Column(Modifier.weight(1f)) {
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.width(30.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
+                Icon(
+                    painterResource(if (group.iconKey.isEmpty()) R.drawable.ic_place else iconResFor(group.iconKey)),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            if (!isLast) {
+                // 아이콘 아래에서 다음 아이콘 바로 위까지 잇는 선.
+                Spacer(Modifier.height(3.dp))
+                Box(Modifier.width(2.dp).weight(1f).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.16f)))
+                Spacer(Modifier.height(3.dp))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f).padding(top = 5.dp, bottom = if (isLast) 2.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // 제목은 weight(fill=false)로 남은 공간만 차지 → 장소 칩이 먼저 자기 폭을 확보해서
                 // 과목명이 길어도(예: "데이터 과학과 인공지능") 장소가 세로로 눌려 쓰이지 않습니다.
@@ -687,7 +733,7 @@ private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?) {
                     Text(
                         it,
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = scheme.primary,
                         maxLines = 1,
                         softWrap = false,
                     )
@@ -697,10 +743,26 @@ private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?) {
                 Text(
                     "감독 $supervision",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
     }
+}
+
+/** Dev 탭 미리보기 — [date] 의 [at] 이후 남은 일정을 홈과 같은 카드로 (귀가 기간 등으로 오늘이 비어 있을 때 확인용). */
+@Composable
+internal fun UpcomingPreview(date: LocalDate, at: LocalDateTime) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var places by remember { androidx.compose.runtime.mutableStateOf<Map<PlanSlot, StudyPlace?>>(emptyMap()) }
+    var kindColors by remember { androidx.compose.runtime.mutableStateOf(WidgetKindColors.defaults) }
+    androidx.compose.runtime.LaunchedEffect(date) {
+        places = PlanStore.placesForToday(context, date)
+        kindColors = WidgetKindColors.resolve(PlanStore.widgetKindColors(context))
+    }
+    val groups = remember(places, date, at) {
+        coalesceUpcoming(Timetable.blocks(date) { places[it] }.filter { it.start.isAfter(at) && !it.isBlank })
+    }
+    UpcomingCard(groups, supervisor = null, kindColors = kindColors, emptyText = "남은 일정이 없습니다")
 }

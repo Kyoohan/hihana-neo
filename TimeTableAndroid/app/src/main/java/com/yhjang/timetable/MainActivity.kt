@@ -1216,6 +1216,7 @@ private fun TimeTableAppContent(
                     places = places,
                     supervisor = weekday1Supervisor,
                     upcomingGroups = upcomingGroups,
+                    kindColors = remember(widgetKindColors) { WidgetKindColors.resolve(widgetKindColors) },
                     meals = mealDays[PlanStore.dayKey(today)],
                     allergyCodes = allergyCodes,
                     isLoadingMeals = isLoadingMeals,
