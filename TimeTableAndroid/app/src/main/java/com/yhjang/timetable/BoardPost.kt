@@ -182,12 +182,12 @@ data class PostSummary(val line: String, val points: List<String>)
 object PostSummarizer {
     private const val TAG = "PostSummary"
     private const val ENDPOINT = "https://hihana-summary.kyoohan0711ultra.workers.dev/summarize"
-    private const val PREFS = "post_summaries_v4"
+    private const val PREFS = "post_summaries_v6"
     private const val MAX_CACHED = 300
     /** 이보다 짧은 글은 AI 없이 본문 앞부분을 한 줄 요약으로 씁니다. */
     const val MIN_CHARS = 100
     /** 이보다 짧은 글은 한 줄 요약만 쓰고, 글 화면의 자세한 요약 카드는 숨깁니다(본문이 곧 요약). */
-    private const val MIN_CARD_CHARS = 250
+    private const val MIN_CARD_CHARS = 150
     private const val MAX_INPUT_CHARS = 6000
 
     private val client = OkHttpClient.Builder()
@@ -665,6 +665,8 @@ private fun wrapBody(html: String, textColor: Int, linkColor: Int, dark: Boolean
     // 다크 테마: 편집기가 박아 넣은 색(검은 글자, 흰·회색 칸 바탕, 검은 테두리)만 골라 어두운 바탕에 맞게 바꿉니다.
     // 빨강·파랑 같은 강조색 글자는 밝기가 충분하면 그대로 둡니다.
     if ($dark) {
+      // 배경이 투명한 표·안내문 이미지(검은 글자)는 어두운 카드 위에서 안 보여 흰 바탕을 깔아 줍니다.
+      c.querySelectorAll('img').forEach(function (img) { img.style.setProperty('background-color', '#fff', 'important'); });
       var TEXT = '${cssColor(textColor)}';
       function rgb(v) {
         var m = v && v.match(/rgba?\(([^)]+)\)/);
