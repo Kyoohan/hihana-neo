@@ -18,6 +18,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,7 +144,7 @@ fun markTourSeen(context: android.content.Context) {
 }
 
 private enum class TourPage {
-    HELLO, WIDGET, NOW_BAR, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
+    HELLO, WIDGET, NOW_BAR, APPLY, SEATS, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
     UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_UPCOMING, UPDATE_HOME_STAY,
 }
 
@@ -178,7 +179,7 @@ fun OnboardingTour(
             TourKind.WELCOME -> buildList {
                 addAll(
                     listOf(
-                        TourPage.HELLO, TourPage.WIDGET, TourPage.NOW_BAR, TourPage.APPLY, TourPage.MEAL, TourPage.BOARD,
+                        TourPage.HELLO, TourPage.WIDGET, TourPage.NOW_BAR, TourPage.APPLY, TourPage.SEATS, TourPage.MEAL, TourPage.BOARD,
                         TourPage.PERSONALIZE, TourPage.GLASS, TourPage.PRIVACY,
                     ),
                 )
@@ -278,6 +279,7 @@ fun OnboardingTour(
                             TourPage.WIDGET -> WidgetPage()
                             TourPage.NOW_BAR -> NowBarPage()
                             TourPage.APPLY -> ApplyPage()
+                            TourPage.SEATS -> SeatsPage()
                             TourPage.MEAL -> MealPage()
                             TourPage.BOARD -> BoardPage()
                             TourPage.PERSONALIZE -> PersonalizePage(appearance)
@@ -673,6 +675,78 @@ private fun ColumnScope.ApplyPage() {
             Text(line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp))
         }
     }
+}
+
+@Composable
+private fun ColumnScope.SeatsPage() {
+    PageHead(
+        "좌석 현황",
+        "면학실·도서관 좌석 현황",
+        "면학실과 도서관 배치도에서 자리마다 누가 신청했는지 바로 보입니다. 친구가 어디 앉았는지 확인하고 옆자리를 신청할 수 있고, " +
+            "교과교실도 교실을 고르면 신청한 학생과 사유를 볼 수 있습니다.",
+    )
+    // 실제 좌석 화면과 같은 규칙 — 자리마다 번호와 신청자 이름, 남 파랑 · 여 분홍 · 빈 자리 · 내 자리(초록 테두리). 이름은 예시.
+    val seats = listOf(
+        Triple("A-01", "김하늘", 'b'), Triple("A-02", null, 'x'), Triple("A-03", "이서연", 'p'),
+        Triple("A-04", "박준호", 'b'), Triple("A-05", "나", 'm'), Triple("A-06", "최유진", 'p'),
+        Triple("A-07", null, 'x'), Triple("A-08", "정민재", 'b'), Triple("A-09", "한지우", 'p'),
+    )
+    var picked by remember { mutableStateOf<String?>(null) }
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("면학실 3층 · 1타임", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("신청 7 / 9", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(12.dp))
+        seats.chunked(3).forEach { line ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                line.forEach { (no, name, kind) ->
+                    val color = when (kind) {
+                        'b' -> TourBlue
+                        'p' -> TourPink
+                        'm' -> TourGreen
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                    val filled = kind != 'x'
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (filled) color.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                            .then(if (kind == 'm') Modifier.border(2.dp, TourGreen, RoundedCornerShape(14.dp)) else Modifier)
+                            .clickable(enabled = filled) { picked = if (kind == 'm') "내 자리" else "$no · $name" }
+                            .padding(vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(no, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            name ?: "빈 자리",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (filled) FontWeight.Bold else FontWeight.Normal,
+                            color = if (filled) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+            listOf(TourBlue to "남", TourPink to "여", TourGreen to "내 자리").forEach { (c, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(c))
+                    Spacer(Modifier.width(5.dp))
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Text(
+        picked?.let { "선택한 자리 · $it" } ?: "자리를 눌러 보세요 (이름은 예시입니다)",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp),
+    )
 }
 
 @Composable
@@ -1278,6 +1352,8 @@ private fun ColumnScope.DonePage() {
 @Composable
 private fun ColumnScope.UpdateSummaryPage() {
     // 이 장들은 12.0 에서 바뀐 것을 소개하므로 버전을 고정해 적습니다 — 다음 큰 업데이트 때 내용과 함께 바꿉니다.
+    Spacer(Modifier.height(20.dp))
+    VersionLogo(150.dp, Modifier.align(Alignment.CenterHorizontally))
     PageHead("새 버전", "12.0 업데이트", "게시판, 학사 탭, 귀가 기간의 일정 표시가 달라졌습니다. 주요 변경 사항을 차례로 소개합니다.")
     OneUiCard(Modifier.fillMaxWidth()) {
         TourRow(painterResource(R.drawable.ic_settings_book), TourViolet, "앱 내 게시글과 AI 요약")

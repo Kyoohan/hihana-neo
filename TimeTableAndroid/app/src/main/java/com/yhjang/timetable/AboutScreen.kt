@@ -132,9 +132,12 @@ internal fun AppInfoScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 150.dp, start = 32.dp, end = 32.dp),
+                        .padding(top = 70.dp, start = 32.dp, end = 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // 이번 큰 버전의 로고.
+                    VersionLogo(120.dp)
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         context.getString(R.string.app_name),
                         style = MaterialTheme.typography.displaySmall,

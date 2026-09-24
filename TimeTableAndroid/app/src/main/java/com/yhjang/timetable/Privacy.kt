@@ -392,86 +392,134 @@ private fun Belt(items: List<Pair<String, String>>, durationMs: Int, reverse: Bo
  */
 @Composable
 private fun TeeSection() {
-    val scheme = MaterialTheme.colorScheme
-    val flow = rememberInfiniteTransition(label = "tee")
-    val phase by flow.animateFloat(0f, 1f, infiniteRepeatable(tween(1_500, easing = LinearEasing)), label = "teePhase")
     Column {
         Head(
             "TEE / Knox",
             PvBlue,
             "열쇠는\n금고 안의 금고에.",
-            "TEE(Trusted Execution Environment)는 프로세서 안에 하드웨어로 따로 떼어 놓은 보안 영역입니다. 안드로이드와 앱이 돌아가는 곳과 분리된 채, 자체 보안 운영체제로 움직입니다.",
+            "TEE(Trusted Execution Environment)는 폰의 프로세서 칩 안에 하드웨어로 따로 떼어 놓은 보안 영역입니다. ARM TrustZone으로 칩을 일반 영역과 보안 영역으로 나누고, 보안 영역은 자체 보안 운영체제로 움직입니다.",
         )
-        Spacer(Modifier.height(20.dp))
-        Plain(padding = PaddingValues(16.dp)) {
-            // 일반 영역 — 안드로이드와 앱
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(scheme.onSurface.copy(alpha = 0.05f)).padding(14.dp)) {
-                Text("일반 영역 · 안드로이드와 앱", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF1F5A3C)), contentAlignment = Alignment.Center) {
-                        Text("H", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = Color(0xFFEAF6EE))
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("하이하나 Neo", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("열쇠를 가지고 있지 않습니다", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    }
-                }
-            }
-            // 부탁은 내려가고 결과만 올라옵니다.
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Canvas(Modifier.width(20.dp).height(40.dp)) {
-                        val x = size.width / 2
-                        drawLine(PvBlue.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f)))
-                        drawCircle(PvBlue, radius = 7f, center = Offset(x, phase * size.height))
-                    }
-                    Text("잠가 줘 · 풀어 줘", style = MaterialTheme.typography.labelSmall, color = PvBlue, fontWeight = FontWeight.Bold)
-                }
-                Text(
-                    "하드웨어로 분리",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.clip(CircleShape).border(1.dp, scheme.onSurface.copy(alpha = 0.15f), CircleShape).padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Canvas(Modifier.width(20.dp).height(40.dp)) {
-                        val x = size.width / 2
-                        drawLine(PvGreen.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f)))
-                        drawCircle(PvGreen, radius = 7f, center = Offset(x, (1f - phase) * size.height))
-                    }
-                    Text("결과만", style = MaterialTheme.typography.labelSmall, color = PvGreen, fontWeight = FontWeight.Bold)
-                }
-            }
-            // 보안 영역 — 열쇠
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(PvBlue.copy(alpha = 0.12f))
-                    .border(1.dp, PvBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-                    .padding(14.dp),
-            ) {
-                Text("보안 영역 · TEE", style = MaterialTheme.typography.labelMedium, color = PvBlue, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TintIcon(painterResource(R.drawable.ic_pv_key), PvYellow, box = 34.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("AES-256 열쇠", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("이 폰에서 만들어져 이 안에만 있습니다", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
+        Spacer(Modifier.height(22.dp))
+        TeeChip()
         Spacer(Modifier.height(22.dp))
         TeeFact(R.drawable.ic_pv_knox, PvBlue, "안드로이드가 뚫려도", "앱이나 운영체제가 악성 코드에 뚫리더라도, 열쇠 자체는 TEE 밖으로 꺼낼 수 없습니다.")
         Spacer(Modifier.height(18.dp))
         TeeFact(R.drawable.ic_pv_phone, PvViolet, "이 폰에 묶인 열쇠", "저장된 값을 다른 폰으로 복사해도, 그 폰에는 열쇠가 없어 풀 수 없습니다. 백업과 기기 이전에서도 빠집니다.")
         Spacer(Modifier.height(18.dp))
         TeeFact(R.drawable.ic_pv_star, PvYellow, "지문·결제와 같은 금고", "지문 정보와 모바일 결제도 같은 보안 영역이 지킵니다. 갤럭시에서는 삼성 녹스가 이 영역을 바탕으로 동작합니다.")
+    }
+}
+
+/**
+ * 칩 그림 — 핀이 달린 프로세서 칩을 일반 영역(REE, 주황)과 보안 영역(TEE, 청록)으로 가르고, 가운데 경계의 자물쇠를 지나
+ * 부탁(잠가 줘·풀어 줘)은 들어가고 결과만 나옵니다. 열쇠는 보안 영역 안에만 있습니다. 칩은 천천히 빛나고 경계로 점이 오갑니다.
+ */
+@Composable
+private fun TeeChip() {
+    val teal = Color(0xFF2FD3B5)
+    val amber = Color(0xFFF07A45)
+    val scheme = MaterialTheme.colorScheme
+    val anim = rememberInfiniteTransition(label = "chip")
+    val phase by anim.animateFloat(0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "chipPhase")
+    val pulse by anim.animateFloat(0.35f, 0.75f, infiniteRepeatable(tween(1_600), androidx.compose.animation.core.RepeatMode.Reverse), label = "chipPulse")
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF070B14))
+            .border(1.dp, Color(0xFF1B2A44), RoundedCornerShape(24.dp)),
+    ) {
+        // 회로 기판 격자와 핀
+        Canvas(Modifier.fillMaxWidth().height(340.dp)) {
+            val grid = 22.dp.toPx()
+            var x = 0f
+            while (x < size.width) { drawLine(Color(0xFF12203A), Offset(x, 0f), Offset(x, size.height), 1f); x += grid }
+            var y = 0f
+            while (y < size.height) { drawLine(Color(0xFF12203A), Offset(0f, y), Offset(size.width, y), 1f); y += grid }
+            val chipW = size.width * 0.62f
+            val chipH = 250.dp.toPx()
+            val left = (size.width - chipW) / 2
+            val top = (size.height - chipH) / 2
+            val pinLen = 16.dp.toPx()
+            val pinColor = Color(0xFF3A5BA8)
+            for (i in 0 until 6) {
+                val px = left + chipW * (i + 1) / 7f
+                drawLine(pinColor, Offset(px, top - pinLen), Offset(px, top), 3f)
+                drawLine(pinColor, Offset(px, top + chipH), Offset(px, top + chipH + pinLen), 3f)
+            }
+            for (i in 0 until 7) {
+                val py = top + chipH * (i + 1) / 8f
+                drawLine(pinColor, Offset(left - pinLen, py), Offset(left, py), 3f)
+                drawLine(pinColor, Offset(left + chipW, py), Offset(left + chipW + pinLen, py), 3f)
+            }
+            // 칩 몸체 — 위 보안 영역, 아래 일반 영역
+            val r = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx())
+            drawRoundRect(Color(0xFF0D1626), Offset(left, top), androidx.compose.ui.geometry.Size(chipW, chipH), r)
+            drawRoundRect(
+                Brush.verticalGradient(listOf(teal.copy(alpha = 0.10f + pulse * 0.12f), Color.Transparent), startY = top, endY = top + chipH / 2),
+                Offset(left, top), androidx.compose.ui.geometry.Size(chipW, chipH / 2), r,
+            )
+            drawRoundRect(
+                Brush.verticalGradient(listOf(Color.Transparent, amber.copy(alpha = 0.14f)), startY = top + chipH / 2, endY = top + chipH),
+                Offset(left, top + chipH / 2), androidx.compose.ui.geometry.Size(chipW, chipH / 2), r,
+            )
+            drawRoundRect(Color(0xFF2A3D66), Offset(left, top), androidx.compose.ui.geometry.Size(chipW, chipH), r, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+            // 가운데 경계선
+            val mid = top + chipH / 2
+            drawLine(Color(0xFF4B5E86), Offset(left + 10f, mid), Offset(left + chipW - 10f, mid), 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+            // 경계를 오가는 점 — 부탁은 위로(주황→), 결과는 아래로(청록)
+            val lane1 = left + chipW * 0.3f
+            val lane2 = left + chipW * 0.7f
+            val span = chipH * 0.22f
+            drawCircle(amber, 6f, Offset(lane1, mid + span - phase * span * 2))
+            drawCircle(teal, 6f, Offset(lane2, mid - span + phase * span * 2))
+        }
+        // 칩 위 글자
+        Column(Modifier.fillMaxWidth().height(340.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(66.dp))
+            Text("TEE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, letterSpacing = 4.sp), fontWeight = FontWeight.Bold, color = teal)
+            Text("보안 영역 · SECURE WORLD", style = MaterialTheme.typography.labelSmall, color = teal.copy(alpha = 0.8f))
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(10.dp)).background(teal.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_pv_key), contentDescription = null, tint = PvYellow, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("AES-256 열쇠", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+            Spacer(Modifier.height(10.dp))
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(Color(0xFF070B14)).border(1.5.dp, Color(0xFF4B5E86), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_pv_knox), contentDescription = null, tint = Color(0xFFB9C6E4), modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(10.dp)).background(amber.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF1F5A3C)), contentAlignment = Alignment.Center) {
+                    Text("H", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), fontWeight = FontWeight.Black, color = Color.White)
+                }
+                Spacer(Modifier.width(6.dp))
+                Text("하이하나 Neo · 열쇠 없음", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("일반 영역 · NORMAL WORLD", style = MaterialTheme.typography.labelSmall, color = amber.copy(alpha = 0.85f))
+            Text("REE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, letterSpacing = 4.sp), fontWeight = FontWeight.Bold, color = amber)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(start = 2.dp)) {
+        listOf(amber to "잠가 줘 · 풀어 줘 (부탁만)", teal to "결과만 돌아옴").forEach { (c, label) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(c))
+                Spacer(Modifier.width(6.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
