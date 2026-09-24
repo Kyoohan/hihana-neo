@@ -168,8 +168,8 @@ data class Lesson(val subject: String, val room: String?) {
     val title: String get() = split.first
     val teacher: String? get() = split.second
 
-    /** 화면에 쓰는 장소 — 선생님이 있으면 "김응주 · 체육관" 처럼 앞에 붙입니다. 교실이 없으면(공강) null. */
-    val place: String? get() = room?.let { r -> listOfNotNull(teacher, r).joinToString(" · ") }
+    /** 화면에 쓰는 장소 — 선생님이 있으면 "체육관 · 김응주" 처럼 뒤에 붙입니다. 교실이 없으면(공강) null. */
+    val place: String? get() = room?.let { r -> listOfNotNull(r, teacher).joinToString(" · ") }
 
     private val split: Pair<String, String?>
         get() {

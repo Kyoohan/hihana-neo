@@ -657,7 +657,7 @@ internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
     for (block in blocks) {
         val supervision = isWeekday1StudyRoom(block)
         val isGap = block.kind is BlockKind.GapKind
-        // 수업은 과목명 끝의 "선생님 /" 을 떼고, 선생님은 장소 앞에 붙습니다 (block.room = "김응주 · 체육관").
+        // 수업은 과목명 끝의 "선생님 /" 을 떼고, 선생님은 장소 뒤에 붙습니다 (block.room = "체육관 · 김응주").
         val lesson = when (val kind = block.kind) {
             is BlockKind.LessonKind -> kind.lesson
             is BlockKind.GapKind -> (kind.gap.next as? NextUp.LessonNext)?.lesson
@@ -721,8 +721,8 @@ private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?, tint: C
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                // 장소 자리 — 수업은 "선생님 · 교실", 1타임 면학실은 "자리 · 감독 선생님".
-                listOfNotNull(group.room, supervision).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                // 장소 자리 — 장소 먼저: 수업은 "교실 · 선생님", 1타임 면학실은 "자리 · 감독 선생님".
+                listOfNotNull(group.room, supervision?.let { "감독 $it" }).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                     Spacer(Modifier.width(8.dp))
                     Text(
                         it,
@@ -772,7 +772,7 @@ internal fun UpcomingSampleCard() {
     val day = LocalDate.now()
     fun at(h: Int, m: Int) = day.atTime(h, m)
     val groups = listOf(
-        UpcomingGroup("물리학Ⅰ(3반)", "김하늘 · A201", at(15, 10), at(16, 0), iconKey = "bolt", accent = Accent.LESSON),
+        UpcomingGroup("물리학Ⅰ(3반)", "A201 · 김하늘", at(15, 10), at(16, 0), iconKey = "bolt", accent = Accent.LESSON),
         UpcomingGroup("0타임 · 도서관", "2층 B-14", at(16, 0), at(17, 50), iconKey = "local_library", accent = Accent.LIBRARY),
         UpcomingGroup("1타임 · 면학실", "3층 A-07", at(17, 50), at(21, 0), supervisionSlot = true, iconKey = "meeting_room", accent = Accent.STUDY),
         UpcomingGroup("2타임 · 생활관", null, at(21, 0), at(23, 10), iconKey = "hotel", accent = Accent.DORM),

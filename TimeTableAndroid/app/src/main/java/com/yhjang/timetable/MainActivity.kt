@@ -2857,8 +2857,8 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                                     overflow = TextOverflow.Ellipsis,
                                     color = if (lesson.isFree) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                                 )
-                                // 장소 자리 — 다른 화면은 "선생님 · 교실" 한 줄이지만, 칸이 좁은 주간 표는 한 줄씩 나눠 씁니다.
-                                listOfNotNull(lesson.teacher, lesson.room).forEach {
+                                // 장소 자리 — 다른 화면은 "교실 · 선생님" 한 줄이지만, 칸이 좁은 주간 표는 한 줄씩 나눠 씁니다.
+                                listOfNotNull(lesson.room, lesson.teacher).forEach {
                                     Text(
                                         it,
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
