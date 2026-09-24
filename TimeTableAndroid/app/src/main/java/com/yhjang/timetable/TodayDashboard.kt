@@ -762,3 +762,20 @@ internal fun UpcomingPreview(date: LocalDate, at: LocalDateTime) {
     }
     UpcomingCard(groups, supervisor = null, kindColors = kindColors, emptyText = "남은 일정이 없습니다")
 }
+
+/** 업데이트 투어 그림 — 예시 일정으로 채운 실제 '오늘 남은 일정' 카드 (색은 설정의 종류별 색). */
+@Composable
+internal fun UpcomingSampleCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var kindColors by remember { androidx.compose.runtime.mutableStateOf(WidgetKindColors.defaults) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { kindColors = WidgetKindColors.resolve(PlanStore.widgetKindColors(context)) }
+    val day = LocalDate.now()
+    fun at(h: Int, m: Int) = day.atTime(h, m)
+    val groups = listOf(
+        UpcomingGroup("물리학Ⅰ(3반)", "김하늘 · A201", at(15, 10), at(16, 0), iconKey = "bolt", accent = Accent.LESSON),
+        UpcomingGroup("0타임 · 도서관", "2층 B-14", at(16, 0), at(17, 50), iconKey = "local_library", accent = Accent.LIBRARY),
+        UpcomingGroup("1타임 · 면학실", "3층 A-07", at(17, 50), at(21, 0), supervisionSlot = true, iconKey = "meeting_room", accent = Accent.STUDY),
+        UpcomingGroup("2타임 · 생활관", null, at(21, 0), at(23, 10), iconKey = "hotel", accent = Accent.DORM),
+    )
+    UpcomingCard(groups, supervisor = "이하나", kindColors = kindColors, emptyText = "")
+}

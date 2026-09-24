@@ -126,7 +126,7 @@ enum class TourKind { WELCOME, UPDATE }
 
 private enum class TourPage {
     HELLO, WIDGET, NOW_BAR, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
-    UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_HOME_STAY,
+    UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_UPCOMING, UPDATE_HOME_STAY,
 }
 
 /** 투어의 원 아이콘 색 — 설정 첫 화면과 같은 One UI 9 설정 색. */
@@ -169,7 +169,7 @@ fun OnboardingTour(
                 add(TourPage.DONE)
             }
             TourKind.UPDATE -> buildList {
-                addAll(listOf(TourPage.UPDATE_SUMMARY, TourPage.UPDATE_BOARD, TourPage.UPDATE_TABS, TourPage.UPDATE_HOME_STAY, TourPage.PRIVACY))
+                addAll(listOf(TourPage.UPDATE_SUMMARY, TourPage.UPDATE_BOARD, TourPage.UPDATE_TABS, TourPage.UPDATE_UPCOMING, TourPage.UPDATE_HOME_STAY, TourPage.PRIVACY))
                 if (needsPermissions) add(TourPage.PERMISSIONS)
             }
         }
@@ -271,6 +271,7 @@ fun OnboardingTour(
                             TourPage.UPDATE_SUMMARY -> UpdateSummaryPage()
                             TourPage.UPDATE_BOARD -> UpdateBoardPage()
                             TourPage.UPDATE_TABS -> UpdateTabsPage()
+                            TourPage.UPDATE_UPCOMING -> UpdateUpcomingPage()
                             TourPage.UPDATE_HOME_STAY -> UpdateHomeStayPage()
                         }
                         Spacer(Modifier.height(24.dp))
@@ -1272,6 +1273,8 @@ private fun ColumnScope.UpdateSummaryPage() {
         RowGap()
         TourRow(painterResource(R.drawable.ic_widgets), TourBlue, "학사 탭 개편")
         RowGap()
+        TourRow(painterResource(R.drawable.ic_next), TourOrange, "아이콘이 붙은 오늘 남은 일정")
+        RowGap()
         TourRow(painterResource(R.drawable.ic_home_stay), TourGreen, "귀가 기간 일정 자동 해제")
         RowGap()
         TourRow(painterResource(R.drawable.ic_settings_meal), TourYellow, "급식 칼로리·영양·원산지")
@@ -1538,6 +1541,18 @@ private fun MiniAcademicSchedule() {
             }
         }
     }
+}
+
+@Composable
+private fun ColumnScope.UpdateUpcomingPage() {
+    PageHead(
+        "홈",
+        "아이콘이 붙은 오늘 남은 일정",
+        "홈의 오늘 남은 일정에 수업과 면학 장소마다 색 아이콘이 붙고, 장소와 시간이 두 줄로 정리됩니다. " +
+            "아이콘과 색은 위젯·Now Bar와 같으며, 설정에서 위젯의 종류별 색을 바꾸면 함께 바뀝니다. 담당 선생님과 면학감독은 장소 옆에 표시됩니다.",
+        isNew = true,
+    )
+    UpcomingSampleCard()
 }
 
 @Composable
