@@ -876,18 +876,22 @@ private fun GlassDemo() {
     var autoplay by remember { mutableStateOf(true) }
     LaunchedEffect(autoplay) {
         if (!autoplay) return@LaunchedEffect
-        // 프로그램으로 움직이는 스크롤은 헤더 연결(nestedScroll)을 거치지 않아, 헤더 접힘도 같이 움직여 줍니다.
+        // 실제 스크롤처럼 한 줄의 '스크롤 거리'로 헤더와 내용을 함께 움직입니다 — 내려갈 땐 헤더가 먼저 접히고 이어서 내용이,
+        // 올라올 땐 내용이 먼저 맨 위로 온 뒤 헤더가 펼쳐집니다 (OneUiHeaderState.connection 과 같은 순서).
+        // 프로그램 스크롤은 nestedScroll 을 거치지 않아 이렇게 직접 나눠 줍니다.
+        var applied = 0f
+        fun apply(distance: Float) {
+            headerState.restore(-distance.coerceAtMost(headerState.rangePx))
+            val content = (distance - headerState.rangePx).coerceAtLeast(0f)
+            scroll.dispatchRawDelta(content - applied)
+            applied = scroll.value.toFloat()
+        }
         while (true) {
-            delay(900)
-            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(1_300)) { f, _ ->
-                headerState.restore(-headerState.rangePx * f)
-            }
-            scroll.animateScrollTo(scroll.maxValue.coerceAtMost(900), tween(1_800))
-            delay(900)
-            scroll.animateScrollTo(0, tween(1_400))
-            androidx.compose.animation.core.animate(1f, 0f, animationSpec = tween(900)) { f, _ ->
-                headerState.restore(-headerState.rangePx * f)
-            }
+            delay(1_000)
+            val far = headerState.rangePx + scroll.maxValue.coerceAtMost(700).toFloat()
+            androidx.compose.animation.core.animate(0f, far, animationSpec = tween(2_400, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { v, _ -> apply(v) }
+            delay(1_100)
+            androidx.compose.animation.core.animate(far, 0f, animationSpec = tween(2_000, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { v, _ -> apply(v) }
         }
     }
     Box(
@@ -914,14 +918,16 @@ private fun GlassDemo() {
                     .hazeSource(glassState)
                     .oneUiPageBackground(),
             ) {
+                // 실제 앱처럼 헤더가 줄어든 만큼 내용도 함께 올라갑니다 (접히는 동안 내용이 제자리에 멈춰 있지 않게).
                 Column(
                     Modifier
                         .fillMaxSize()
+                        .offset { androidx.compose.ui.unit.IntOffset(0, headerState.offsetPx.toInt()) }
                         .verticalScroll(scroll)
                         .padding(horizontal = 14.dp)
                         .padding(top = com.yhjang.timetable.ui.OneUiCompactBarHeight + com.yhjang.timetable.ui.OneUiHeaderExpandedExtra + 8.dp, bottom = 96.dp),
                 ) {
-                    SubjectRows()
+                    GlassBackdrop()
                 }
             }
             com.yhjang.timetable.ui.OneUiCollapsingHeader(state = headerState, title = "홈", subtitle = "9월 24일 목요일")
@@ -942,29 +948,20 @@ private fun GlassDemo() {
                     onSelect = { selected = it },
                     modifier = Modifier.requiredWidth(width + 16.dp),
                     showDev = false,
+                    lensAtRest = true,
                 )
             }
         }
     }
 }
 
-/** 시연 화면의 내용 — 실제 앱처럼 과목 색 칸 시간표와 카드 몇 장. */
+/**
+ * 시연 화면의 내용 — 실제 앱 카드들: '지금', 종류별 색 아이콘이 붙은 남은 일정, 그라데이션 AI 요약, 강조색 견본, 좌석 배치도.
+ * 여러 색과 글자가 유리 아래로 지나가며 흐림·굴절이 잘 보입니다.
+ */
 @Composable
-private fun SubjectRows() {
+private fun GlassBackdrop() {
     val scheme = MaterialTheme.colorScheme
-    val week = listOf(
-        listOf("국어", "수학", "영어", "물리", "정보"),
-        listOf("영어", "화학", "수학", "국어", "체육"),
-        listOf("한국사", "국어", "물리", "영어", "수학"),
-        listOf("수학", "체육", "화학", "한국사", "영어"),
-        listOf("물리", "영어", "국어", "수학", "화학"),
-        listOf("정보", "한국사", "체육", "물리", "국어"),
-        listOf("영어", "수학", "정보", "화학", "한국사"),
-    )
-    val tints = mapOf(
-        "국어" to TourPink, "수학" to TourBlue, "영어" to TourViolet, "물리" to TourGreen,
-        "화학" to TourYellow, "한국사" to TourOrange, "정보" to TourSlate, "체육" to Color(0xFF2FB8A6),
-    )
     OneUiCard(Modifier.fillMaxWidth()) {
         Text("지금", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
         Spacer(Modifier.height(4.dp))
@@ -972,24 +969,60 @@ private fun SubjectRows() {
         Text("2층 B-14", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = scheme.primary)
     }
     Spacer(Modifier.height(10.dp))
-    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(10.dp)) {
-        repeat(2) {
-            week.forEachIndexed { period, row ->
-                Row(Modifier.fillMaxWidth().height(38.dp).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${period + 1}", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.width(16.dp))
-                    row.forEach { subject ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(horizontal = 2.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(tints[subject] ?: TourSlate),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(subject, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
-                        }
-                    }
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Text("오늘 남은 일정", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        listOf(
+            Triple(R.drawable.ic_free_breakfast, TourYellow, "21:00  간식시간"),
+            Triple(R.drawable.ic_meeting_room, TourGreen, "21:30  면학 2타임 · 면학실 3층 A-07"),
+            Triple(R.drawable.ic_bedtime, TourViolet, "23:10  심야 1타임 · 3층 12번"),
+            Triple(R.drawable.ic_science, TourPink, "내일 1교시  물리 · 과학실2"),
+        ).forEachIndexed { i, (icon, tint, text) ->
+            if (i > 0) Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircleIcon(painterResource(icon), tint, size = 30.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            }
+        }
+    }
+    // 그라데이션 테두리·빛이 번지는 실제 AI 요약 카드.
+    SummaryCard(
+        state = PostSummarizer.State.Done(
+            PostSummary(
+                line = "10/7(수)까지 포털 신청, 10/14 시청각실",
+                points = listOf("2학년 희망자 대상, 포털 신청·내역에서 신청함", "대회는 10/14(수) 7교시에 진행함"),
+            ),
+        ),
+        onRetry = {},
+        horizontalPadding = 0.dp,
+    )
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Text("강조 색", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            listOf(TourBlue, TourViolet, Color(0xFFB45CF0), Color(0xFFFF3B5C), TourOrange, Color(0xFFFFB020), TourGreen, Color(0xFF2FB8A6)).forEach { c ->
+                Box(Modifier.size(26.dp).clip(CircleShape).background(c))
+            }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(painterResource(R.drawable.ic_local_library), TourBlue, "도서관 2층 · 1타임", "빈 자리 12석")
+        Spacer(Modifier.height(12.dp))
+        "bxpbmpxbbxpbpxbxpb".chunked(6).forEach { line ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                line.forEach { c ->
+                    Box(
+                        Modifier.weight(1f).height(22.dp).clip(RoundedCornerShape(6.dp)).background(
+                            when (c) {
+                                'b' -> TourBlue.copy(alpha = 0.6f)
+                                'p' -> TourPink.copy(alpha = 0.6f)
+                                'm' -> TourGreen
+                                else -> scheme.onSurface.copy(alpha = 0.08f)
+                            },
+                        ),
+                    )
                 }
             }
         }

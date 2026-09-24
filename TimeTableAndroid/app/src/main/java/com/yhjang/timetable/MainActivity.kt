@@ -2126,6 +2126,8 @@ internal fun AppNavBar(
     following: Boolean = false,
     /** Dev 칸 표시 — 디버그 빌드에서만. 투어 그림은 정식 버전과 같게 끕니다. */
     showDev: Boolean = BuildConfig.DEBUG,
+    /** 놓여 있을 때도 캡슐 렌즈 굴절을 켤지 — 앱에서는 끌 때만, 투어의 리퀴드 글래스 시연에서만 켭니다. */
+    lensAtRest: Boolean = false,
 ) {
     // 시스템 설정이 아니라 앱에 적용된 테마를 따라야, 앱을 라이트로 고정했을 때 바만 어둡게 남지 않습니다.
     val isDark = MaterialTheme.colorScheme.isDark
@@ -2310,7 +2312,7 @@ internal fun AppNavBar(
                                 )
                                 lensShader.setFloatUniform("radius", capsuleRadiusPx)
                                 // 놓여 있을 땐 0(굴절 없음), 끌 때만 1로 — 스프링으로 부드럽게.
-                                lensShader.setFloatUniform("strength", liquid)
+                                lensShader.setFloatUniform("strength", if (lensAtRest) maxOf(liquid, 0.85f) else liquid)
                                 lensShader.setFloatUniform("lightDir", light.x, light.y)
                                 lensShader.setFloatUniform("time", light.time)
                                 lensShader.setFloatUniform("tint", 1f, 1f, 1f)
