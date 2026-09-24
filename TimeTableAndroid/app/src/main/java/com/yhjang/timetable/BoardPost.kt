@@ -74,6 +74,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -532,6 +533,22 @@ private fun SummaryCard(state: PostSummarizer.State?, onRetry: () -> Unit) {
                         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
                         Spacer(Modifier.height(12.dp))
                         SummaryLines(state.summary.points)
+                    }
+                    // 결과물 표시(인공지능기본법 제31조) — AI 가 만든 요약임과 원문 확인을 카드 안에 밝힙니다.
+                    Spacer(Modifier.height(14.dp))
+                    Row {
+                        Icon(
+                            Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp).size(13.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "생성형 AI가 만든 요약입니다. 중요한 내용은 원문을 확인하세요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 PostSummarizer.State.Loading -> SummarySkeleton()
