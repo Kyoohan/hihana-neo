@@ -75,7 +75,7 @@ sealed interface UpdateState {
 /**
  * '하이하나 Neo 정보' — 삼성 갤러리의 정보 화면과 같은 구성입니다.
  * 위: 뒤로가기 / ⓘ(시스템 앱 정보). 가운데: 앱 이름, 버전, 상태 문구, 파란 '업데이트' 알약.
- * 아래: 회색 알약 두 개(변경 사항 / 오픈소스 라이선스).
+ * 아래: 회색 알약 세 개(변경 사항 / 오픈소스 라이선스 / 법적 고지).
  */
 @Composable
 internal fun AppInfoScreen(
@@ -88,6 +88,7 @@ internal fun AppInfoScreen(
     val scheme = MaterialTheme.colorScheme
     var showChangelog by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
+    var showLegal by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onDismiss)
 
@@ -152,7 +153,7 @@ internal fun AppInfoScreen(
                     UpdateActionButton(updateState, onCheckUpdate, onInstallUpdate)
                 }
 
-                // 아래: 회색 알약 두 개
+                // 아래: 회색 알약 세 개
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -162,6 +163,7 @@ internal fun AppInfoScreen(
                 ) {
                     BottomPillButton("변경 사항") { showChangelog = true }
                     BottomPillButton("오픈소스 라이선스") { showLicenses = true }
+                    BottomPillButton("법적 고지") { showLegal = true }
                 }
             }
         }
@@ -176,6 +178,9 @@ internal fun AppInfoScreen(
     }
     if (showLicenses) {
         LicensesScreen(onDismiss = { showLicenses = false })
+    }
+    if (showLegal) {
+        LegalNoticeScreen(onDismiss = { showLegal = false })
     }
 }
 
@@ -315,6 +320,100 @@ private fun LicensesScreen(onDismiss: () -> Unit) {
                         },
                     )
                 }
+            }
+        }
+    }
+}
+
+/** 법적 고지의 한 단락 — 제목과 글머리 문장들. */
+private data class LegalSection(val title: String, val items: List<String>)
+
+/**
+ * 법적 고지 — 비공식 앱 안내, 생성형 AI 이용 고지(인공지능기본법 제31조: 생성형 AI 기반 서비스임을 미리 알리고
+ * 결과물이 AI 생성물임을 표시), 개인정보·계정 처리, 데이터 출처, 책임의 한계.
+ * 앱이 실제로 하는 일(보내는 곳, 저장하는 것)이 바뀌면 이 문구도 함께 고쳐야 합니다.
+ */
+private val LEGAL_SECTIONS = listOf(
+    LegalSection(
+        "비공식 앱 안내",
+        listOf(
+            "하이하나 Neo는 하나고등학교 학생들의 편의를 위한 비공식 앱이며, 하나고등학교나 하이하나 포털 등 학교 공식 시스템과 제휴하거나 승인받은 앱이 아닙니다.",
+            "'하나고등학교', '하이하나' 등의 명칭과 관련 권리는 각 권리자에게 있습니다.",
+            "시간표·급식·학사일정·게시글·신청 결과 등은 학교 시스템에서 받아 정리해 보여 주는 것이라 원본과 다르거나 늦게 반영될 수 있습니다. 중요한 일정과 신청·예약 결과는 반드시 공식 시스템에서 확인해 주세요.",
+        ),
+    ),
+    LegalSection(
+        "생성형 AI 이용 안내",
+        listOf(
+            "게시판의 'AI 요약'(목록의 한 줄 요약, 게시글 위의 자세한 요약, 새 글 알림의 요약)은 Google Gemma 기반 생성형 인공지능이 만든 결과물입니다.",
+            "AI 요약은 참고용이며, 부정확하거나 원문의 의도와 다를 수 있습니다. 중요한 내용은 반드시 원문을 확인해 주세요.",
+            "요약은 Cloudflare Workers AI에서 만들어집니다. 이때 게시글의 제목·본문과 본문 이미지(포털에 올라온 파일)만 요약 서버로 보내며, 계정 정보나 학번 같은 개인정보는 보내지 않습니다.",
+            "만들어진 요약은 같은 글을 여는 다른 사용자와 함께 쓰기 위해 요약 서버에 최대 180일 동안 보관됩니다.",
+            "게시글 요약 외의 기능(시간표, 급식, 신청 등)에는 생성형 AI를 쓰지 않습니다.",
+        ),
+    ),
+    LegalSection(
+        "개인정보와 계정",
+        listOf(
+            "하이하나 계정의 아이디·비밀번호는 이 기기 안에 암호화되어 저장되며, 로그인할 때 학교 포털(hh.hana.hs.kr)로만 전송됩니다. 개발자에게 전송되거나 수집되지 않습니다.",
+            "심야면학 로그인 정보는 심야면학 신청 서비스로만 전송되고, 기기에는 로그인 유지를 위한 정보만 암호화되어 저장됩니다.",
+            "계정 정보는 기기 백업에 포함되지 않습니다. 앱을 지우면 함께 삭제됩니다.",
+            "앱에는 광고나 사용자 추적·분석 도구가 없습니다.",
+        ),
+    ),
+    LegalSection(
+        "데이터 출처",
+        listOf(
+            "시간표·학사일정·게시판·신청·도서관: 하이하나 포털(hh.hana.hs.kr)",
+            "급식 식단: 하나고등학교 홈페이지(www.hana.hs.kr)",
+            "급식 칼로리·영양성분·원산지: 나이스 교육정보 개방 포털(open.neis.go.kr) 공공데이터",
+            "앱 업데이트 확인: GitHub",
+        ),
+    ),
+    LegalSection(
+        "책임의 한계",
+        listOf(
+            "이 앱은 개인이 무료로 제공하며, 모든 기능이 항상 정확하게 동작함을 보증하지 않습니다.",
+            "앱에 표시된 정보만 믿어 생긴 신청 누락이나 일정 착오 등에 대해서는 책임지기 어렵습니다. 학교 공식 안내를 우선해 주세요.",
+        ),
+    ),
+)
+
+@Composable
+private fun LegalNoticeScreen(onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
+    OneUiFullScreen(title = "법적 고지", onDismiss = onDismiss) { toolbar ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = OneUi.PagePadding,
+                end = OneUi.PagePadding,
+                top = toolbar.calculateTopPadding() + 4.dp,
+                bottom = toolbar.calculateBottomPadding() + 32.dp,
+            ),
+        ) {
+            LEGAL_SECTIONS.forEach { section ->
+                item(key = section.title) {
+                    OneUiSectionTitle(section.title)
+                    OneUiCard(modifier = Modifier.fillMaxWidth()) {
+                        section.items.forEachIndexed { index, line ->
+                            Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Text("·", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(8.dp))
+                                Text(line, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (index != section.items.lastIndex) Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                }
+            }
+            item {
+                Text(
+                    "하이하나 Neo ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = OneUi.RowPadding, top = 20.dp),
+                )
             }
         }
     }
