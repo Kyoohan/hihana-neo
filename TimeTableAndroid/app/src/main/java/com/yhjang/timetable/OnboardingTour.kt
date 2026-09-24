@@ -1353,7 +1353,7 @@ private fun ColumnScope.DonePage() {
 private fun ColumnScope.UpdateSummaryPage() {
     // 이 장들은 12.0 에서 바뀐 것을 소개하므로 버전을 고정해 적습니다 — 다음 큰 업데이트 때 내용과 함께 바꿉니다.
     Spacer(Modifier.height(20.dp))
-    VersionLogo(150.dp, Modifier.align(Alignment.CenterHorizontally))
+    VersionLogo(112.dp, Modifier.align(Alignment.CenterHorizontally))
     PageHead("새 버전", "12.0 업데이트", "게시판, 학사 탭, 귀가 기간의 일정 표시가 달라졌습니다. 주요 변경 사항을 차례로 소개합니다.")
     OneUiCard(Modifier.fillMaxWidth()) {
         TourRow(painterResource(R.drawable.ic_settings_book), TourViolet, "앱 내 게시글과 AI 요약")
