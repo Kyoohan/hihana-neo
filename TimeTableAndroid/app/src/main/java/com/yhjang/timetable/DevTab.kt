@@ -45,6 +45,7 @@ fun DevTab(
     onOpenSettings: () -> Unit,
     onOpenAccount: () -> Unit,
     onRefreshLive: () -> Unit,
+    onStartTour: (TourKind) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -63,6 +64,22 @@ fun DevTab(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
+
+        OneUiSectionTitle("첫 실행 투어")
+        OneUiGroupColumn {
+            OneUiListItem(
+                title = "새로 설치 투어",
+                subtitle = "소개 → 개인정보 보호 → 권한 → 로그인 → 완료 (연동돼 있으면 로그인은 '이미 연결됨')",
+                onClick = { onStartTour(TourKind.WELCOME) },
+            )
+            OneUiDivider()
+            OneUiListItem(
+                title = "업데이트 투어 (11.0 → 11.1)",
+                subtitle = "바뀐 것만 — 게시판·하단 바·귀가 기간·개인정보 보호",
+                onClick = { onStartTour(TourKind.UPDATE) },
+            )
+        }
+        Spacer(Modifier.height(16.dp))
 
         OneUiSectionTitle("다이얼로그")
         OneUiGroupColumn {

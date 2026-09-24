@@ -89,6 +89,7 @@ internal fun AppInfoScreen(
     var showChangelog by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
     var showLegal by remember { mutableStateOf(false) }
+    var showPrivacy by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onDismiss)
 
@@ -162,6 +163,7 @@ internal fun AppInfoScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     BottomPillButton("변경 사항") { showChangelog = true }
+                    BottomPillButton("개인정보 보호") { showPrivacy = true }
                     BottomPillButton("오픈소스 라이선스") { showLicenses = true }
                     BottomPillButton("법적 고지") { showLegal = true }
                 }
@@ -181,6 +183,9 @@ internal fun AppInfoScreen(
     }
     if (showLegal) {
         LegalNoticeScreen(onDismiss = { showLegal = false })
+    }
+    if (showPrivacy) {
+        PrivacyScreen(onDismiss = { showPrivacy = false })
     }
 }
 

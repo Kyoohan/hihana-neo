@@ -400,6 +400,8 @@ private fun TimeTableAppContent(
     var syncError by remember { mutableStateOf<String?>(null) }
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
+    // 첫 실행 투어 — 지금은 Dev 탭에서만 엽니다.
+    var tourKind by remember { mutableStateOf<TourKind?>(null) }
     // 설치·업데이트 직후 한 번, '알람 및 리마인더' 권한이 없으면 켜 달라고 안내합니다 — 없으면 위젯·실시간 일정의
     // 남은 시간이 절전 중 5~15분씩 늦게 갱신됩니다. 버전마다 한 번만 (allowBackup 과 무관한 일반 SharedPreferences).
     var showingExactAlarmPrompt by remember { mutableStateOf(false) }
@@ -864,9 +866,11 @@ private fun TimeTableAppContent(
         }
     }
 
-    // 계정 연동 창을 닫으면 계정 상태를 다시 읽고, 방금 연동됐으면 바로 한 번 동기화합니다.
-    LaunchedEffect(showingAccountSheet) {
-        if (showingAccountSheet) return@LaunchedEffect
+    // 계정 연동 창·투어를 닫으면 계정 상태를 다시 읽고, 방금 연동됐으면 바로 한 번 동기화합니다.
+    LaunchedEffect(showingAccountSheet, tourKind) {
+        if (showingAccountSheet || tourKind != null) return@LaunchedEffect
+        // 투어 로그인 화면에서 학년을 골랐을 수 있습니다.
+        studentGrade = PlanStore.studentGrade(context)
         val now = HanaCredentialStore.hasCredentials(context)
         val linkedNow = now && !hasCredentials
         hasCredentials = now
@@ -1053,6 +1057,7 @@ private fun TimeTableAppContent(
                     onOpenSettings = { showingSettings = true },
                     onOpenAccount = { showingAccountSheet = true },
                     onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
+                    onStartTour = { tourKind = it },
                 )
                 TabIndex.APPLY -> AcademicTab(
                     subTab = 2,
@@ -1358,6 +1363,10 @@ private fun TimeTableAppContent(
 
     if (showingAccountSheet) {
         HanaAccountDialog(onDismiss = { showingAccountSheet = false })
+    }
+
+    tourKind?.let { kind ->
+        OnboardingTour(kind = kind, onFinish = { tourKind = null })
     }
 
     majorUpdatePrompt?.let { info ->
@@ -3198,7 +3207,7 @@ private fun DialogRadioRow(selected: Boolean, label: String, onClick: () -> Unit
 // MARK: - 하이하나 계정 다이얼로그
 
 /** 로그인 확인 실패 원인을 다이얼로그에 보여줄 짧은 한국어 문구로 바꿉니다. */
-private fun loginFailureMessage(e: Throwable): String = when (e) {
+internal fun loginFailureMessage(e: Throwable): String = when (e) {
     is HanaPortalException.LoginFailed -> e.message ?: "로그인에 실패했습니다"
     is HanaPortalException.MissingCredentials -> e.message ?: "아이디/비밀번호를 먼저 등록해 주세요"
     is HanaPortalException.TokenNotFound -> e.message ?: "로그인 페이지를 불러오지 못했습니다"
