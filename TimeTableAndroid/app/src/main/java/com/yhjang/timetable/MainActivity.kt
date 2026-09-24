@@ -1366,7 +1366,21 @@ private fun TimeTableAppContent(
     }
 
     tourKind?.let { kind ->
-        OnboardingTour(kind = kind, onFinish = { tourKind = null })
+        OnboardingTour(
+            kind = kind,
+            onFinish = { tourKind = null },
+            // 투어 로그인에 성공하면 투어를 마치길 기다리지 않고 바로 연동 — 끝낼 즈음엔 시간표·일정이 채워져 있습니다.
+            onAccountLinked = {
+                hasCredentials = true
+                scope.launch {
+                    studentGrade = PlanStore.studentGrade(context)
+                    runCatching { syncFromHana() }
+                    runCatching { loadSchedule(true) }
+                    runCatching { loadBoard(true) }
+                    runCatching { loadAlim(true) }
+                }
+            },
+        )
     }
 
     majorUpdatePrompt?.let { info ->

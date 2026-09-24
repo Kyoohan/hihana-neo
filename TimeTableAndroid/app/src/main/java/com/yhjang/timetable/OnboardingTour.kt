@@ -132,7 +132,12 @@ private fun notificationsGranted(context: android.content.Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
 @Composable
-fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
+fun OnboardingTour(
+    kind: TourKind,
+    onFinish: () -> Unit,
+    /** 로그인 장에서 실제로 로그인에 성공한 순간 — 투어가 끝나길 기다리지 않고 바로 시간표·일정 등을 받아 옵니다. */
+    onAccountLinked: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     // 투어를 여는 순간 한 번만 정합니다 — 권한 장에서 허용하자마자 그 장이 사라져 페이지가 밀리지 않게.
@@ -199,7 +204,7 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
                 ) {
                     TourDots(count = pages.size, current = pagerState.currentPage)
                     Spacer(Modifier.weight(1f))
-                    if (page == TourPage.LOGIN && HanaCredentialStore.hasCredentials(context).not()) {
+                    if (page == TourPage.LOGIN && (BuildConfig.DEBUG || !HanaCredentialStore.hasCredentials(context))) {
                         Text(
                             "나중에",
                             style = MaterialTheme.typography.bodyMedium,
@@ -240,7 +245,7 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
                             TourPage.BOARD -> BoardPage()
                             TourPage.PRIVACY -> PrivacyPage(beforeLogin = kind == TourKind.WELCOME, onMore = { showingPrivacy = true })
                             TourPage.PERMISSIONS -> PermissionsPage()
-                            TourPage.LOGIN -> LoginPage(onReady = { loginAction = it }, onLoggedIn = ::next)
+                            TourPage.LOGIN -> LoginPage(onReady = { loginAction = it }, onLinked = onAccountLinked, onLoggedIn = ::next)
                             TourPage.DONE -> DonePage()
                             TourPage.UPDATE_SUMMARY -> UpdateSummaryPage()
                             TourPage.UPDATE_BOARD -> UpdateBoardPage()
@@ -564,10 +569,14 @@ private fun ColumnScope.PermissionsPage() {
 }
 
 @Composable
-private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLoggedIn: () -> Unit) {
+private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLinked: () -> Unit, onLoggedIn: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val connectedId = remember { HanaCredentialStore.memId(context)?.takeIf { HanaCredentialStore.hasCredentials(context) } }
+    // dev 빌드는 새로 설치한 상태를 보여 주려고 연동돼 있어도 로그인 입력 화면을 그립니다 (저장된 계정은 건드리지 않음).
+    val connectedId = remember {
+        if (BuildConfig.DEBUG) null
+        else HanaCredentialStore.memId(context)?.takeIf { HanaCredentialStore.hasCredentials(context) }
+    }
     var memId by remember { mutableStateOf("") }
     var memPwd by remember { mutableStateOf("") }
     var grade by remember { mutableIntStateOf(PlanStore.DEFAULT_STUDENT_GRADE) }
@@ -589,7 +598,10 @@ private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLoggedIn: (
             }
             checking = false
             result.fold(
-                onSuccess = { onLoggedIn() },
+                onSuccess = {
+                    onLinked()
+                    onLoggedIn()
+                },
                 onFailure = { e ->
                     // 틀린 계정이 남아 있으면 앱 곳곳에서 로그인 오류가 나니 지웁니다 — 다시 입력하거나 나중에 연동.
                     HanaCredentialStore.clear(context)
@@ -665,6 +677,34 @@ private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLoggedIn: (
     failure?.let {
         Spacer(Modifier.height(12.dp))
         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.animateContentSize())
+    }
+    if (BuildConfig.DEBUG) {
+        // 로그인 시뮬레이션 — 가짜 아이디·비밀번호를 한 글자씩 채우고 확인 중을 잠깐 보인 뒤 다음 장으로. 저장·네트워크 없음.
+        Text(
+            "로그인 시뮬레이션 (dev)",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 16.dp)
+                .clip(CircleShape)
+                .clickable(enabled = !checking) {
+                    scope.launch {
+                        failure = null
+                        memId = ""
+                        memPwd = ""
+                        "hana2026".forEach { memId += it; delay(60) }
+                        "simulated".forEach { memPwd += it; delay(45) }
+                        delay(250)
+                        checking = true
+                        delay(900)
+                        checking = false
+                        onLoggedIn()
+                    }
+                }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        )
     }
 }
 
