@@ -1992,8 +1992,8 @@ private enum class SettingsPage(val title: String, val icon: Int?, val tint: Col
 }
 
 /** One UI 설정처럼 색 원 안에 지름의 절반보다 조금 큰 흰 아이콘. */
-private val SettingsIconCircle = 32.dp
-private val SettingsIconGlyph = 18.dp
+private val SettingsIconCircle = 29.dp
+private val SettingsIconGlyph = 16.dp
 
 /** 아이콘 원 + 여백만큼 구분선을 들여 글자와 맞춥니다. */
 private val SettingsCategoryIndent = OneUi.RowPadding + SettingsIconCircle + 16.dp
