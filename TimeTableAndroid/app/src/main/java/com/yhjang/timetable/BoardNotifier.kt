@@ -119,8 +119,9 @@ object BoardNotifier {
             val postTitle = first.title.ifEmpty { "(제목 없음)" }
             val detail = runCatching { HanaPostApi.detail(context, first.url) }.getOrNull()
             val summary = detail?.let { d ->
-                withTimeoutOrNull(30_000) {
-                    runCatching { PostSummarizer.ensure(context, PostSummarizer.key(first.url), d.title.ifEmpty { first.title }, d.text) }.getOrNull()
+                // 이미지뿐인 가정통신문은 이미지를 읽느라 오래 걸릴 수 있어 넉넉히 기다립니다(백그라운드라 화면을 막지 않음).
+                withTimeoutOrNull(90_000) {
+                    runCatching { PostSummarizer.ensure(context, PostSummarizer.key(first.url), d.title.ifEmpty { first.title }, d.text, d.images) }.getOrNull()
                 }
             }
             val short = summary?.line ?: detail?.let { HanaPostApi.excerpt(it.text) }?.takeIf { it.isNotBlank() } ?: "${category.label} 새 글"
@@ -137,7 +138,7 @@ object BoardNotifier {
             builder.setContentTitle("${category.label} 새 글 ${fresh.size}건")
                 .setContentText(first.title.ifEmpty { "(제목 없음)" })
             // 여러 건이면 알림은 제목 목록으로 두고, 목록에서 바로 보이도록 한 줄 요약만 미리 받아 둡니다.
-            withTimeoutOrNull(60_000) { PostSummarizer.prefetch(context, fresh.take(6)) }
+            withTimeoutOrNull(180_000) { PostSummarizer.prefetch(context, fresh.take(6)) }
             val inbox = NotificationCompat.InboxStyle()
             fresh.take(6).forEach { inbox.addLine(it.title.ifEmpty { "(제목 없음)" }) }
             if (fresh.size > 6) inbox.setSummaryText("외 ${fresh.size - 6}건")

@@ -1,7 +1,9 @@
 /**
  * 하이하나 네오 게시글 요약 서버.
  *
- * POST /summarize { title, text } → { line, points, cached }
+ * POST /summarize { title, text, images? } → { line, points, cached }
+ *   images : 본문 이미지 주소(포털 업로드 파일만). 가정통신문처럼 본문이 이미지뿐인 글은 이미지 속 글자를
+ *            먼저 읽어 낸 뒤 본문과 합쳐 요약합니다.
  *   line   : 게시판 목록에 붙는 한 줄 요약
  *   points : 글 화면 위에 보이는 자세한 요약(글머리표)
  *
@@ -19,12 +21,23 @@ export interface Env {
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const MAX_TITLE = 300;
 const MAX_TEXT = 6000;
-const MIN_TEXT = 100;
+/** 짧은 글도 요약합니다(목록의 한 줄 요약 길이·말투를 맞추려고). 본문도 이미지도 없으면 요약할 게 없습니다. */
+const MIN_TEXT = 1;
+/** 이미지 읽기 — 포털 업로드 파일만, 글당 몇 장까지만(무료 사용량 보호). */
+const IMAGE_URL = /^https:\/\/hh\.hana\.hs\.kr\/upfilePath\/[^?#]+\.(png|jpe?g|gif|webp|bmp)$/i;
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 4_000_000;
+const OCR_PROMPT = `이 이미지는 한국 고등학교 공지문(가정통신문 등)의 일부다. 이미지 속 글자를 빠짐없이 한국어 원문 그대로 옮겨 적어라.
+표는 한 행을 한 줄로, 칸은 ' | '로 구분한다. 학교 로고·워터마크는 무시한다. 설명이나 요약은 붙이지 말고 옮겨 적은 글만 출력한다.
+글자가 없는 사진이면 '(글자 없음)'이라고만 쓴다.`;
 /** 요약 보관 기간 — 지난 공지는 다시 열 일이 드뭅니다. */
 const KEEP_SECONDS = 60 * 60 * 24 * 180;
-/** 무료 사용량을 지키는 안전장치 — 새 요약 생성 횟수 제한(IP 당 시간당, 전체 하루). */
-const PER_IP_PER_HOUR = 40;
-const PER_DAY = 300;
+/**
+ * 무료 사용량을 지키는 안전장치 — 새 요약 생성 횟수 제한(전체 하루, IP 당 시간당). 이미 만든 요약을 돌려주는 건 세지 않습니다.
+ * 학교 와이파이는 학생들이 한 IP 를 같이 쓰므로 IP 제한은 넉넉히 두고, 실제 한도는 하루 전체 횟수로 겁니다.
+ */
+const PER_IP_PER_HOUR = 300;
+const PER_DAY = 500;
 
 const SYSTEM = `너는 한국 고등학교 포털 공지를 학생에게 요약해 주는 도우미다.
 반드시 아래 형식 그대로, 한국어로만 답한다.
@@ -53,7 +66,7 @@ export default {
     if (req.method !== "POST") return json({ error: "method" }, 405);
     if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
 
-    let body: { title?: unknown; text?: unknown };
+    let body: { title?: unknown; text?: unknown; images?: unknown };
     try {
       body = await req.json();
     } catch {
@@ -61,9 +74,15 @@ export default {
     }
     const title = String(body.title ?? "").trim().slice(0, MAX_TITLE);
     const text = String(body.text ?? "").trim().slice(0, MAX_TEXT);
-    if (text.length < MIN_TEXT) return json({ error: "too_short" }, 400);
+    const images = (Array.isArray(body.images) ? body.images : [])
+      .map((u) => String(u))
+      .filter((u) => IMAGE_URL.test(u))
+      .slice(0, MAX_IMAGES);
+    if (text.length < MIN_TEXT && images.length === 0) return json({ error: "too_short" }, 400);
 
-    const key = "v3:" + (await sha256(`${title}\n${text}`));
+    // 이미지가 없는 글은 예전과 같은 키(제목+본문)를 써서, 이미 만든 요약을 그대로 돌려줍니다.
+    const source = images.length > 0 ? `${title}\n${text}\n${images.join("\n")}` : `${title}\n${text}`;
+    const key = "v3:" + (await sha256(source));
     const hit = await env.SUMMARIES.get<Summary>(key, "json");
     if (hit) return json({ ...hit, cached: true });
 
@@ -81,12 +100,19 @@ export default {
       ]),
     );
 
+    let content = text;
+    if (images.length > 0) {
+      const read = await readImages(env, images);
+      if (read) content = `${text}\n\n[본문 이미지 속 내용]\n${read}`.trim();
+    }
+    if (!content) return json({ error: "no_content" }, 422);
+
     let raw: string;
     try {
       const out = (await env.AI.run(MODEL as keyof AiModels, {
         messages: [
           { role: "system", content: SYSTEM },
-          { role: "user", content: `제목: ${title}\n본문:\n${text}` },
+          { role: "user", content: `제목: ${title}\n본문:\n${content.slice(0, MAX_TEXT * 2)}` },
         ],
         max_tokens: 1200,
         temperature: 0.2,
@@ -109,6 +135,47 @@ export default {
     return json({ ...summary, cached: false });
   },
 } satisfies ExportedHandler<Env>;
+
+/** 본문 이미지들의 글자를 차례로 읽어 이어 붙입니다. 한 장이 실패해도 나머지는 계속합니다. */
+async function readImages(env: Env, urls: string[]): Promise<string> {
+  const parts: string[] = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cf: { cacheTtl: 86_400 } });
+      const type = res.headers.get("content-type") ?? "";
+      if (!res.ok || !type.startsWith("image/")) continue;
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > MAX_IMAGE_BYTES) continue;
+      const out = (await env.AI.run(MODEL as keyof AiModels, {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: OCR_PROMPT },
+              { type: "image_url", image_url: { url: `data:${type};base64,${base64(buf)}` } },
+            ],
+          },
+        ],
+        max_tokens: 2000,
+        temperature: 0,
+        chat_template_kwargs: { enable_thinking: false },
+        reasoning_effort: "low",
+      } as any)) as { response?: string; choices?: { message?: { content?: string } }[] };
+      const read = (out.response ?? out.choices?.[0]?.message?.content ?? "").trim();
+      if (read && !read.includes("(글자 없음)")) parts.push(read);
+    } catch (e) {
+      console.error("image read failed", url, e);
+    }
+  }
+  return parts.join("\n\n");
+}
+
+function base64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
 interface Summary {
   line: string;

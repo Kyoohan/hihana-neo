@@ -115,6 +115,8 @@ data class HanaPostDetail(
     val html: String,
     /** 요약·알림용 순수 텍스트. */
     val text: String,
+    /** 본문 이미지 주소 — 가정통신문처럼 본문이 이미지뿐인 글은 요약 서버가 이미지 속 글자를 읽습니다. */
+    val images: List<String>,
     val files: List<HanaPostFile>,
 )
 
@@ -147,6 +149,11 @@ object HanaPostApi {
             views = vo.optInt("bd_view", -1).takeIf { it >= 0 },
             html = html,
             text = plainText(html),
+            images = Regex("<img[^>]+src\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).findAll(html)
+                .map { Html.fromHtml(it.groupValues[1], Html.FROM_HTML_MODE_LEGACY).toString().trim() }
+                .map { if (it.startsWith("http")) it else BASE + (if (it.startsWith("/")) it else "/$it") }
+                .distinct()
+                .toList(),
             files = files,
         )
     }
@@ -171,28 +178,33 @@ object HanaPostApi {
 
 // MARK: - AI 요약 (Cloudflare Workers AI)
 
-/** 목록에 붙는 한 줄([line])과 글 화면 위의 자세한 요약([points]). 짧은 글은 본문 앞부분이 [line], [points] 는 빈 목록. */
-data class PostSummary(val line: String, val points: List<String>)
+/**
+ * 목록에 붙는 한 줄([line])과 글 화면 위의 자세한 요약([points]). [ai] 가 false 면 예전 버전이 짧은 글에 본문 앞부분을
+ * 넣어 둔 것 — 요약이 아니라서 다시 받습니다.
+ */
+data class PostSummary(val line: String, val points: List<String>, val ai: Boolean = true)
 
 /**
  * 게시글 요약. 요약 서버(summary-worker)가 글 내용마다 한 번만 AI 로 만들고 보관해 모든 사용자가 나눠 씁니다.
  * 앱은 받은 요약을 글마다 기기에 저장해 두어, 목록·글 화면·알림 어디서든 다시 요청하지 않습니다.
- * 짧은 글은 본문이 곧 요약이라 서버를 부르지 않고 본문 앞부분을 한 줄로 씁니다.
+ * 짧은 글도 목록 한 줄의 길이·말투를 맞추려고 AI 로 요약합니다.
  */
 object PostSummarizer {
     private const val TAG = "PostSummary"
     private const val ENDPOINT = "https://hihana-summary.kyoohan0711ultra.workers.dev/summarize"
-    private const val PREFS = "post_summaries_v6"
+    private const val PREFS = "post_summaries_v7"
     private const val MAX_CACHED = 300
-    /** 이보다 짧은 글은 AI 없이 본문 앞부분을 한 줄 요약으로 씁니다. */
-    const val MIN_CHARS = 100
-    /** 이보다 짧은 글은 한 줄 요약만 쓰고, 글 화면의 자세한 요약 카드는 숨깁니다(본문이 곧 요약). */
+    /**
+     * 이보다 짧은 글은 한 줄 요약만 쓰고 글 화면의 자세한 요약 카드는 숨깁니다(본문이 곧 요약).
+     * 본문 이미지도 이보다 짧은 글에서만 보냅니다 — 글이 충분히 긴데 이미지까지 보내면 이미 만든 요약을 다시 만들게 됩니다.
+     */
     private const val MIN_CARD_CHARS = 150
     private const val MAX_INPUT_CHARS = 6000
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
+        // 이미지 읽기가 들어가면 장당 10초 넘게 걸립니다.
+        .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
     /** 목록 행이 구독하는 한 줄 요약 — 받아 오는 대로 행이 채워집니다. */
@@ -214,14 +226,16 @@ object PostSummarizer {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun cached(context: Context, key: String): PostSummary? =
-        prefs(context).getString("s_$key", null)?.let(::decode)
+        prefs(context).getString("s_$key", null)?.let(::decode)?.takeIf { it.ai || it.points.isNotEmpty() }
 
     /** 목록 행에서 부르는 한 줄 요약. 아직 없으면 null. */
     fun line(context: Context, url: String): String? {
         if (!linesLoaded) {
             linesLoaded = true
             prefs(context).all.forEach { (k, v) ->
-                if (k.startsWith("s_") && v is String) decode(v)?.let { lines[k.removePrefix("s_")] = it.line }
+                if (k.startsWith("s_") && v is String) {
+                    decode(v)?.takeIf { it.ai || it.points.isNotEmpty() }?.let { lines[k.removePrefix("s_")] = it.line }
+                }
             }
         }
         return lines[key(url)]?.takeIf { it.isNotEmpty() }
@@ -240,35 +254,39 @@ object PostSummarizer {
     }
 
     /** 저장된 요약이 있으면 그것을, 없으면 만들어(짧은 글은 본문 앞부분) 저장하고 돌려줍니다. 실패하면 예외. */
-    suspend fun ensure(context: Context, key: String, title: String, text: String): PostSummary {
+    suspend fun ensure(context: Context, key: String, title: String, text: String, images: List<String> = emptyList()): PostSummary {
         cached(context, key)?.let { return it }
+        val short = text.length < MIN_CARD_CHARS
+        val sendImages = if (short) images else emptyList()
         val summary = when {
-            text.length < MIN_CHARS -> PostSummary(HanaPostApi.excerpt(text, 40), emptyList())
-            text.length < MIN_CARD_CHARS -> request(title, text).copy(points = emptyList())
-            else -> request(title, text)
+            // 본문도 이미지도 없는 글 — 빈 요약으로 저장해 목록을 열 때마다 다시 받지 않게 합니다.
+            text.isBlank() && sendImages.isEmpty() -> PostSummary("", emptyList())
+            short && sendImages.isEmpty() -> request(title, text, sendImages).copy(points = emptyList())
+            else -> request(title, text, sendImages)
         }
         store(context, key, summary)
         return summary
     }
 
-    private suspend fun request(title: String, text: String): PostSummary = withContext(Dispatchers.IO) {
+    private suspend fun request(title: String, text: String, images: List<String>): PostSummary = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("title", title)
             .put("text", text.take(MAX_INPUT_CHARS))
+            .put("images", JSONArray(images))
             .toString()
             .toRequestBody("application/json; charset=utf-8".toMediaType())
         val request = Request.Builder().url(ENDPOINT).header("x-app", "hihana-neo").post(body).build()
         client.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw IllegalStateException("summary ${response.code}: ${raw.take(200)}")
-            decode(raw) ?: throw IllegalStateException("summary unparsable")
+            decode(raw)?.copy(ai = true) ?: throw IllegalStateException("summary unparsable")
         }
     }
 
     /** 글 화면용 — 상태를 차례로 알려 줍니다. */
-    suspend fun summarize(context: Context, key: String, title: String, text: String, onState: (State) -> Unit) {
+    suspend fun summarize(context: Context, key: String, title: String, text: String, images: List<String>, onState: (State) -> Unit) {
         cached(context, key)?.let { onState(if (it.points.isEmpty()) State.Hidden else State.Done(it)); return }
-        if (text.length < MIN_CARD_CHARS) {
+        if (text.length < MIN_CARD_CHARS && images.isEmpty() || text.isBlank() && images.isEmpty()) {
             try {
                 ensure(context, key, title, text)
             } catch (e: CancellationException) {
@@ -281,7 +299,8 @@ object PostSummarizer {
         }
         onState(State.Loading)
         try {
-            onState(State.Done(ensure(context, key, title, text)))
+            val summary = ensure(context, key, title, text, images)
+            onState(if (summary.points.isEmpty()) State.Hidden else State.Done(summary))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -301,7 +320,7 @@ object PostSummarizer {
             if (lines.containsKey(key) || !inFlight.add(key)) continue
             try {
                 val detail = HanaPostApi.detail(context, post.url)
-                ensure(context, key, detail.title.ifEmpty { post.title }, detail.text)
+                ensure(context, key, detail.title.ifEmpty { post.title }, detail.text, detail.images)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -313,15 +332,15 @@ object PostSummarizer {
     }
 
     private fun encode(s: PostSummary): String =
-        JSONObject().put("line", s.line).put("points", JSONArray(s.points)).toString()
+        JSONObject().put("line", s.line).put("points", JSONArray(s.points)).put("ai", s.ai).toString()
 
     private fun decode(raw: String): PostSummary? = runCatching {
         val o = JSONObject(raw)
         val line = o.optString("line").trim()
         val arr = o.optJSONArray("points")
         val points = if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it).trim() }.filter { it.isNotEmpty() }
-        // 본문이 이미지뿐인 글은 빈 요약으로 저장해 두어 목록을 열 때마다 다시 받지 않게 합니다.
-        PostSummary(line, points)
+        // "ai" 가 없는 항목은 예전 버전이 저장한 것 — 짧은 글이면 본문 앞부분일 수 있습니다.
+        PostSummary(line, points, ai = o.optBoolean("ai", false))
     }.getOrNull()
 }
 
@@ -359,7 +378,7 @@ fun BoardPostScreen(
     }
     LaunchedEffect(detail, summaryRun) {
         val d = detail ?: return@LaunchedEffect
-        PostSummarizer.summarize(context, key, d.title, d.text) { summary = it }
+        PostSummarizer.summarize(context, key, d.title, d.text, d.images) { summary = it }
     }
 
     BackHandler(onBack = onDismiss)
