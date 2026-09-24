@@ -684,40 +684,27 @@ internal fun coalesceUpcoming(blocks: List<Block>): List<UpcomingGroup> {
 }
 
 /**
- * 남은 일정 한 줄 — 타임라인: 왼쪽 시작 시각, 종류별 색 원 아이콘과 다음 줄로 이어지는 선, 제목·장소(와 감독).
- * 끝 시각은 적지 않습니다 — 다음 줄의 시작이 곧 앞 일정의 끝입니다.
+ * 남은 일정 한 줄 — 왼쪽에 종류별 색 원 아이콘(위젯·Now Bar 와 같은 아이콘·색), 오른쪽 첫 줄에 제목·장소,
+ * 둘째 줄에 시간(과 감독). 설정·알림 목록과 같은 One UI 두 줄 목록입니다.
  */
 @Composable
 private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?, tint: Color, isLast: Boolean) {
     val formatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
     val scheme = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-        Text(
-            text = group.start.format(formatter),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.End,
-            modifier = Modifier.width(44.dp).padding(top = 6.dp),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.width(30.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(30.dp).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
-                Icon(
-                    painterResource(if (group.iconKey.isEmpty()) R.drawable.ic_place else iconResFor(group.iconKey)),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            if (!isLast) {
-                // 아이콘 아래에서 다음 아이콘 바로 위까지 잇는 선.
-                Spacer(Modifier.height(3.dp))
-                Box(Modifier.width(2.dp).weight(1f).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.16f)))
-                Spacer(Modifier.height(3.dp))
-            }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = if (isLast) 0.dp else 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(30.dp).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
+            Icon(
+                painterResource(if (group.iconKey.isEmpty()) R.drawable.ic_place else iconResFor(group.iconKey)),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
         }
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).padding(top = 5.dp, bottom = if (isLast) 2.dp else 20.dp)) {
+        Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // 제목은 weight(fill=false)로 남은 공간만 차지 → 장소 칩이 먼저 자기 폭을 확보해서
                 // 과목명이 길어도(예: "데이터 과학과 인공지능") 장소가 세로로 눌려 쓰이지 않습니다.
@@ -739,14 +726,17 @@ private fun UpcomingGroupRow(group: UpcomingGroup, supervision: String?, tint: C
                     )
                 }
             }
-            if (supervision != null) {
-                Text(
-                    "감독 $supervision",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
+            Text(
+                buildString {
+                    append(group.start.format(formatter)).append(" ~ ").append(group.end.format(formatter))
+                    if (supervision != null) append(" · 감독 ").append(supervision)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }
