@@ -69,7 +69,7 @@ fun DevTab(
         OneUiGroupColumn {
             OneUiListItem(
                 title = "새로 설치 투어",
-                subtitle = "소개 → 개인정보 보호 → 권한 → 로그인 → 완료 (이미 허용한 권한·연동된 계정이면 그 장은 빠짐)",
+                subtitle = "소개 → 개인정보 보호 → 권한 → 로그인 → 완료 (이미 허용한 권한이면 그 장은 빠짐 · dev 빌드만 건너뛰기 가능)",
                 onClick = { onStartTour(TourKind.WELCOME) },
             )
             OneUiDivider()

@@ -107,8 +107,9 @@ import kotlinx.coroutines.withContext
 /**
  * 첫 실행 투어 — 옆으로 넘기는 전체 화면. [TourKind.WELCOME] 은 새로 설치한 사람에게 기능 소개 → 개인정보 보호 →
  * 권한 → 로그인 → 완료를, [TourKind.UPDATE] 는 이미 쓰던 사람에게 이번 버전에서 바뀐 것만 보여 줍니다.
- * 투어 자체는 건너뛸 수 없고 끝까지 넘겨야 닫힙니다(뒤로 가기도 앞 장으로만). 권한을 이미 모두 허용했거나 이미 로그인돼
- * 있으면 그 장은 처음부터 빠집니다. 권한은 허용하지 않고 넘어갈 수 있고, 로그인은 '나중에'로 미룰 수 있습니다.
+ * 투어 자체는 건너뛸 수 없고 끝까지 넘겨야 닫힙니다(뒤로 가기도 앞 장으로만) — 확인용 dev 빌드에서만 건너뛸 수 있습니다.
+ * 권한을 이미 모두 허용했으면 권한 장은 처음부터 빠집니다. 로그인 장은 항상 있고, 이미 연동돼 있으면 '이미 연결됨'을 보여 줍니다.
+ * 권한은 허용하지 않고 넘어갈 수 있고, 로그인은 '나중에'로 미룰 수 있습니다.
  */
 enum class TourKind { WELCOME, UPDATE }
 
@@ -137,12 +138,11 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
     // 투어를 여는 순간 한 번만 정합니다 — 권한 장에서 허용하자마자 그 장이 사라져 페이지가 밀리지 않게.
     val pages = remember(kind) {
         val needsPermissions = !notificationsGranted(context) || !ExactAlarmPermission.isGranted(context)
-        val needsLogin = !HanaCredentialStore.hasCredentials(context)
         when (kind) {
             TourKind.WELCOME -> buildList {
                 addAll(listOf(TourPage.HELLO, TourPage.HOME, TourPage.APPLY, TourPage.BOARD, TourPage.PRIVACY))
                 if (needsPermissions) add(TourPage.PERMISSIONS)
-                if (needsLogin) add(TourPage.LOGIN)
+                add(TourPage.LOGIN)
                 add(TourPage.DONE)
             }
             TourKind.UPDATE -> buildList {
@@ -163,13 +163,14 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
     }
 
     Dialog(
-        // 건너뛸 수 없으므로 바깥 터치·뒤로 가기로 닫히지 않습니다.
-        onDismissRequest = {},
+        // 건너뛸 수 없으므로 바깥 터치·뒤로 가기로 닫히지 않습니다 (dev 빌드는 확인하기 편하게 닫힘).
+        onDismissRequest = { if (BuildConfig.DEBUG) onFinish() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
     ) {
         // 뒤로 가기는 앞 장으로만, 첫 장에서는 아무 일도 하지 않습니다 (다이얼로그 안에 둬야 다이얼로그 창의 뒤로 가기를 받습니다).
         BackHandler {
             if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+            else if (BuildConfig.DEBUG) onFinish()
         }
         val view = LocalView.current
         val dark = scheme.isDark
@@ -191,14 +192,14 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
                     .oneUiPageBackground()
                     .padding(top = statusTop + 12.dp, bottom = navBottom + 16.dp),
             ) {
-                // 위: 진행 점 + (로그인 장에서만) 나중에
+                // 위: 진행 점 + (로그인 장에서만) 나중에 · dev 빌드는 모든 장에 건너뛰기
                 Row(
                     Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 24.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TourDots(count = pages.size, current = pagerState.currentPage)
                     Spacer(Modifier.weight(1f))
-                    if (page == TourPage.LOGIN) {
+                    if (page == TourPage.LOGIN && HanaCredentialStore.hasCredentials(context).not()) {
                         Text(
                             "나중에",
                             style = MaterialTheme.typography.bodyMedium,
@@ -206,6 +207,17 @@ fun OnboardingTour(kind: TourKind, onFinish: () -> Unit) {
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .clickable { next() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
+                    if (BuildConfig.DEBUG && pagerState.currentPage != pages.lastIndex) {
+                        Text(
+                            "건너뛰기 (dev)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = scheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(onClick = onFinish)
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                     }
