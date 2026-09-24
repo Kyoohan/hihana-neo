@@ -63,6 +63,8 @@ internal fun TodayDashboard(
     nextRoom: String?,
     /** 현재 블록 진행률 0..1 — '지금' 카드 아래 진행바. 블록이 없으면 null. */
     blockProgress: Float?,
+    /** 귀가 기간 안내 — 있으면 '지금' 카드가 일정 대신 이 문구를 보여줍니다. */
+    homeStayNotice: HomeStayNotice?,
     slots: List<PlanSlot>,
     places: Map<PlanSlot, StudyPlace?>,
     supervisor: String?,
@@ -103,12 +105,12 @@ internal fun TodayDashboard(
         verticalItemSpacing = 12.dp,
     ) {
         item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-            NowHeroCard(hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress) {
+            NowHeroCard(hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress, homeStayNotice) {
                 if (needsAccount) onConnectAccount() else scope.launch { gridState.animateScrollToItem(0) }
             }
         }
         item(span = StaggeredGridItemSpan.FullLine, key = "upcoming") {
-            UpcomingCard(upcomingGroups, supervisor)
+            UpcomingCard(upcomingGroups, supervisor, emptyText = if (homeStayNotice != null) "귀가 기간에는 일정이 없습니다" else "남은 일정이 없습니다")
         }
         // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 전체 폭 한 장으로 둡니다.
         item(span = StaggeredGridItemSpan.FullLine, key = "meal") {
@@ -202,6 +204,7 @@ private fun NowHeroCard(
     nextTitle: String?,
     nextRoom: String?,
     blockProgress: Float?,
+    homeStayNotice: HomeStayNotice?,
     onClick: () -> Unit,
 ) {
     DashboardCard(title = "지금", icon = painterResource(R.drawable.ic_place), onCardClick = onClick) {
@@ -227,6 +230,16 @@ private fun NowHeroCard(
                 Spacer(Modifier.height(4.dp))
                 DashboardEmpty("잠시만 기다려주세요")
             }
+            return@DashboardCard
+        }
+        if (homeStayNotice != null && (block == null || block.isBlank)) {
+            Text(
+                homeStayNotice.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            DashboardEmpty(homeStayNotice.detail)
             return@DashboardCard
         }
         if (block == null || block.isBlank) {
@@ -321,10 +334,10 @@ private fun remainingText(minutes: Long): String =
 
 /** 오늘 남은 일정 — 기존에 합쳐 보여주던 시간대·제목·장소/감독 줄을 전체 폭 카드로. */
 @Composable
-private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?) {
+private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?, emptyText: String) {
     DashboardCard(title = "오늘 남은 일정", icon = painterResource(R.drawable.ic_next)) {
         if (groups.isEmpty()) {
-            DashboardEmpty("남은 일정이 없습니다")
+            DashboardEmpty(emptyText)
         } else {
             groups.forEach { group ->
                 UpcomingGroupRow(group, supervision = supervisor.takeIf { group.supervisionSlot })

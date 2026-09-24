@@ -447,6 +447,8 @@ object HanaTimetableSync {
     suspend fun ensureInstalled(context: Context, date: LocalDate = PlanStore.today()) {
         // 심야면학 신청도 여기서 함께 — 위젯·Now Bar 가 새 프로세스에서 떠도 블록에 들어가게.
         MidnightSchedule.ensureInstalled(context)
+        // 귀가 기간(학사일정의 귀가·귀교)도 — 그 사이엔 일정이 비어 Now Bar·위젯이 꺼집니다.
+        HomeStaySchedule.ensureInstalled(context)
         if (Timetable.fetchedWeek() != null) return
         val week = PlanStore.cachedJson(context, NAME_PREFIX + weekKey(date))?.let { TimetableWeek.fromJson(it.value) }
             ?: latest(context)

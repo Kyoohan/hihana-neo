@@ -481,6 +481,8 @@ private fun TimeTableAppContent(
         places = PlanStore.placesForToday(context, today)
         // 학사일정 캐시는 학사 탭 진입 시 채워집니다 — 여기서는 읽기만 합니다.
         val grade = PlanStore.studentGrade(context)
+        // 귀가 기간도 캐시된 학사일정과 지금 학년으로 다시 계산합니다(학년을 바꿨을 때 등).
+        HomeStaySchedule.refresh(context)
         weekday1Supervisor = weekday1SupervisionTeachers(
             HanaAcademicRepository.cachedSchedule(context),
             today,
@@ -504,6 +506,11 @@ private fun TimeTableAppContent(
         scheduleError = null
         try {
             scheduleEntries = HanaAcademicRepository.schedule(context, force)
+            // 새 학사일정에 귀가·귀교가 생기거나 바뀌었으면 Now Bar·위젯도 바로 맞춥니다.
+            if (HomeStaySchedule.install(scheduleEntries, PlanStore.studentGrade(context))) {
+                TimeTableWidget().updateAll(context)
+                runCatching { LiveActivity.update(context) }
+            }
             // 방금 받은 일정으로 1타임 감독을 즉시 갱신합니다 (오늘 탭이 다음에 그릴 때 반영).
             weekday1Supervisor = weekday1SupervisionTeachers(
                 scheduleEntries,
@@ -896,7 +903,11 @@ private fun TimeTableAppContent(
     // 상태를 구분하기 위한 값 — 이게 없으면 로딩 중에도 "오늘 일정이 모두 끝났습니다"라는
     // 잘못된 문구가 떠서, 앱이 멈춘 것처럼(화면이 빈 것처럼) 보이는 원인이 됐습니다.
     val hasTimetable = remember(timetableRevision) { Timetable.fetchedWeek() != null }
-    val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision) { Timetable.blocks(today) { places[it] } }
+    val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision, HomeStaySchedule.revision) {
+        Timetable.blocks(today) { places[it] }
+    }
+    // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 2타임 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
+    val homeStayNotice = HomeStaySchedule.revision.let { homeStayNotice(today, now) }
     val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
     // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
     val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
@@ -1195,6 +1206,7 @@ private fun TimeTableAppContent(
                     nextTitle = nextBlock?.title,
                     nextRoom = nextBlock?.room,
                     blockProgress = blockProgress,
+                    homeStayNotice = homeStayNotice,
                     slots = slots,
                     places = places,
                     supervisor = weekday1Supervisor,

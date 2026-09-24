@@ -482,7 +482,10 @@ object Timetable {
      * 하루 블록 + 심야면학: 오늘 신청한 심야 타임은 마지막 면학 뒤에 (그 사이는 "휴식"), 전날 신청이 자정을 넘기면
      * 그 남은 부분을 오늘 맨 앞에 붙입니다. 신청이 없으면 평소 블록 그대로입니다.
      */
-    fun blocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
+    fun blocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> =
+        applyHomeStay(date, blocksWithMidnight(date, placeFor))
+
+    private fun blocksWithMidnight(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
         val base = baseBlocks(date, placeFor)
         val today = midnightFor(date)
         val carry = midnightFor(date.minusDays(1)).filter { it.end > 24 * 60 }
@@ -523,6 +526,75 @@ object Timetable {
             result.addAll(0, carry.map { block(it, 24 * 60) })
         }
         return result
+    }
+
+    // ---------- 귀가 기간 ----------
+
+    /** 학사일정의 귀가·귀교로 정한 그날의 상태. 평소에는 null 입니다. */
+    enum class HomeStay {
+        /** 귀가하는 날 — 1타임부터는 일정이 없습니다. */
+        LEAVE,
+        /** 귀가와 귀교 사이 — 하루 종일 일정이 없습니다. */
+        AWAY,
+        /** 귀교하는 날 — 2타임부터 일정이 시작합니다(1타임에는 아직 돌아오는 중이라). */
+        RETURN,
+    }
+
+    @Volatile private var homeStayByDate: Map<LocalDate, HomeStay>? = null
+
+    /** 날짜별 귀가 상태 설치 — 학사일정에서 계산해 앱이 넘깁니다. */
+    fun installHomeStay(byDate: Map<LocalDate, HomeStay>) {
+        homeStayByDate = byDate
+    }
+
+    fun homeStayInstalled(): Boolean = homeStayByDate != null
+
+    fun homeStay(date: LocalDate): HomeStay? = homeStayByDate?.get(date)
+
+    /** [from] 이후(당일 포함) 가장 가까운 귀교일 — 모르면 null. */
+    fun nextHomeReturn(from: LocalDate): LocalDate? =
+        homeStayByDate?.filter { (date, stay) -> stay == HomeStay.RETURN && !date.isBefore(from) }?.keys?.minOrNull()
+
+    /** 귀가일 일정이 끝나는 시각(자정 기준 분) — 그날 1타임 시작, 평일 19:00 · 주말 13:30. */
+    fun homeLeaveAt(date: LocalDate): Int =
+        if (date.dayOfWeek.value >= 6) Sessions.weekend1.start else Sessions.weekday1.start
+
+    /** 귀교일 일정이 시작하는 시각(자정 기준 분) — 그날 2타임 시작, 평일 21:30 · 주말 16:00. */
+    fun homeReturnAt(date: LocalDate): Int =
+        if (date.dayOfWeek.value >= 6) Sessions.weekend2.start else Sessions.weekday2.start
+
+    /**
+     * 귀가 기간에는 일정을 비웁니다 — 귀가일은 1타임부터, 그 사이 날은 하루 종일, 귀교일은 2타임 전까지.
+     * 빈 구간은 [BlockKind.BlankKind] 라서 Now Bar·위젯이 평소 일과 뒤처럼 저절로 꺼집니다.
+     * 면학 위치·신청은 그대로 두고, 하루 일정(지금·남은 일정·Now Bar·위젯)만 바뀝니다.
+     */
+    private fun applyHomeStay(date: LocalDate, blocks: List<Block>): List<Block> {
+        val stay = homeStay(date) ?: return blocks
+        val startOfDay = date.atStartOfDay()
+        val endOfDay = startOfDay.plusDays(1)
+        return when (stay) {
+            HomeStay.AWAY -> listOf(Block(BlockKind.BlankKind, startOfDay, endOfDay))
+            HomeStay.RETURN -> {
+                val cutoff = startOfDay.plusMinutes(homeReturnAt(date).toLong())
+                val kept = blocks.filter { !it.start.isBefore(cutoff) }
+                listOf(Block(BlockKind.BlankKind, startOfDay, cutoff)) + kept
+            }
+            HomeStay.LEAVE -> {
+                val cutoff = startOfDay.plusMinutes(homeLeaveAt(date).toLong())
+                val kept = blocks.filter { it.start.isBefore(cutoff) }.map { block ->
+                    val end = if (block.end.isAfter(cutoff)) cutoff else block.end
+                    val kind = block.kind
+                    // 1타임을 기다리던 구간(저녁시간 등)은 이제 귀가를 기다립니다 — "1타임까지" 대신 "귀가까지".
+                    if (kind is BlockKind.GapKind && !end.isBefore(cutoff)) {
+                        block.copy(kind = BlockKind.GapKind(kind.gap.copy(fallbackTitle = "귀가", caption = "귀가까지", next = null)), end = end)
+                    } else {
+                        block.copy(end = end)
+                    }
+                }
+                val tailStart = kept.lastOrNull()?.end ?: startOfDay
+                kept + Block(BlockKind.BlankKind, tailStart, endOfDay)
+            }
+        }
     }
 
     private fun baseBlocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
