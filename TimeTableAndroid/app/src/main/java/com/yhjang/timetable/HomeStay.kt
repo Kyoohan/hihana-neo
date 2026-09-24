@@ -11,7 +11,7 @@ import java.util.Locale
 
 /**
  * 귀가 기간 — 학사일정의 "귀가(1,2,3)" · "귀교(1,2,3)" 로 날짜별 상태를 정해 [Timetable.installHomeStay] 로 넘깁니다.
- * 귀가일은 1타임부터, 귀교일은 2타임 전까지, 그 사이 날은 하루 종일 일정이 없어 Now Bar·위젯이 꺼지고
+ * 귀가일은 1타임부터, 귀교일은 마지막 타임(21:30) 전까지, 그 사이 날은 하루 종일 일정이 없어 Now Bar·위젯이 꺼지고
  * 홈에는 귀가 안내가 뜹니다. 괄호 안 학년에 내 학년이 없으면 그 귀가·귀교는 무시합니다.
  */
 object HomeStaySchedule {
@@ -93,16 +93,21 @@ object HomeStaySchedule {
 /** 홈 '지금' 카드에 띄우는 귀가 안내. */
 data class HomeStayNotice(val title: String, val detail: String)
 
-/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 2타임 전까지만. */
+/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 마지막 타임 전까지만. */
 fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
     val stay = Timetable.homeStay(today) ?: return null
     val minutes = if (now.toLocalDate() == today) now.hour * 60 + now.minute else 0
     fun clock(m: Int) = "%d:%02d".format(m / 60, m % 60)
+    /** "21:30 4타임" — 세션 이름 "면학 4타임"에서 타임 부분만. */
+    fun returnSession(date: LocalDate): String {
+        val session = Timetable.homeReturnSession(date)
+        return "${clock(session.start)} ${session.name.removePrefix("면학").trim()}"
+    }
     return when (stay) {
         Timetable.HomeStay.RETURN -> {
             val start = Timetable.homeReturnAt(today)
             if (minutes >= start) null
-            else HomeStayNotice("조심히 돌아오세요", "오늘 귀교 · ${clock(start)} 2타임부터 일정이 시작됩니다")
+            else HomeStayNotice("조심히 돌아오세요", "오늘 귀교 · ${returnSession(today)}부터 일정이 시작됩니다")
         }
         Timetable.HomeStay.LEAVE, Timetable.HomeStay.AWAY -> {
             if (stay == Timetable.HomeStay.LEAVE && minutes < Timetable.homeLeaveAt(today)) return null
@@ -111,7 +116,7 @@ fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
                 "귀교하면 일정이 다시 표시됩니다"
             } else {
                 val day = back.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
-                "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교 · ${clock(Timetable.homeReturnAt(back))} 2타임부터 일정이 다시 시작됩니다"
+                "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교 · ${returnSession(back)}부터 일정이 다시 시작됩니다"
             }
             HomeStayNotice("편안한 귀가 보내세요", detail)
         }

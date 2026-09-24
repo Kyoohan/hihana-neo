@@ -536,7 +536,7 @@ object Timetable {
         LEAVE,
         /** 귀가와 귀교 사이 — 하루 종일 일정이 없습니다. */
         AWAY,
-        /** 귀교하는 날 — 2타임부터 일정이 시작합니다(1타임에는 아직 돌아오는 중이라). */
+        /** 귀교하는 날 — 마지막 타임(21:30, 평일 2타임 · 주말 4타임)부터 일정이 시작합니다. */
         RETURN,
     }
 
@@ -559,12 +559,15 @@ object Timetable {
     fun homeLeaveAt(date: LocalDate): Int =
         if (date.dayOfWeek.value >= 6) Sessions.weekend1.start else Sessions.weekday1.start
 
-    /** 귀교일 일정이 시작하는 시각(자정 기준 분) — 그날 2타임 시작, 평일 21:30 · 주말 16:00. */
-    fun homeReturnAt(date: LocalDate): Int =
-        if (date.dayOfWeek.value >= 6) Sessions.weekend2.start else Sessions.weekday2.start
+    /** 귀교일 일정이 시작하는 타임 — 저녁에 돌아오므로 그날 마지막 타임(평일 2타임 · 주말 4타임, 둘 다 21:30). */
+    fun homeReturnSession(date: LocalDate): StudySession =
+        if (date.dayOfWeek.value >= 6) Sessions.weekend4 else Sessions.weekday2
+
+    /** 귀교일 일정이 시작하는 시각(자정 기준 분). */
+    fun homeReturnAt(date: LocalDate): Int = homeReturnSession(date).start
 
     /**
-     * 귀가 기간에는 일정을 비웁니다 — 귀가일은 1타임부터, 그 사이 날은 하루 종일, 귀교일은 2타임 전까지.
+     * 귀가 기간에는 일정을 비웁니다 — 귀가일은 1타임부터, 그 사이 날은 하루 종일, 귀교일은 마지막 타임(21:30) 전까지.
      * 빈 구간은 [BlockKind.BlankKind] 라서 Now Bar·위젯이 평소 일과 뒤처럼 저절로 꺼집니다.
      * 면학 위치·신청은 그대로 두고, 하루 일정(지금·남은 일정·Now Bar·위젯)만 바뀝니다.
      */
