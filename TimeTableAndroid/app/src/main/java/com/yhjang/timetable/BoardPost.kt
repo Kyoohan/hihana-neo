@@ -793,6 +793,10 @@ private fun ImageViewer(src: String, onDismiss: () -> Unit) {
                     WebView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         setBackgroundColor(android.graphics.Color.BLACK)
+                        // 투명 배경 이미지(표 캡처 등)는 흰 바탕 위에 원래 색 그대로 — 자동 어둡게 하기도 끕니다.
+                        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false)
+                        }
                         settings.setSupportZoom(true)
                         settings.builtInZoomControls = true
                         settings.displayZoomControls = false
@@ -807,7 +811,7 @@ private fun ImageViewer(src: String, onDismiss: () -> Unit) {
                             <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=8, user-scalable=yes">
                             <style>html,body{margin:0;height:100%;background:#000}
                             body{display:flex;align-items:center;justify-content:center}
-                            img{max-width:100%;max-height:100%;object-fit:contain}</style>
+                            img{max-width:100%;max-height:100%;object-fit:contain;background:#fff}</style>
                             </head><body><img src="$escaped"></body></html>
                             """.trimIndent(),
                             "text/html",
