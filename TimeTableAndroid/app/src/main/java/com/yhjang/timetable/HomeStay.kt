@@ -90,8 +90,8 @@ object HomeStaySchedule {
     }
 }
 
-/** 홈 '지금' 카드에 띄우는 귀가 안내. */
-data class HomeStayNotice(val title: String, val detail: String)
+/** 홈 '지금' 카드·위젯에 띄우는 귀가 안내 — [shortDetail] 은 위젯 한 줄용. */
+data class HomeStayNotice(val title: String, val detail: String, val shortDetail: String)
 
 /** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 마지막 타임 전까지만. */
 fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
@@ -107,18 +107,25 @@ fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
         Timetable.HomeStay.RETURN -> {
             val start = Timetable.homeReturnAt(today)
             if (minutes >= start) null
-            else HomeStayNotice("조심히 돌아오세요", "오늘 귀교 · ${returnSession(today)}부터 일정이 시작됩니다")
+            else HomeStayNotice(
+                "조심히 돌아오세요",
+                "오늘 귀교 · ${returnSession(today)}부터 일정이 시작됩니다",
+                "오늘 귀교 · ${returnSession(today)}부터",
+            )
         }
         Timetable.HomeStay.LEAVE, Timetable.HomeStay.AWAY -> {
             if (stay == Timetable.HomeStay.LEAVE && minutes < Timetable.homeLeaveAt(today)) return null
             val back = Timetable.nextHomeReturn(today.plusDays(1))
-            val detail = if (back == null) {
-                "귀교하면 일정이 다시 표시됩니다"
+            if (back == null) {
+                HomeStayNotice("편안한 귀가 보내세요", "귀교하면 일정이 다시 표시됩니다", "귀가 기간")
             } else {
                 val day = back.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
-                "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교 · ${returnSession(back)}부터 일정이 다시 시작됩니다"
+                HomeStayNotice(
+                    "편안한 귀가 보내세요",
+                    "${back.monthValue}월 ${back.dayOfMonth}일($day) 귀교 · ${returnSession(back)}부터 일정이 다시 시작됩니다",
+                    "${back.monthValue}/${back.dayOfMonth}($day) ${clock(Timetable.homeReturnAt(back))} 귀교",
+                )
             }
-            HomeStayNotice("편안한 귀가 보내세요", detail)
         }
     }
 }

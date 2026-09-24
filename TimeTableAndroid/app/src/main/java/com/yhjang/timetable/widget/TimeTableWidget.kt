@@ -57,6 +57,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.yhjang.timetable.Accent
+import com.yhjang.timetable.HomeStayNotice
+import com.yhjang.timetable.homeStayNotice
 import com.yhjang.timetable.Block
 import com.yhjang.timetable.BlockKind
 import com.yhjang.timetable.HanaAcademicRepository
@@ -143,6 +145,7 @@ class TimeTableWidget : GlanceAppWidget() {
 
             WidgetSnapshot(
                 block = block,
+                homeStay = homeStayNotice(today, now),
                 nextTitle = next?.title,
                 nextRoom = next?.room,
                 mealText = mealText,
@@ -188,6 +191,7 @@ class TimeTableWidget : GlanceAppWidget() {
                     mealAllergyPrefix = snapshot?.mealAllergyPrefix.orEmpty(),
                     supervisionText = snapshot?.supervisionText,
                     countdownViews = countdownViews,
+                    homeStay = snapshot?.homeStay,
                 )
             }
             }
@@ -198,6 +202,8 @@ class TimeTableWidget : GlanceAppWidget() {
 /** 위젯이 한 번 그릴 때 필요한 값 묶음 */
 private data class WidgetSnapshot(
     val block: Block?,
+    /** 귀가 기간 안내 — 일정이 빈 동안 '현재 일정이 없습니다' 대신 띄웁니다. */
+    val homeStay: HomeStayNotice?,
     val nextTitle: String?,
     val nextRoom: String?,
     val mealText: String?,
@@ -290,6 +296,7 @@ private fun WidgetContent(
     mealAllergyPrefix: String,
     supervisionText: String?,
     countdownViews: RemoteViews?,
+    homeStay: HomeStayNotice?,
 ) {
     // 슬라이더 값을 라이트/다크 모두 그대로 반영합니다.
     val alphaInt = (opacityPercent * 255 / 100).coerceIn(0, 255)
@@ -355,7 +362,7 @@ private fun WidgetContent(
                     if (block != null && !block.isBlank) {
                         ScheduleContent(block, nextTitle, nextRoom, mealText, mealAllergyPrefix, supervisionText, countdownViews)
                     } else {
-                        EmptyScheduleContent()
+                        EmptyScheduleContent(homeStay)
                     }
                 }
             }
@@ -385,7 +392,7 @@ internal fun isDarkTheme(context: Context, theme: String): Boolean = when (theme
 }
 
 @Composable
-private fun EmptyScheduleContent() {
+private fun EmptyScheduleContent(homeStay: HomeStayNotice?) {
     val titleColor = GlanceTheme.colors.onSurface
     val subtextColor = GlanceTheme.colors.onSurfaceVariant
 
@@ -395,14 +402,14 @@ private fun EmptyScheduleContent() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Image(
-            provider = ImageProvider(R.drawable.ic_hotel),
+            provider = ImageProvider(if (homeStay != null) R.drawable.ic_home_stay else R.drawable.ic_hotel),
             contentDescription = null,
             colorFilter = ColorFilter.tint(subtextColor),
             modifier = GlanceModifier.size(28.dp),
         )
         Spacer(GlanceModifier.height(8.dp))
         Text(
-            text = "현재 일정이 없습니다",
+            text = homeStay?.title ?: "현재 일정이 없습니다",
             style = TextStyle(
                 color = titleColor,
                 fontSize = 15.sp,
@@ -412,7 +419,7 @@ private fun EmptyScheduleContent() {
         )
         Spacer(GlanceModifier.height(4.dp))
         Text(
-            text = "면학 시간 외 / 휴식 시간",
+            text = homeStay?.shortDetail ?: "면학 시간 외 / 휴식 시간",
             style = TextStyle(
                 color = subtextColor,
                 fontSize = 12.sp,
