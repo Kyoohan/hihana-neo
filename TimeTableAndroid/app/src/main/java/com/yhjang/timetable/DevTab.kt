@@ -74,7 +74,7 @@ fun DevTab(
             )
             OneUiDivider()
             OneUiListItem(
-                title = "업데이트 투어 (11.0 → 11.1)",
+                title = "업데이트 투어 (11.x → 12.0)",
                 subtitle = "바뀐 것만 — 게시판·학사 탭·귀가 기간·개인정보 보호 (+ 권한이 빠졌으면 권한)",
                 onClick = { onStartTour(TourKind.UPDATE) },
             )

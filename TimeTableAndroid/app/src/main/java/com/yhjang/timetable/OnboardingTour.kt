@@ -124,6 +124,24 @@ import kotlinx.coroutines.withContext
  */
 enum class TourKind { WELCOME, UPDATE }
 
+/** 이 버전의 투어 — 앱을 열 때 이 값보다 작게 기록돼 있으면 한 번 보여 줍니다 (새로 설치는 새로 설치 투어, 업데이트는 업데이트 투어). */
+const val TOUR_VERSION = 120
+private const val TOUR_PREFS = "prompts"
+private const val KEY_TOUR_VERSION = "tourVersion"
+
+/** 이번 버전 투어를 아직 안 봤으면 보여 줄 종류, 봤으면 null. 설치 시각과 마지막 업데이트 시각이 같으면 새로 설치입니다. */
+fun pendingTour(context: android.content.Context): TourKind? {
+    val seen = context.getSharedPreferences(TOUR_PREFS, android.content.Context.MODE_PRIVATE).getInt(KEY_TOUR_VERSION, -1)
+    if (seen >= TOUR_VERSION) return null
+    val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+    val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
+    return if (fresh) TourKind.WELCOME else TourKind.UPDATE
+}
+
+fun markTourSeen(context: android.content.Context) {
+    context.getSharedPreferences(TOUR_PREFS, android.content.Context.MODE_PRIVATE).edit().putInt(KEY_TOUR_VERSION, TOUR_VERSION).apply()
+}
+
 private enum class TourPage {
     HELLO, WIDGET, NOW_BAR, APPLY, MEAL, BOARD, PERSONALIZE, GLASS, PRIVACY, PERMISSIONS, LOGIN, DONE,
     UPDATE_SUMMARY, UPDATE_BOARD, UPDATE_TABS, UPDATE_UPCOMING, UPDATE_HOME_STAY,
@@ -1254,13 +1272,13 @@ private fun ColumnScope.DonePage() {
     )
 }
 
-// MARK: - 업데이트 (11.1)
+// MARK: - 업데이트 (12.0)
 // 투어 문구 규칙: 제목은 명사형(문장 X), 설명은 문장으로.
 
 @Composable
 private fun ColumnScope.UpdateSummaryPage() {
-    // 이 장들은 11.1 에서 바뀐 것을 소개하므로 버전을 고정해 적습니다 — 다음 큰 업데이트 때 내용과 함께 바꿉니다.
-    PageHead("새 버전", "11.1 업데이트", "게시판, 학사 탭, 귀가 기간의 일정 표시가 달라졌습니다. 주요 변경 사항을 차례로 소개합니다.")
+    // 이 장들은 12.0 에서 바뀐 것을 소개하므로 버전을 고정해 적습니다 — 다음 큰 업데이트 때 내용과 함께 바꿉니다.
+    PageHead("새 버전", "12.0 업데이트", "게시판, 학사 탭, 귀가 기간의 일정 표시가 달라졌습니다. 주요 변경 사항을 차례로 소개합니다.")
     OneUiCard(Modifier.fillMaxWidth()) {
         TourRow(painterResource(R.drawable.ic_settings_book), TourViolet, "앱 내 게시글과 AI 요약")
         RowGap()

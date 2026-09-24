@@ -400,15 +400,16 @@ private fun TimeTableAppContent(
     var syncError by remember { mutableStateOf<String?>(null) }
     var editingSlot by remember { mutableStateOf<PlanSlot?>(null) }
     var showingAccountSheet by remember { mutableStateOf(false) }
-    // 첫 실행 투어 — 지금은 Dev 탭에서만 엽니다.
-    var tourKind by remember { mutableStateOf<TourKind?>(null) }
+    // 첫 실행 투어 — 새로 설치하면 새로 설치 투어, 이전 버전에서 올라왔으면 이번 버전 업데이트 투어를 한 번 (Dev 탭에서도 열 수 있음).
+    var tourKind by remember { mutableStateOf(pendingTour(context)) }
     // 설치·업데이트 직후 한 번, '알람 및 리마인더' 권한이 없으면 켜 달라고 안내합니다 — 없으면 위젯·실시간 일정의
     // 남은 시간이 절전 중 5~15분씩 늦게 갱신됩니다. 버전마다 한 번만 (allowBackup 과 무관한 일반 SharedPreferences).
     var showingExactAlarmPrompt by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("prompts", Context.MODE_PRIVATE)
         val asked = prefs.getInt("exactAlarmPromptVersion", -1)
-        if (!ExactAlarmPermission.isGranted(context) && asked != BuildConfig.VERSION_CODE) {
+        // 투어가 뜨면 투어의 권한 장이 같은 안내를 하므로 건너뜁니다.
+        if (!ExactAlarmPermission.isGranted(context) && asked != BuildConfig.VERSION_CODE && tourKind == null) {
             prefs.edit().putInt("exactAlarmPromptVersion", BuildConfig.VERSION_CODE).apply()
             showingExactAlarmPrompt = true
         }
@@ -1371,7 +1372,10 @@ private fun TimeTableAppContent(
     tourKind?.let { kind ->
         OnboardingTour(
             kind = kind,
-            onFinish = { tourKind = null },
+            onFinish = {
+                markTourSeen(context)
+                tourKind = null
+            },
             // 투어 로그인에 성공하면 투어를 마치길 기다리지 않고 바로 연동 — 끝낼 즈음엔 시간표·일정이 채워져 있습니다.
             onAccountLinked = {
                 hasCredentials = true

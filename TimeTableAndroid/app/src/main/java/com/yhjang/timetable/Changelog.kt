@@ -8,6 +8,25 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "12.0",
+        listOf(
+            "게시글을 앱 안에서: 제목·본문·첨부파일을 바로 보고, 이미지는 눌러서 확대",
+            "게시판 AI 요약: 목록에 한 줄 요약, 글 위에 자세한 요약, 새 글 알림에도 요약. 이미지뿐인 가정통신문도 읽어서 요약 (설정에서 끌 수 있음)",
+            "하단 바 개편: 홈 · 신청·내역 · 급식 · 게시판 · 일정, 시간표와 학사일정은 일정 탭 위쪽 칩으로 전환",
+            "홈 오늘 남은 일정: 종류별 색 아이콘과 두 줄 목록, 담당 선생님과 면학감독은 장소 옆에",
+            "과목명 뒤에 붙던 선생님 이름을 장소 옆으로 정리 (홈·위젯·Now Bar·주간 시간표)",
+            "귀가 기간: 학사일정의 귀가·귀교에 맞춰 일정과 Now Bar를 끄고 홈·위젯에 귀가 안내",
+            "급식: 칼로리·영양성분·원산지·급식 인원",
+            "첫 실행 투어: 새로 설치하면 기능 소개·권한·로그인, 업데이트하면 바뀐 점 소개",
+            "개인정보 보호 안내: AES-256·HTTPS·TEE로 계정 정보를 지키는 방법, 앱이 접속하는 곳, 지우는 방법",
+            "설정을 분류별로 정리하고 One UI 설정 아이콘 적용",
+            "정보 화면에 법적 고지 추가",
+            "앱에서 게시판 목록을 연 뒤 새 글 알림이 오지 않던 문제 수정",
+            "가끔 뜨던 '학사시스템 응답을 해석하지 못했습니다' 로그인 오류 수정",
+            "주간 시간표 마지막 교시 칸이 잘리던 문제 수정",
+        ),
+    ),
+    ChangelogEntry(
         "11.0",
         listOf(
             "심야면학: 앱 안에서 로그인·좌석 신청/취소·오늘 내역 확인, 신청한 날은 오늘 일정·Now Bar·위젯에 심야 타임 표시",
@@ -259,6 +278,8 @@ data class OssLibrary(val name: String, val license: String, val url: String)
 val OSS_LIBRARIES: List<OssLibrary> = listOf(
     OssLibrary("AndroidX / Jetpack Compose", "Apache License 2.0", "https://developer.android.com/jetpack"),
     OssLibrary("Kotlin & kotlinx.coroutines", "Apache License 2.0", "https://kotlinlang.org"),
+    OssLibrary("AndroidX Security (암호화 저장)", "Apache License 2.0", "https://developer.android.com/jetpack/androidx/releases/security"),
+    OssLibrary("AndroidX WebKit", "Apache License 2.0", "https://developer.android.com/jetpack/androidx/releases/webkit"),
     OssLibrary("OkHttp", "Apache License 2.0", "https://github.com/square/okhttp"),
     OssLibrary("Haze", "Apache License 2.0", "https://github.com/chrisbanes/haze"),
     OssLibrary("Glance App Widget", "Apache License 2.0", "https://developer.android.com/jetpack/androidx/releases/glance"),

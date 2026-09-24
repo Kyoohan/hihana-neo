@@ -141,6 +141,7 @@ internal fun PrivacyScreen(onDismiss: () -> Unit) {
         ) {
             item(key = "hero") { Reveal { Hero() } }
             item(key = "secret") { Reveal { TopSecretSection() } }
+            item(key = "tee") { Reveal { TeeSection() } }
             item(key = "aes") { Reveal { KeySpaceSection() } }
             item(key = "demo") { Reveal { EncryptionDemo() } }
             item(key = "https") { Reveal { HttpsSection() } }
@@ -325,20 +326,6 @@ private fun TopSecretSection() {
             "미국 정부가\n최고 기밀에 쓰는 암호화.",
             "비밀번호를 잠그는 AES-256은 미국 국가안보시스템위원회(CNSSP-15)가 최고 기밀(TOP SECRET) 정보를 보호하도록 승인한 방식입니다.",
         )
-        Spacer(Modifier.height(22.dp))
-        Row {
-            TintIcon(painterResource(R.drawable.ic_pv_knox), PvBlue, box = 44.dp)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("열쇠는 TEE 안에.", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "잠근 열쇠는 안드로이드 키스토어를 통해 TEE — 프로세서 안의 격리된 보안 영역(갤럭시는 삼성 녹스)에 보관됩니다. 앱도, 개발자도 꺼낼 수 없습니다.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         Spacer(Modifier.height(26.dp))
         Text("같은 AES-256을 쓰는 곳", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f))
         Spacer(Modifier.height(12.dp))
@@ -393,6 +380,110 @@ private fun Belt(items: List<Pair<String, String>>, durationMs: Int, reverse: Bo
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - 2-1. TEE
+
+/**
+ * TEE — 열쇠가 있는 곳. 앱(일반 영역)은 잠그고 푸는 일을 부탁만 하고, 열쇠는 하드웨어로 분리된 보안 영역 밖으로 나오지 않습니다.
+ * 근거: 안드로이드 키스토어의 하드웨어 보관 키는 운영체제가 뚫려도 꺼낼 수 없음(Android 문서), 지문 정보는 TEE 안(CDD).
+ */
+@Composable
+private fun TeeSection() {
+    val scheme = MaterialTheme.colorScheme
+    val flow = rememberInfiniteTransition(label = "tee")
+    val phase by flow.animateFloat(0f, 1f, infiniteRepeatable(tween(1_500, easing = LinearEasing)), label = "teePhase")
+    Column {
+        Head(
+            "TEE / Knox",
+            PvBlue,
+            "열쇠는\n금고 안의 금고에.",
+            "TEE(Trusted Execution Environment)는 프로세서 안에 하드웨어로 따로 떼어 놓은 보안 영역입니다. 안드로이드와 앱이 돌아가는 곳과 분리된 채, 자체 보안 운영체제로 움직입니다.",
+        )
+        Spacer(Modifier.height(20.dp))
+        Plain(padding = PaddingValues(16.dp)) {
+            // 일반 영역 — 안드로이드와 앱
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(scheme.onSurface.copy(alpha = 0.05f)).padding(14.dp)) {
+                Text("일반 영역 · 안드로이드와 앱", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF1F5A3C)), contentAlignment = Alignment.Center) {
+                        Text("H", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = Color(0xFFEAF6EE))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("하이하나 Neo", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("열쇠를 가지고 있지 않습니다", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    }
+                }
+            }
+            // 부탁은 내려가고 결과만 올라옵니다.
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Canvas(Modifier.width(20.dp).height(40.dp)) {
+                        val x = size.width / 2
+                        drawLine(PvBlue.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f)))
+                        drawCircle(PvBlue, radius = 7f, center = Offset(x, phase * size.height))
+                    }
+                    Text("잠가 줘 · 풀어 줘", style = MaterialTheme.typography.labelSmall, color = PvBlue, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "하드웨어로 분리",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.clip(CircleShape).border(1.dp, scheme.onSurface.copy(alpha = 0.15f), CircleShape).padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Canvas(Modifier.width(20.dp).height(40.dp)) {
+                        val x = size.width / 2
+                        drawLine(PvGreen.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f)))
+                        drawCircle(PvGreen, radius = 7f, center = Offset(x, (1f - phase) * size.height))
+                    }
+                    Text("결과만", style = MaterialTheme.typography.labelSmall, color = PvGreen, fontWeight = FontWeight.Bold)
+                }
+            }
+            // 보안 영역 — 열쇠
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(PvBlue.copy(alpha = 0.12f))
+                    .border(1.dp, PvBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                    .padding(14.dp),
+            ) {
+                Text("보안 영역 · TEE", style = MaterialTheme.typography.labelMedium, color = PvBlue, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TintIcon(painterResource(R.drawable.ic_pv_key), PvYellow, box = 34.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("AES-256 열쇠", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("이 폰에서 만들어져 이 안에만 있습니다", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(22.dp))
+        TeeFact(R.drawable.ic_pv_knox, PvBlue, "안드로이드가 뚫려도", "앱이나 운영체제가 악성 코드에 뚫리더라도, 열쇠 자체는 TEE 밖으로 꺼낼 수 없습니다.")
+        Spacer(Modifier.height(18.dp))
+        TeeFact(R.drawable.ic_pv_phone, PvViolet, "이 폰에 묶인 열쇠", "저장된 값을 다른 폰으로 복사해도, 그 폰에는 열쇠가 없어 풀 수 없습니다. 백업과 기기 이전에서도 빠집니다.")
+        Spacer(Modifier.height(18.dp))
+        TeeFact(R.drawable.ic_pv_star, PvYellow, "지문·결제와 같은 금고", "지문 정보와 모바일 결제도 같은 보안 영역이 지킵니다. 갤럭시에서는 삼성 녹스가 이 영역을 바탕으로 동작합니다.")
+    }
+}
+
+@Composable
+private fun TeeFact(icon: Int, color: Color, title: String, body: String) {
+    Row {
+        TintIcon(painterResource(icon), color)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(3.dp))
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
