@@ -285,9 +285,10 @@ object HanaLibraryApi {
                 assigned = row.optString("sre_assign_yn").uppercase() == "Y",
             )
         }
-        // 좌석의 학생 이름은 dev 빌드에서만 — 릴리스는 면학실·도서관 모두 학번만 보여주고, 이름을 기기에 모으지도 않습니다.
+        // 좌석의 학생 이름·학번은 dev 빌드에서만 — 릴리스는 면학실·도서관 모두 포털이 기본으로 주는 성별만 보여주고,
+        // 이름·학번을 기기에 모으지도 않습니다.
         val seats = if (!BuildConfig.DEBUG) {
-            seatsRaw.map { it.copy(memberName = null) }
+            seatsRaw.map { it.copy(memberName = null, studentNumber = null) }
         } else {
             // 학번·이름 짝을 모아 두고(면학실 응답), 이름이 비어 온 자리(도서관 응답)는 캐시로 채웁니다.
             StudentNameCache.learn(context, seatsRaw)

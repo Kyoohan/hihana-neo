@@ -653,8 +653,7 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                         android.graphics.Color.argb((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt())
                     }
                     textPaint.alpha = if (!seat.available && !seat.mine) 170 else 255
-                    // 두 번째 줄: 신청한 사람 — 이름(없으면 성별), 내 자리는 이름. 포털 JSON 의 sre_mem_name 을 그대로 씁니다.
-                    // 이름 → (도서관처럼 이름을 비워 보내면) 면학실에서 배운 이름 → 학번 → 성별 순.
+                    // 두 번째 줄: 신청한 사람 — dev 빌드는 이름 → 학번 → 성별 순, 릴리스는 이름·학번을 지워 받으므로 성별만.
                     val who = when {
                         seat.mine -> seat.memberName ?: "나"
                         seat.sreIdx != null -> seat.memberName ?: seat.studentNumber ?: seat.gender

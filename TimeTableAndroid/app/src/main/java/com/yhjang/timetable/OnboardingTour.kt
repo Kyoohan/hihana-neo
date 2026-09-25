@@ -680,72 +680,72 @@ private fun ColumnScope.ApplyPage() {
 @Composable
 private fun ColumnScope.SeatsPage() {
     PageHead(
-        "좌석 현황",
-        "면학실·도서관 좌석 현황",
-        "면학실과 도서관 배치도에서 자리마다 누가 신청했는지 바로 보입니다. 친구가 어디 앉았는지 확인하고 옆자리를 신청할 수 있고, " +
-            "교과교실도 교실을 고르면 신청한 학생과 사유를 볼 수 있습니다.",
+        "교과교실 현황",
+        "교과교실 현황",
+        "타임과 건물·교실을 고르면 그 교실을 신청한 학생과 사유가 바로 보입니다. 친구가 어느 교과교실에 있는지, 빈 교실이 어디인지 포털을 뒤지지 않고 확인할 수 있습니다.",
     )
-    // 실제 좌석 화면과 같은 규칙 — 자리마다 번호와 신청자 이름, 남 파랑 · 여 분홍 · 빈 자리 · 내 자리(초록 테두리). 이름은 예시.
-    val seats = listOf(
-        Triple("A-01", "김하늘", 'b'), Triple("A-02", null, 'x'), Triple("A-03", "이서연", 'p'),
-        Triple("A-04", "박준호", 'b'), Triple("A-05", "나", 'm'), Triple("A-06", "최유진", 'p'),
-        Triple("A-07", null, 'x'), Triple("A-08", "정민재", 'b'), Triple("A-09", "한지우", 'p'),
+    // 실제 교과교실 현황 화면과 같은 구성 — 타임·건물·교실 칩, 신청 수, 이름·학년·상태·사유. 이름은 예시입니다.
+    val rooms = listOf("A201", "A202", "B301", "B302")
+    var room by remember { mutableIntStateOf(0) }
+    val sample = mapOf(
+        0 to listOf(Triple("김하늘", "2", "수학 문제 풀이 스터디"), Triple("이서연", "2", "물리 수행평가 준비"), Triple("박준호", "3", "과제 조사")),
+        1 to listOf(Triple("최유진", "1", "영어 발표 연습")),
+        2 to emptyList(),
+        3 to listOf(Triple("정민재", "2", "화학 실험 보고서 작성"), Triple("한지우", "2", "화학 실험 보고서 작성")),
     )
-    var picked by remember { mutableStateOf<String?>(null) }
     OneUiCard(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("면학실 3층 · 1타임", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            Text("신청 7 / 9", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(12.dp))
-        seats.chunked(3).forEach { line ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                line.forEach { (no, name, kind) ->
-                    val color = when (kind) {
-                        'b' -> TourBlue
-                        'p' -> TourPink
-                        'm' -> TourGreen
-                        else -> MaterialTheme.colorScheme.onSurface
-                    }
-                    val filled = kind != 'x'
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (filled) color.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                            .then(if (kind == 'm') Modifier.border(2.dp, TourGreen, RoundedCornerShape(14.dp)) else Modifier)
-                            .clickable(enabled = filled) { picked = if (kind == 'm') "내 자리" else "$no · $name" }
-                            .padding(vertical = 10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(no, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            name ?: "빈 자리",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (filled) FontWeight.Bold else FontWeight.Normal,
-                            color = if (filled) color else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("1타임", "A동").forEach { chip ->
+                Text(
+                    chip,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
-            listOf(TourBlue to "남", TourPink to "여", TourGreen to "내 자리").forEach { (c, label) ->
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            rooms.forEachIndexed { i, name ->
+                val on = i == room
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (on) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                        .clickable { room = i }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        val list = sample[room].orEmpty()
+        Text(
+            if (list.isEmpty()) "이 교실을 신청한 학생이 없습니다" else "신청 ${list.size}명",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        list.forEach { (name, grade, reason) ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(c))
-                    Spacer(Modifier.width(5.dp))
-                    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(6.dp))
+                    Text("${grade}학년", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
+                    Text("승인", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
+                Text(reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
-    Spacer(Modifier.height(10.dp))
     Text(
-        picked?.let { "선택한 자리 · $it" } ?: "자리를 눌러 보세요 (이름은 예시입니다)",
+        "교실을 눌러 보세요 (이름은 예시입니다)",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 6.dp),
+        modifier = Modifier.padding(start = 6.dp, top = 10.dp),
     )
 }
 
