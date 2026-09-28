@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 설정 분류 아이콘: 둥근 i (Samsung '폰 정보'처럼 원 테두리 없이) -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6a2.3,2.3 0,1 1,0 4.6a2.3,2.3 0,1 1,0 -4.6z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,9.2a2,2 0,0 1,2 2v8.6a2,2 0,0 1,-4 0v-8.6a2,2 0,0 1,2 -2z" />
+</vector>

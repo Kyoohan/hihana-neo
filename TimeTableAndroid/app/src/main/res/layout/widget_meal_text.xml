@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 위젯 급식 줄 — 알레르기 경고만 빨갛게 칠하려고(한 줄 안에서 색 나누기) Glance Text 대신 RemoteViews TextView 를 씁니다. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_meal_text"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:ellipsize="end"
+    android:fontFamily="sans-serif-medium"
+    android:textSize="15sp" />

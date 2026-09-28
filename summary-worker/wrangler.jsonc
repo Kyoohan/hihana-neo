@@ -1,0 +1,12 @@
+{
+  // 게시판 글 AI 요약 — 글 내용 해시마다 한 번만 만들고 KV 에 보관해 모든 사용자가 나눠 씁니다.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hihana-summary",
+  "account_id": "ed28d132ab27af237f04075599bf9241",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-20",
+  "workers_dev": true,
+  "ai": { "binding": "AI" },
+  "kv_namespaces": [{ "binding": "SUMMARIES", "id": "035d5e8deb934d1abda5dacfff23a839" }],
+  "observability": { "enabled": true }
+}

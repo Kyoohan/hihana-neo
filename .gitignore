@@ -1,0 +1,12 @@
+# Android / Gradle
+TimeTableAndroid/.gradle/
+TimeTableAndroid/build/
+TimeTableAndroid/*/build/
+TimeTableAndroid/local.properties
+TimeTableAndroid/.idea/
+TimeTableAndroid/.kotlin/
+*.apk
+*.aab
+
+# macOS
+.DS_Store
