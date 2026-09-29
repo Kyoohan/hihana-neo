@@ -128,7 +128,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     }
 
     /** 좌석을 누르면 확인 없이 바로 — 빈 자리는 신청, 내 자리는 취소. 결과 문구는 아래 팝업으로. */
-    fun act(seat: LibrarySeat) {
+    fun act(seat: LibrarySeat, retriesLeft: Int = 2) {
         val id = slotId ?: return
         val cancelling = seat.mine && seat.sreIdx != null
         busy = true
@@ -164,7 +164,19 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 val before = map
                 loadMap()
                 val after = map?.takeIf { it !== before }?.seats?.firstOrNull { it.cont == seat.cont }
-                if (after?.mine == true) notice = "${seat.cont} 신청이 실제로는 반영됐습니다"
+                when {
+                    after?.mine == true -> notice = "${seat.cont} 신청이 실제로는 반영됐습니다"
+                    // 서버는 "이미 예약된 좌석"이라 했는데 새 좌석표에선 비어 있는 경우 — 오픈 직후 같은 자리를 거의 동시에 누른
+                    // 다른 사람의 신청이 처리되는 동안 그 자리가 잠겨 있다가, 그 신청이 끝내 실패하면(이미 다른 자리가 있음 등)
+                    // 다시 풀립니다. 그사이 다른 자리를 누르지 않았으면 그대로 두 번까지 다시 신청합니다.
+                    after?.available == true && !busy && retriesLeft > 0 -> {
+                        notice = "${seat.cont} 은 비어 있어 다시 신청합니다"
+                        act(after, retriesLeft - 1)
+                        return@launch
+                    }
+                    after?.available == true && !busy ->
+                        notice = "${seat.cont} 은 비어 있지만 서버가 계속 거절했습니다 — 잠시 뒤 다시 눌러 주세요"
+                }
                 runCatching { refreshDevice() }
                 onChanged()
                 return@launch

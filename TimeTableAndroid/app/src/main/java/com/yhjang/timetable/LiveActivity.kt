@@ -179,19 +179,14 @@ object LiveActivity {
         val remainingText = if (minutes >= 60) "${minutes / 60}시간 ${minutes % 60}분 남음" else "${minutes}분 남음"
         val shortText = if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}분"
         val range = "${block.start.format(timeFormat)} – ${block.end.format(timeFormat)}"
-        val nextPlace = next?.let { listOfNotNull(it.title.takeIf { t -> t.isNotBlank() }, it.room).joinToString(" ") }
-            ?.takeIf { it.isNotBlank() }
-        // 제목은 "지금 있어야 할 장소" — 면학이면 장소+자리, 수업이면 과목+교실. 쉬는 시간·식사 같은 대기 구간에는
-        // 다음에 가야 할 장소를 제목에 같이 붙입니다 ("쉬는 시간 → 교과교실 A201").
+        val nextPlace = next?.let(::placeFirst)
+        // 제목은 "지금 있어야 할 장소"를 맨 앞에 — Now Bar·상태 바 칩은 앞부분만 보여 줘서, 과목명이나 "일과 종료" 같은 구간
+        // 이름이 먼저 오면 정작 어디로 가야 하는지가 잘렸습니다. 수업은 "A201 수학Ⅱ", 면학은 "도서관 2-33", 쉬는 시간·일과
+        // 종료 같은 대기 구간은 바로 다음 장소 뒤에 구간 이름 ("도서관 2-33 · 일과 종료").
         val kind = block.kind
-        // 대기 구간이 가리키는 "바로 다음" 장소는 구간 자체(title/room = gap.next)에 있습니다 — [next] 는 nextEvent() 가
-        // 대기 구간에서는 바로 다음을 건너뛴 그 다음 일정이라(위젯 히어로용) 여기 쓰면 한 타임 뒤 장소가 붙었습니다.
-        val gapNextPlace = listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() })
-            .joinToString(" ").takeIf { it.isNotBlank() && it != kind.gapLabel() }
         val title = when (kind) {
-            is BlockKind.GapKind -> listOfNotNull(kind.gap.label, gapNextPlace?.let { "→ $it" }).joinToString(" ")
-            else -> listOfNotNull(block.title.takeIf { it.isNotBlank() }, block.room?.takeIf { it.isNotBlank() }).joinToString(" ")
-                .ifBlank { block.statusLabel }
+            is BlockKind.GapKind -> listOfNotNull(placeFirst(block), kind.gap.label).joinToString(" · ")
+            else -> placeFirst(block) ?: block.statusLabel
         }
         // 남은 시간은 시스템 카운트다운이 이미 보여주므로(API 36) 본문에는 넣지 않습니다 — 그 아래 폴백 알림에만 씁니다.
         val text = listOfNotNull(
@@ -264,8 +259,23 @@ object LiveActivity {
             .build()
     }
 
-    /** 대기 구간의 이름(없으면 null) — 다음 장소가 없을 때 title 이 fallbackTitle(=이름)로 채워지는 것을 걸러내는 용도. */
-    private fun BlockKind.gapLabel(): String? = (this as? BlockKind.GapKind)?.gap?.fallbackTitle
+    /** 장소가 앞에 오는 이름 — 수업은 교실 + 과목(선생님 이름 없이), 면학은 장소 + 자리, 대기 구간은 바로 다음 장소. 없으면 null. */
+    private fun placeFirst(block: Block): String? = when (val kind = block.kind) {
+        is BlockKind.LessonKind -> placeFirst(kind.lesson)
+        is BlockKind.StudyKind -> placeFirst(kind.place)
+        is BlockKind.GapKind -> when (val next = kind.gap.next) {
+            is NextUp.LessonNext -> placeFirst(next.lesson)
+            is NextUp.StudyNext -> placeFirst(next.place)
+            null -> null
+        }
+        BlockKind.BlankKind -> null
+    }
+
+    private fun placeFirst(lesson: Lesson): String? =
+        if (lesson.isFree) null else listOfNotNull(lesson.room, lesson.title.takeIf { it.isNotBlank() }).joinToString(" ")
+
+    private fun placeFirst(place: StudyPlace?): String? =
+        place?.let { listOfNotNull(it.name, it.detail?.takeIf { d -> d.isNotBlank() }).joinToString(" ") }
 
     private fun ensureChannel(manager: NotificationManager) {
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return

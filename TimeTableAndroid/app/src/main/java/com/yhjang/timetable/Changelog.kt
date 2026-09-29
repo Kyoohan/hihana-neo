@@ -8,6 +8,13 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "12.2",
+        listOf(
+            "Now Bar: 가야 할 장소가 맨 앞에 (수업은 교실 · 과목, 쉬는 시간·일과 종료는 다음 장소 먼저)",
+            "면학실·도서관 신청: '이미 예약된 좌석'으로 거절됐지만 실제로는 비어 있는 자리는 자동으로 다시 신청",
+        ),
+    ),
+    ChangelogEntry(
         "12.1",
         listOf(
             "면학실·도서관 신청: 다른 사람이 먼저 잡은 자리는 바로 알려 주고, 좌석표를 기다리지 않고 곧장 다른 자리를 누를 수 있게",
