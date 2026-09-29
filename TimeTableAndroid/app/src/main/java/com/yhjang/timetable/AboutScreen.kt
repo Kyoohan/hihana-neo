@@ -281,7 +281,28 @@ private fun ChangelogScreen(pending: UpdateInfo?, onDismiss: () -> Unit) {
                     }
                 }
             }
-            CHANGELOG.forEach { entry ->
+            // 큰 버전별로 묶고, 묶음 머리에 그 버전의 로고를 둡니다 (12 → 12.0, 11 → 11.0 …, 6.x 이하는 각자 한 묶음).
+            CHANGELOG.groupBy { it.version.substringBefore('.') }.forEach { (major, entries) ->
+                item(key = "major-$major") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 4.dp, start = OneUi.RowPadding),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        VersionLogo(major.toIntOrNull() ?: 0, 64.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("하이하나 Neo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(major, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+                }
+                entries.forEach { entry -> changelogEntryItem(entry) }
+            }
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.changelogEntryItem(entry: ChangelogEntry) {
                 item(key = entry.version) {
                     val current = entry.version == BuildConfig.VERSION_NAME
                     OneUiSectionTitle(if (current) "${entry.version} (설치됨)" else entry.version)
@@ -296,9 +317,6 @@ private fun ChangelogScreen(pending: UpdateInfo?, onDismiss: () -> Unit) {
                         }
                     }
                 }
-            }
-        }
-    }
 }
 
 /** 오픈소스 라이선스 — 항목을 탭하면 프로젝트 페이지를 브라우저로 엽니다. */

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- dev 빌드 런처 아이콘 전경 — 정식 H 모노그램 오른쪽 아래에 주황 'DEV' 탭을 겹칩니다 (크롬 Dev 처럼). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ic_launcher_foreground" />
+    <item android:drawable="@drawable/ic_dev_badge" />
+</layer-list>

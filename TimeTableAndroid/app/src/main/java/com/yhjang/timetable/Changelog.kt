@@ -8,6 +8,10 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "12.3",
+        listOf("변경 사항을 큰 버전별로 묶고, 버전마다 그 버전을 나타내는 로고 표시"),
+    ),
+    ChangelogEntry(
         "12.2",
         listOf(
             "Now Bar: 가야 할 장소가 맨 앞에 (수업은 교실 · 과목, 쉬는 시간·일과 종료는 다음 장소 먼저)",
