@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +34,8 @@ import com.yhjang.timetable.ui.OneUiCard
 import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.OneUiButtonStyle
+import com.yhjang.timetable.ui.OneUiDivider
+import com.yhjang.timetable.ui.OneUiGroupColumn
 import kotlinx.coroutines.launch
 
 private const val PORTAL_BASE = "https://hh.hana.hs.kr"
@@ -48,11 +55,40 @@ private sealed interface ApplyHistoryState {
  * 조용히 포털 내역 페이지를 웹뷰로 엽니다. "신청하기"는 아직 모두 포털 신청 페이지를 웹뷰로 엽니다
  * (교과교실·외출외박은 계속 웹뷰, 면학실·도서관은 API 를 알아내면 앱 안 화면으로).
  */
+/** 신청·내역 블록 순서 — 서비스 4개와 심야면학. 헤더의 연필 아이콘으로 바꾸고 기기에 저장합니다. */
+internal object ApplyOrderStore {
+    const val MIDNIGHT = "MIDNIGHT"
+    private const val PREFS = "apply_order"
+    private const val KEY = "order"
+    val defaultOrder: List<String> = ApplyService.entries.map { it.name } + MIDNIGHT
+
+    /** 저장된 순서 — 모르는 이름은 빼고, 나중에 생긴 블록은 끝에 붙입니다. */
+    fun get(context: android.content.Context): List<String> {
+        val saved = context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .getString(KEY, null)?.split(',')?.filter { it in defaultOrder }.orEmpty()
+        return saved.distinct() + defaultOrder.filterNot { it in saved }
+    }
+
+    fun set(context: android.content.Context, order: List<String>) {
+        context.applicationContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putString(KEY, order.joinToString(",")).apply()
+    }
+
+    fun label(key: String): String =
+        if (key == MIDNIGHT) "심야면학" else ApplyService.entries.firstOrNull { it.name == key }?.label ?: key
+}
+
 @Composable
-internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit, onOpenSeats: (SeatService) -> Unit) {
+internal fun ApplyHistorySection(
+    onOpenWeb: (url: String, title: String) -> Unit,
+    onOpenSeats: (SeatService) -> Unit,
+    /** 헤더의 연필 아이콘으로 켜는 순서 편집 — 블록 대신 위·아래 버튼이 달린 목록을 보여 줍니다. */
+    editing: Boolean = false,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val states = remember { mutableStateMapOf<ApplyService, ApplyHistoryState>() }
+    var order by remember { mutableStateOf(ApplyOrderStore.get(context)) }
     var showingClassroomStatus by remember { mutableStateOf(false) }
     if (showingClassroomStatus) ClassroomStatusScreen(onDismiss = { showingClassroomStatus = false })
 
@@ -88,8 +124,29 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
         }
     }
 
+    if (editing) {
+        ApplyOrderEditor(
+            order = order,
+            onMove = { from, to ->
+                order = order.toMutableList().apply { add(to, removeAt(from)) }
+                ApplyOrderStore.set(context, order)
+            },
+            onReset = {
+                order = ApplyOrderStore.defaultOrder
+                ApplyOrderStore.set(context, order)
+            },
+        )
+        return
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ApplyService.entries.forEach { service ->
+        order.forEach { key ->
+            // 심야면학은 학교 포털이 아닌 기숙사 쪽 별도 사이트(Supabase) — 자체 로그인으로 내역·신청.
+            if (key == ApplyOrderStore.MIDNIGHT) {
+                MidnightStudyCard()
+                return@forEach
+            }
+            val service = ApplyService.valueOf(key)
             ApplyServiceCard(
                 service = service,
                 state = states[service] ?: ApplyHistoryState.Idle,
@@ -107,8 +164,55 @@ internal fun ApplyHistorySection(onOpenWeb: (url: String, title: String) -> Unit
                 },
             )
         }
-        // 심야면학은 학교 포털이 아닌 기숙사 쪽 별도 사이트(Supabase) — 자체 로그인으로 내역·신청.
-        MidnightStudyCard()
+    }
+}
+
+/** 순서 편집 — 블록 이름마다 위·아래 버튼. 바꾸는 즉시 저장되고, 헤더의 체크 아이콘으로 끝냅니다. */
+@Composable
+private fun ApplyOrderEditor(order: List<String>, onMove: (from: Int, to: Int) -> Unit, onReset: () -> Unit) {
+    Column {
+        Text(
+            "위·아래 버튼으로 순서를 바꾸고, 끝나면 위의 체크를 누르세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+        )
+        OneUiGroupColumn {
+            order.forEachIndexed { index, key ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                ) {
+                    Text(
+                        "${index + 1}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(24.dp),
+                    )
+                    Text(
+                        ApplyOrderStore.label(key),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) {
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "${ApplyOrderStore.label(key)} 위로")
+                    }
+                    IconButton(onClick = { onMove(index, index + 1) }, enabled = index < order.lastIndex) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "${ApplyOrderStore.label(key)} 아래로")
+                    }
+                }
+                if (index != order.lastIndex) OneUiDivider()
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        OneUiButton(
+            text = "기본 순서로",
+            onClick = onReset,
+            style = OneUiButtonStyle.Neutral,
+            enabled = order != ApplyOrderStore.defaultOrder,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

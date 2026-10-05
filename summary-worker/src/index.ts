@@ -7,6 +7,10 @@
  *   line   : 게시판 목록에 붙는 한 줄 요약
  *   points : 글 화면 위에 보이는 자세한 요약(글머리표)
  *
+ * GET /weather → 서울특별시 날씨(현재·시간별 3일·일별 7일). 귀가 기간 홈·위젯 안내용. 지금은 키가 필요 없는
+ *   Open-Meteo(서울은 일본 기상청 5km 모델 + 앙상블 강수확률)에서 받아 30분 KV 에 보관하고 모든 사용자에게 나눠 줍니다.
+ *   앱은 이 모양만 알면 되므로, 나중에 기상청 등으로 바꿔도 앱 업데이트 없이 여기만 고치면 됩니다.
+ *
  * 키 앞의 v3 는 프롬프트 버전 — 프롬프트를 바꾸면 올려서 예전 요약 대신 새로 만들게 합니다.
  * 요약은 (제목 + 본문) 해시마다 딱 한 번만 AI 로 만들고 KV 에 보관합니다. 같은 글을 다른 사용자가 열면
  * 저장된 요약을 돌려줄 뿐이라 AI 사용량이 늘지 않습니다. 키가 본문 해시라서 누가 엉뚱한 본문을 보내도
@@ -62,6 +66,7 @@ const SYSTEM = `너는 한국 고등학교 포털 공지를 학생에게 요약�
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/weather") return weather(req, env);
     if (url.pathname !== "/summarize") return json({ error: "not_found" }, 404);
     if (req.method !== "POST") return json({ error: "method" }, 405);
     if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
@@ -216,4 +221,68 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+// MARK: - 날씨
+
+/** 서울특별시청 좌표 — 서울 날씨 한 곳만 씁니다(사용자 위치는 받지 않음). */
+const SEOUL = { lat: 37.5665, lon: 126.978 };
+const WEATHER_KEY = "weather:seoul:v1";
+const WEATHER_SECONDS = 30 * 60;
+
+interface OpenMeteo {
+  current?: { time: string; temperature_2m: number | null; weather_code: number | null };
+  hourly?: { time: string[]; temperature_2m: (number | null)[]; weather_code: (number | null)[]; precipitation_probability: (number | null)[] };
+  daily?: {
+    time: string[];
+    weather_code: (number | null)[];
+    temperature_2m_max: (number | null)[];
+    temperature_2m_min: (number | null)[];
+    precipitation_probability_max: (number | null)[];
+  };
+}
+
+async function weather(req: Request, env: Env): Promise<Response> {
+  if (req.method !== "GET") return json({ error: "method" }, 405);
+  if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
+  const cached = await env.SUMMARIES.get(WEATHER_KEY);
+  if (cached) return new Response(cached, { headers: { "content-type": "application/json; charset=utf-8" } });
+
+  const api = new URL("https://api.open-meteo.com/v1/forecast");
+  api.search = new URLSearchParams({
+    latitude: String(SEOUL.lat),
+    longitude: String(SEOUL.lon),
+    current: "temperature_2m,weather_code",
+    hourly: "temperature_2m,weather_code,precipitation_probability",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    timezone: "Asia/Seoul",
+    forecast_days: "7",
+  }).toString();
+  const res = await fetch(api.toString(), { headers: { "user-agent": "hihana-neo-weather" } });
+  if (!res.ok) return json({ error: `upstream ${res.status}` }, 502);
+  const data = (await res.json()) as OpenMeteo;
+  if (!data.current || !data.hourly || !data.daily) return json({ error: "upstream_shape" }, 502);
+
+  const now = data.current.time.slice(0, 13);
+  const hourly = data.hourly.time
+    .map((t, i) => ({ t, temp: data.hourly!.temperature_2m[i], code: data.hourly!.weather_code[i], pop: data.hourly!.precipitation_probability[i] }))
+    .filter((h) => h.t.slice(0, 13) >= now)
+    .slice(0, 72);
+  const daily = data.daily.time.map((date, i) => ({
+    date,
+    code: data.daily!.weather_code[i],
+    max: data.daily!.temperature_2m_max[i],
+    min: data.daily!.temperature_2m_min[i],
+    pop: data.daily!.precipitation_probability_max[i],
+  }));
+  const body = JSON.stringify({
+    place: "서울",
+    source: "open-meteo",
+    updated: new Date().toISOString(),
+    current: { time: data.current.time, temp: data.current.temperature_2m, code: data.current.weather_code },
+    hourly,
+    daily,
+  });
+  await env.SUMMARIES.put(WEATHER_KEY, body, { expirationTtl: WEATHER_SECONDS });
+  return new Response(body, { headers: { "content-type": "application/json; charset=utf-8" } });
 }

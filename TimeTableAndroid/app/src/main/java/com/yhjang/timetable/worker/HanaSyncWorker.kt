@@ -36,21 +36,30 @@ class HanaSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
         if (!HanaCredentialStore.hasCredentials(applicationContext)) return Result.success()
         if (HanaSyncGate.isSuspended(applicationContext)) return Result.success()
 
-        // 알리미 새 글 알림 — 실패해도 면학 동기화에 영향을 주지 않게 따로 감쌉니다.
-        runCatching {
-            val alims = HanaAcademicApi.fetchAlim(applicationContext)
-            AlimNotifier.process(applicationContext, alims)
-        }
-
-        // 게시판 새 글 알림 — 설정에서 켠 게시판만 새로 받아 마지막으로 본 글 이후의 글을 알립니다.
-        BoardNotifier.enabledCategories(applicationContext).forEach { category ->
-            runCatching {
-                val posts = HanaAcademicRepository.board(applicationContext, category, force = true)
-                BoardNotifier.process(applicationContext, category, posts)
-            }
-        }
-
         return try {
+            // 일반 조회 실패는 다음 단계에 영향을 주지 않지만, 로그인 실패는 즉시 중단해
+            // 한 번의 Worker 실행에서 비밀번호 오류를 여러 번 보내지 않습니다.
+            try {
+                val alims = HanaAcademicApi.fetchAlim(applicationContext)
+                AlimNotifier.process(applicationContext, alims)
+            } catch (e: HanaPortalException.LoginFailed) {
+                throw e
+            } catch (_: Exception) {
+                // 알리미 실패와 면학 동기화는 서로 독립입니다.
+            }
+
+            // 게시판 새 글 알림 — 설정에서 켠 게시판만 새로 받아 마지막으로 본 글 이후의 글을 알립니다.
+            BoardNotifier.enabledCategories(applicationContext).forEach { category ->
+                try {
+                    val posts = HanaAcademicRepository.board(applicationContext, category, force = true)
+                    BoardNotifier.process(applicationContext, category, posts)
+                } catch (e: HanaPortalException.LoginFailed) {
+                    throw e
+                } catch (_: Exception) {
+                    // 한 게시판의 실패가 다른 게시판이나 면학 동기화를 막지 않습니다.
+                }
+            }
+
             val sync = HanaPortalClient.get().fetchDailySync(applicationContext, today)
             HanaSyncApplier.apply(applicationContext, sync, today)
             // 장소 배정과 함께 시간표도 강제로 새로 받아 설치합니다 (실패 시 캐시 유지).

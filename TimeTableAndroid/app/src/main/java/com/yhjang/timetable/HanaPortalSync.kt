@@ -576,7 +576,14 @@ class HanaPortalClient private constructor() {
      * 화면이 스스로 복구하는 데 씁니다. 실패는 예외로 알립니다.
      */
     suspend fun relogin(context: Context) = withContext(Dispatchers.IO) {
-        login(context)
+        // 저장된 계정이 바뀌었거나 웹뷰가 이전 세션으로 튕긴 경우에는 기존 쿠키로
+        // 성공한 것처럼 보이면 안 됩니다. 세션을 비우고 현재 자격 증명으로 새로 로그인합니다.
+        synchronized(loginLock) {
+            cookieStore.clear()
+            lastAuthenticatedAt = 0L
+            performLogin(context)
+            lastLoginAt = System.currentTimeMillis()
+        }
         lastAuthenticatedAt = System.currentTimeMillis()
     }
 
@@ -711,7 +718,7 @@ object HanaAssignmentMapper {
         val compact = stNm.replace(" ", "")
         if (!compact.contains("타임")) return null
         val number = Regex("(\\d+)\\s*타임").find(compact)?.groupValues?.get(1)?.toIntOrNull() ?: return null
-        val weekend = date.dayOfWeek == java.time.DayOfWeek.SATURDAY || date.dayOfWeek == java.time.DayOfWeek.SUNDAY
+        val weekend = Timetable.isRestDay(date)
         return if (weekend) {
             when (number) {
                 1 -> PlanSlot.weekend1

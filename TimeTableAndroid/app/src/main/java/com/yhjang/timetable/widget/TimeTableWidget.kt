@@ -58,6 +58,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.yhjang.timetable.Accent
 import com.yhjang.timetable.HomeStayNotice
+import androidx.glance.layout.fillMaxHeight
+import com.yhjang.timetable.SeoulWeather
+import com.yhjang.timetable.homeStayExtras
+import com.yhjang.timetable.HomeStayExtras
 import com.yhjang.timetable.homeStayNotice
 import com.yhjang.timetable.Block
 import com.yhjang.timetable.BlockKind
@@ -143,9 +147,13 @@ class TimeTableWidget : GlanceAppWidget() {
                 null
             }
 
+            // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시) 안내 아래에 날씨·귀교 후 첫 일정·시험을 붙입니다.
+            val homeStay = homeStayNotice(today, now)
+            if (homeStay != null) runCatching { SeoulWeather.get(context) }
             WidgetSnapshot(
                 block = block,
-                homeStay = homeStayNotice(today, now),
+                homeStay = homeStay,
+                homeStayExtras = if (homeStay != null) homeStayExtras(context, today, now) else null,
                 nextTitle = next?.title,
                 nextRoom = next?.room,
                 mealText = mealText,
@@ -192,6 +200,7 @@ class TimeTableWidget : GlanceAppWidget() {
                     supervisionText = snapshot?.supervisionText,
                     countdownViews = countdownViews,
                     homeStay = snapshot?.homeStay,
+                    homeStayExtras = snapshot?.homeStayExtras,
                 )
             }
             }
@@ -204,6 +213,7 @@ private data class WidgetSnapshot(
     val block: Block?,
     /** 귀가 기간 안내 — 일정이 빈 동안 '현재 일정이 없습니다' 대신 띄웁니다. */
     val homeStay: HomeStayNotice?,
+    val homeStayExtras: HomeStayExtras?,
     val nextTitle: String?,
     val nextRoom: String?,
     val mealText: String?,
@@ -297,6 +307,7 @@ private fun WidgetContent(
     supervisionText: String?,
     countdownViews: RemoteViews?,
     homeStay: HomeStayNotice?,
+    homeStayExtras: HomeStayExtras?,
 ) {
     // 슬라이더 값을 라이트/다크 모두 그대로 반영합니다.
     val alphaInt = (opacityPercent * 255 / 100).coerceIn(0, 255)
@@ -362,7 +373,8 @@ private fun WidgetContent(
                     if (block != null && !block.isBlank) {
                         ScheduleContent(block, nextTitle, nextRoom, mealText, mealAllergyPrefix, supervisionText, countdownViews)
                     } else {
-                        EmptyScheduleContent(homeStay)
+                        if (homeStay != null && homeStayExtras != null) HomeStayContent(homeStay, homeStayExtras)
+                        else EmptyScheduleContent(homeStay)
                     }
                 }
             }
@@ -389,6 +401,79 @@ internal fun isDarkTheme(context: Context, theme: String): Boolean = when (theme
     PlanStore.THEME_LIGHT -> false
     else -> (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
+}
+
+/**
+ * 귀가 기간 — 안내 문구·귀교 날짜 아래 서울 날씨를 아이콘·큰 기온으로(2x2 이상이라 작게 줄일 필요가 없음).
+ * 폭이 넉넉하면(4x2 이상) 오른쪽 칸에 귀교 후 첫 일정과 시험을 더합니다.
+ */
+@Composable
+private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
+    val titleColor = GlanceTheme.colors.onSurface
+    val subtextColor = GlanceTheme.colors.onSurfaceVariant
+    val wide = LocalSize.current.width >= 250.dp
+    val returning = homeStay.shortDetail == "오늘 귀교"
+
+    @Composable
+    fun main(modifier: GlanceModifier) {
+        Column(modifier = modifier) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    provider = ImageProvider(R.drawable.ic_home_stay),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(subtextColor),
+                    modifier = GlanceModifier.size(14.dp),
+                )
+                Spacer(GlanceModifier.width(5.dp))
+                Text(if (returning) "귀교" else "귀가", style = TextStyle(color = subtextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+            }
+            Spacer(GlanceModifier.height(6.dp))
+            Text(homeStay.title, style = TextStyle(color = titleColor, fontSize = 16.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+            Spacer(GlanceModifier.height(2.dp))
+            Text(homeStay.shortDetail, style = TextStyle(color = subtextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            Spacer(GlanceModifier.defaultWeight())
+            extras.weather?.let { w ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(provider = ImageProvider(w.icon), contentDescription = null, modifier = GlanceModifier.size(34.dp))
+                    Spacer(GlanceModifier.width(8.dp))
+                    Column {
+                        w.bigTemp?.let {
+                            Text(it, style = TextStyle(color = titleColor, fontSize = 24.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                        }
+                        Text(
+                            w.short,
+                            style = TextStyle(
+                                color = if (w.tip != null) ColorProvider(Color(0xFF3D8BFF)) else subtextColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (!wide || (extras.firstPlan == null && extras.exam == null)) {
+        main(GlanceModifier.fillMaxSize())
+        return
+    }
+    Row(modifier = GlanceModifier.fillMaxSize()) {
+        main(GlanceModifier.defaultWeight().fillMaxHeight())
+        Spacer(GlanceModifier.width(14.dp))
+        Column(modifier = GlanceModifier.width(140.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            extras.firstPlan?.let { (plan, time) ->
+                Text("귀교 후 첫 일정 · $time", style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                Text(plan, style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+                Spacer(GlanceModifier.height(10.dp))
+            }
+            extras.exam?.let { (name, days) ->
+                Text(name, style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                Text(if (days == 0L) "D-day" else "D-$days", style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            }
+        }
+    }
 }
 
 @Composable

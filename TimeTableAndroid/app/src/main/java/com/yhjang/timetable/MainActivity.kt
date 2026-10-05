@@ -93,6 +93,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
@@ -125,6 +126,8 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -177,6 +180,7 @@ import com.yhjang.timetable.ui.AccentPresets
 import com.yhjang.timetable.ui.CustomAccentSwatch
 import com.yhjang.timetable.ui.LocalHazeState
 import com.yhjang.timetable.ui.LocalDialogHazeState
+import com.yhjang.timetable.ui.OneUiActionButton
 import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiGlassSurface
@@ -461,6 +465,11 @@ private fun TimeTableAppContent(
     var boardCategoryIndex by rememberSaveable { mutableStateOf(0) }
     var boardPosts by remember { mutableStateOf<List<HanaBoardPost>>(emptyList()) }
     var boardLoading by remember { mutableStateOf(false) }
+    // 홈 게시판 카드는 게시판 탭에서 마지막으로 연 게시판과 상관없이 늘 학생공지 — 따로 받아 둡니다.
+    var homeBoardPosts by remember { mutableStateOf<List<HanaBoardPost>>(emptyList()) }
+    var homeBoardLoading by remember { mutableStateOf(false) }
+    // 신청·내역 블록 순서 편집 — 헤더의 연필(편집 중엔 체크) 아이콘. 다른 탭으로 가면 끝냅니다.
+    var editingApplyOrder by remember { mutableStateOf(false) }
     var boardError by remember { mutableStateOf<String?>(null) }
     // 앱 내 웹뷰로 띄울 페이지 (null 이면 닫힘) — 게시글·신청·내역 페이지 공용
     var webPage by remember { mutableStateOf<HanaWebPage?>(null) }
@@ -540,6 +549,7 @@ private fun TimeTableAppContent(
         try {
             val category = BoardCategory.entries[boardCategoryIndex]
             boardPosts = HanaAcademicRepository.board(context, category, force)
+            if (category == BoardCategory.STUDENT_NOTICE) homeBoardPosts = boardPosts
             // 앱에서 목록을 본 것과 새 글 알림은 별개입니다 — 여기서 "본 글"로 기록하지 않아, 앱을 먼저 열었더라도
             // 백그라운드 확인 때 알림이 옵니다.
         } catch (e: HanaPortalException.MissingCredentials) {
@@ -556,9 +566,25 @@ private fun TimeTableAppContent(
         }
     }
 
+    /** 홈 카드용 학생공지 — 게시판 탭과 같은 캐시를 쓰므로 대부분 네트워크를 타지 않습니다. 실패는 조용히 넘깁니다. */
+    suspend fun loadHomeBoard(force: Boolean) {
+        homeBoardLoading = true
+        try {
+            homeBoardPosts = HanaAcademicRepository.board(context, BoardCategory.STUDENT_NOTICE, force)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        } finally {
+            homeBoardLoading = false
+        }
+    }
+
     // 게시판 목록이 바뀌면 각 글의 AI 한 줄 요약을 한 건씩 채웁니다(이미 받은 글은 건너뜀).
     LaunchedEffect(boardPosts) {
         if (boardPosts.isNotEmpty()) PostSummarizer.prefetch(context, boardPosts)
+    }
+    LaunchedEffect(homeBoardPosts) {
+        if (homeBoardPosts.isNotEmpty()) PostSummarizer.prefetch(context, homeBoardPosts)
     }
 
     suspend fun loadAlim(force: Boolean) {
@@ -786,14 +812,15 @@ private fun TimeTableAppContent(
     // 비어 있을 때만 조용히 채우고, TTL 캐시라 대부분 네트워크를 타지 않습니다. 캐시가 "빈 목록"이면
     // (세션이 없을 때 받은 응답일 수 있음) 이번 실행에 한 번은 강제로 새로 받아 옵니다.
     var boardForcedOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(tab) { if (tab != TabIndex.APPLY) editingApplyOrder = false }
     LaunchedEffect(tab) {
         if (tab != TabIndex.HOME) return@LaunchedEffect
         if (!HanaCredentialStore.hasCredentials(context)) return@LaunchedEffect
         if (scheduleEntries.isEmpty()) runCatching { loadSchedule(false) }
-        if (boardPosts.isEmpty()) runCatching { loadBoard(false) }
-        if (boardPosts.isEmpty() && !boardForcedOnce) {
+        if (homeBoardPosts.isEmpty()) runCatching { loadHomeBoard(false) }
+        if (homeBoardPosts.isEmpty() && !boardForcedOnce) {
             boardForcedOnce = true
-            runCatching { loadBoard(true) }
+            runCatching { loadHomeBoard(true) }
         }
     }
 
@@ -861,6 +888,7 @@ private fun TimeTableAppContent(
             loadAlim(true)
             when {
                 tab == TabIndex.BOARD -> loadBoard(true)
+                tab == TabIndex.HOME -> loadHomeBoard(true)
                 tab == TabIndex.SCHEDULE && scheduleSubTab == 1 -> loadSchedule(true)
             }
         } finally {
@@ -880,6 +908,7 @@ private fun TimeTableAppContent(
             runCatching { syncFromHana() }
             runCatching { loadSchedule(true) }
             runCatching { loadBoard(true) }
+            runCatching { loadHomeBoard(true) }
             runCatching { loadAlim(true) }
         }
     }
@@ -914,6 +943,14 @@ private fun TimeTableAppContent(
     }
     // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 2타임 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
     val homeStayNotice = HomeStaySchedule.revision.let { homeStayNotice(today, now) }
+    // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시), 안내 아래 줄(날씨·귀교 후 첫 일정·시험)을 계산합니다.
+    var weatherRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(homeStayNotice != null, today) {
+        if (homeStayNotice != null && SeoulWeather.get(context) != null) weatherRevision++
+    }
+    val homeStayExtras by produceState<HomeStayExtras?>(
+        null, homeStayNotice, now.hour, weatherRevision, HomeStaySchedule.revision, scheduleEntries,
+    ) { value = homeStayExtras(context, today, now) }
     val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
     // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
     val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
@@ -1063,6 +1100,7 @@ private fun TimeTableAppContent(
                 )
                 TabIndex.APPLY -> AcademicTab(
                     subTab = 2,
+                    applyEditing = editingApplyOrder,
                     schedule = scheduleEntries,
                     scheduleLoading = scheduleLoading,
                     scheduleError = scheduleError,
@@ -1216,6 +1254,7 @@ private fun TimeTableAppContent(
                     nextRoom = nextBlock?.room,
                     blockProgress = blockProgress,
                     homeStayNotice = homeStayNotice,
+                    homeStayExtras = homeStayExtras,
                     slots = slots,
                     places = places,
                     supervisor = weekday1Supervisor,
@@ -1229,18 +1268,23 @@ private fun TimeTableAppContent(
                     isLoadingAlim = alimLoading,
                     schedule = scheduleEntries,
                     isLoadingSchedule = scheduleLoading,
-                    boardPosts = boardPosts,
-                    isLoadingBoard = boardLoading,
-                    boardCategoryLabel = BoardCategory.entries
-                        .getOrElse(boardCategoryIndex) { BoardCategory.STUDENT_NOTICE }
-                        .label,
+                    boardPosts = homeBoardPosts,
+                    isLoadingBoard = homeBoardLoading,
+                    boardCategoryLabel = BoardCategory.STUDENT_NOTICE.label,
                     studentGrade = studentGrade,
                     needsAccount = !hasCredentials,
                     onConnectAccount = { showingAccountSheet = true },
                     onOpenAlim = { openAlim(it) },
                     onOpenAlimList = { openAlimScreen() },
                     onOpenPost = { openBoardPost(it) },
-                    onOpenBoardList = { tab = TabIndex.BOARD },
+                    // 홈 카드는 학생공지라, 목록도 학생공지로 엽니다.
+                    onOpenBoardList = {
+                        if (boardCategoryIndex != BoardCategory.STUDENT_NOTICE.ordinal) {
+                            boardCategoryIndex = BoardCategory.STUDENT_NOTICE.ordinal
+                            boardPosts = homeBoardPosts
+                        }
+                        tab = TabIndex.BOARD
+                    },
                     onOpenSchedule = {
                         scheduleSubTab = 1
                         tab = TabIndex.SCHEDULE
@@ -1277,7 +1321,13 @@ private fun TimeTableAppContent(
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = 4.dp, end = 12.dp),
     ) {
-        IconButton(
+        if (tab == TabIndex.APPLY) {
+            OneUiActionButton(onClick = { editingApplyOrder = !editingApplyOrder }) {
+                if (editingApplyOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
+                else Icon(Icons.Default.Edit, contentDescription = "블록 순서 편집")
+            }
+        }
+        OneUiActionButton(
             onClick = { scope.launch { refreshAll() } },
             enabled = !isSyncing && !isRefreshingAll,
             modifier = Modifier.onGloballyPositioned { coords ->
@@ -1292,7 +1342,7 @@ private fun TimeTableAppContent(
                 else -> Icon(Icons.Default.Refresh, contentDescription = "동기화")
             }
         }
-        IconButton(onClick = { openAlimScreen() }) {
+        OneUiActionButton(onClick = { openAlimScreen() }) {
             BadgedBox(badge = {
                 if (alimUnread > 0) {
                     Badge(
@@ -1304,10 +1354,10 @@ private fun TimeTableAppContent(
                 Icon(Icons.Default.Notifications, contentDescription = "알리미")
             }
         }
-        IconButton(onClick = { showingAccountSheet = true }) {
+        OneUiActionButton(onClick = { showingAccountSheet = true }) {
             Icon(Icons.Default.AccountCircle, contentDescription = "계정")
         }
-        IconButton(onClick = { showingSettings = true }) {
+        OneUiActionButton(onClick = { showingSettings = true }) {
             Icon(Icons.Default.Settings, contentDescription = "설정")
         }
     }
@@ -1385,6 +1435,7 @@ private fun TimeTableAppContent(
                     runCatching { syncFromHana() }
                     runCatching { loadSchedule(true) }
                     runCatching { loadBoard(true) }
+                    runCatching { loadHomeBoard(true) }
                     runCatching { loadAlim(true) }
                 }
             },
@@ -3293,11 +3344,16 @@ private fun HanaAccountDialog(onDismiss: () -> Unit) {
             // fetchDailySync 자체가 IO 로 전환하지만, 저장 직후 네트워크 대기 동안
             // 메인 스레드가 막히지 않도록 명시적으로 IO 에서 돌립니다.
             val result = withContext(Dispatchers.IO) {
-                runCatching { HanaPortalClient.get().fetchDailySync(context, PlanStore.today()) }
+                runCatching {
+                    val portal = HanaPortalClient.get()
+                    portal.relogin(context)
+                    portal.fetchDailySync(context, PlanStore.today())
+                }
             }
             isChecking = false
             result.fold(
                 onSuccess = {
+                    HanaSyncGate.clear(context)
                     loginSucceeded = true
                     Log.d("HanaLogin", "로그인 성공 (id=$id)")
                 },

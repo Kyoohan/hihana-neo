@@ -87,6 +87,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     var slots by remember { mutableStateOf<List<LibrarySlot>>(emptyList()) }
     var slotId by remember { mutableStateOf<String?>(null) }
     var map by remember { mutableStateOf<LibrarySeatMap?>(null) }
+    var mapSlotId by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -114,7 +115,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         val id = slotId ?: return
         loading = true
         error = null
-        map = try {
+        val loaded = try {
             HanaLibraryApi.seatMap(context, id, service)
         } catch (e: CancellationException) {
             // 타임을 바꿔 LaunchedEffect 가 다시 시작되면 이전 불러오기가 취소됩니다 — 오류가 아니므로 카드에
@@ -122,14 +123,21 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             throw e
         } catch (e: Exception) {
             error = e.message ?: "좌석을 불러오지 못했습니다"
-            map
+            null
         }
-        loading = false
+        if (slotId == id) {
+            if (loaded != null) {
+                map = loaded
+                mapSlotId = id
+            }
+            loading = false
+        }
     }
 
     /** 좌석을 누르면 확인 없이 바로 — 빈 자리는 신청, 내 자리는 취소. 결과 문구는 아래 팝업으로. */
     fun act(seat: LibrarySeat, retriesLeft: Int = 2) {
         val id = slotId ?: return
+        if (loading || mapSlotId != id) return
         val cancelling = seat.mine && seat.sreIdx != null
         busy = true
         // 기다리는 동안엔 팝업에 진행 상황을 — 예약 오픈 직후엔 서버가 1분 넘게 붙들기도 해서 멈춘 게 아님을 보여줍니다.
@@ -207,8 +215,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     LaunchedEffect(Unit) {
         slots = runCatching { HanaLibraryApi.slots(context, service) }.getOrDefault(emptyList())
         runCatching { refreshDevice() }
-        // 오늘이 주말이면 주말 타임을, 아니면 평일 타임을 먼저 고릅니다.
-        val weekend = PlanStore.today().dayOfWeek.value >= 6
+        // 오늘이 주말·공휴일이면 휴일 타임을, 아니면 평일 타임을 먼저 고릅니다.
+        val weekend = Timetable.isRestDay(PlanStore.today())
         slotId = slots.firstOrNull { it.label.contains("휴일") == weekend }?.id
             ?: slots.firstOrNull()?.id
         if (slotId == null) {
@@ -217,7 +225,13 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         }
     }
     // 타임이 정해지거나 바뀔 때마다 그 타임의 좌석을 받습니다 (처음 고른 타임도 여기서).
-    LaunchedEffect(slotId) { if (slotId != null) loadMap() }
+    LaunchedEffect(slotId) {
+        if (slotId != null) {
+            map = null
+            mapSlotId = null
+            loadMap()
+        }
+    }
 
     OneUiFullScreen(
         title = "${service.label} 신청",
@@ -282,6 +296,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     val seat = current?.seats?.firstOrNull { it.cont == cont }
                     when {
                         busy -> Unit
+                        loading || mapSlotId != slotId -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
                         current == null -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
                         seat == null -> notice = "$cont 자리를 이 타임 좌석표에서 찾지 못했습니다"
                         seat.mine || seat.available -> act(seat)
@@ -433,7 +448,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                                             notice = "${seat.cont} 을 빠른 예약에 추가했습니다"
                                         }
                                     }
-                                    !busy -> act(seat)
+                                    !busy && !loading && mapSlotId == slotId -> act(seat)
                                 }
                             },
                             modifier = Modifier.padding(horizontal = OneUi.PagePadding),

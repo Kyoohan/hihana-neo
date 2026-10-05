@@ -405,6 +405,7 @@ private val LEGAL_SECTIONS = listOf(
             "3. 급식의 열량, 영양성분 및 원산지: 나이스 교육정보 개방 포털(open.neis.go.kr)",
             "4. 심야면학 좌석 및 신청 현황: 심야면학 신청 사이트(midnight-study.vercel.app)",
             "5. 앱 업데이트 정보: GitHub",
+            "6. 귀가 기간의 서울특별시 날씨: Open-Meteo(open-meteo.com)의 예보를 요약 서버를 거쳐 제공하며, 이 과정에서 이용자의 위치 등 어떠한 정보도 전송되지 아니합니다",
         ),
     ),
     LegalSection(

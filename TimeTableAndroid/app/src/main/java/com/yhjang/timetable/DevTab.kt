@@ -126,6 +126,38 @@ fun DevTab(
         }
         Spacer(Modifier.height(16.dp))
 
+        // 귀가 기간 '지금' 카드의 날씨·귀교 후 첫 일정·시험 줄 — 실제 귀가 날을 기다리지 않고 오늘 예보로 미리 봅니다.
+        OneUiSectionTitle("귀가 기간 미리보기")
+        var homeStayPreview by remember { mutableStateOf<Pair<String, HomeStayExtras?>?>(null) }
+        OneUiGroupColumn {
+            listOf(
+                Triple("귀가일 (오늘 19:00 이후로)", Timetable.HomeStay.LEAVE, java.time.LocalTime.of(19, 30)),
+                Triple("귀가 중 (내일 귀교로)", Timetable.HomeStay.AWAY, null),
+                Triple("귀교일 (오늘 귀교로)", Timetable.HomeStay.RETURN, null),
+            ).forEachIndexed { index, (title, stay, at) ->
+                if (index > 0) OneUiDivider()
+                OneUiListItem(
+                    title = title,
+                    onClick = {
+                        scope.launch {
+                            val current = java.time.LocalDateTime.now(PlanStore.seoulZone)
+                            val now = at?.let { t -> current.with(t).takeIf { it.isAfter(current) } } ?: current
+                            homeStayPreview = title to previewHomeStayExtras(context, stay, now)
+                        }
+                    },
+                )
+            }
+            homeStayPreview?.let { (title, extras) ->
+                OneUiDivider()
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (extras == null) Text("보여 줄 줄이 없습니다", style = MaterialTheme.typography.bodySmall)
+                    else HomeStayExtraRows(extras)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
         OneUiSectionTitle("실시간 일정")
         var liveTempUntil by remember { mutableStateOf(LiveActivity.tempUntil(context)) }
         OneUiGroupColumn {

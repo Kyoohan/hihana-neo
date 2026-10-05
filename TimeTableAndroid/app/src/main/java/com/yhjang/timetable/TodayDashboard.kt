@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -71,6 +72,8 @@ internal fun TodayDashboard(
     blockProgress: Float?,
     /** 귀가 기간 안내 — 있으면 '지금' 카드가 일정 대신 이 문구를 보여줍니다. */
     homeStayNotice: HomeStayNotice?,
+    /** 귀가 기간 안내 아래에 붙는 서울 날씨·귀교 후 첫 일정·시험. */
+    homeStayExtras: HomeStayExtras? = null,
     slots: List<PlanSlot>,
     places: Map<PlanSlot, StudyPlace?>,
     supervisor: String?,
@@ -113,7 +116,7 @@ internal fun TodayDashboard(
         verticalItemSpacing = 12.dp,
     ) {
         item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-            NowHeroCard(hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress, homeStayNotice) {
+            NowHeroCard(hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress, homeStayNotice, homeStayExtras) {
                 if (needsAccount) onConnectAccount() else scope.launch { gridState.animateScrollToItem(0) }
             }
         }
@@ -218,6 +221,7 @@ private fun NowHeroCard(
     nextRoom: String?,
     blockProgress: Float?,
     homeStayNotice: HomeStayNotice?,
+    homeStayExtras: HomeStayExtras?,
     onClick: () -> Unit,
 ) {
     DashboardCard(title = "지금", icon = painterResource(R.drawable.ic_place), onCardClick = onClick) {
@@ -252,7 +256,13 @@ private fun NowHeroCard(
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
-            DashboardEmpty(homeStayNotice.detail)
+            Text(
+                homeStayNotice.detail,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            homeStayExtras?.let { HomeStayExtraRows(it) }
             return@DashboardCard
         }
         if (block == null || block.isBlank) {
@@ -608,6 +618,37 @@ private fun BoardMiniCard(
                 }
             }
         }
+    }
+}
+
+/** 귀가 기간 안내 아래 얇은 줄들 — 아이콘 · (작은 이름 / 값 / 우산 안내) · 오른쪽 보조 글. */
+@Composable
+internal fun HomeStayExtraRows(extras: HomeStayExtras) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    @Composable
+    fun row(icon: androidx.compose.ui.graphics.painter.Painter, tint: Color?, label: String, value: String, tip: String?, side: String?) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = tint ?: Color.Unspecified, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = muted)
+                Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                tip?.let { Text(it, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF6FB4FF)) }
+            }
+            side?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = muted) }
+        }
+    }
+    data class Line(val icon: Int, val tint: Color?, val label: String, val value: String, val tip: String?, val side: String?)
+    val lines = listOfNotNull(
+        extras.weather?.let { Line(it.icon, null, it.label, it.value, it.tip, it.side) },
+        extras.firstPlan?.let { (plan, time) -> Line(R.drawable.ic_place, MaterialTheme.colorScheme.primary, "귀교 후 첫 일정", plan, null, time) },
+        extras.exam?.let { (name, days) -> Line(R.drawable.ic_academic, Color(0xFFFF9F6B), "다가오는 시험", name, null, if (days == 0L) "D-day" else "D-$days") },
+    )
+    Spacer(Modifier.height(10.dp))
+    lines.forEach { line ->
+        HorizontalDivider(thickness = 0.8.dp, color = divider)
+        row(painterResource(line.icon), line.tint, line.label, line.value, line.tip, line.side)
     }
 }
 

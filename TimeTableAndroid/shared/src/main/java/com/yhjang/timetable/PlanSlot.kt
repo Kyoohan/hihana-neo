@@ -1,6 +1,5 @@
 package com.yhjang.timetable
 
-import java.time.DayOfWeek
 import java.time.LocalDate
 
 // MARK: - 면학 타임 슬롯
@@ -43,8 +42,8 @@ enum class PlanSlot {
          * 채워지는 자동 슬롯이라 여기엔 넣지 않습니다 (Timetable.blocks() 에서는 그대로 씁니다)
          */
         fun slots(date: LocalDate): List<PlanSlot> {
-            val isWeekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
-            return if (isWeekend) listOf(weekend1, weekend2, weekend3, weekend4) else listOf(weekday1, weekday2)
+            // 공휴일(학사일정 빨간날)도 주말과 같은 1~4타임.
+            return if (Timetable.isRestDay(date)) listOf(weekend1, weekend2, weekend3, weekend4) else listOf(weekday1, weekday2)
         }
     }
 }

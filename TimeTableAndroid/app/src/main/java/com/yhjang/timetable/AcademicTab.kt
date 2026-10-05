@@ -143,6 +143,8 @@ fun AcademicTab(
     onFitsWithoutScroll: () -> Unit = {},
     /** 목록 맨 위에 얹을 내용(예: 일정 탭의 시간표/학사일정 칩). */
     topContent: (@Composable () -> Unit)? = null,
+    /** 신청·내역 블록 순서 편집 중 (헤더의 연필 아이콘). */
+    applyEditing: Boolean = false,
 ) {
     // 신청·내역은 카드 몇 장뿐이라 시간표 탭처럼 화면에 다 들어가면 스크롤(과 헤더 접힘)을 두지 않습니다 —
     // 내용 높이를 재 보고 넘칠 때만 스크롤을 켭니다. 높이는 항상 스크롤 컨테이너 안에서(제한 없이) 재야 합니다:
@@ -164,7 +166,7 @@ fun AcademicTab(
             ) {
                 Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {
                     topContent?.invoke()
-                    ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenSeats = onOpenSeats)
+                    ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenSeats = onOpenSeats, editing = applyEditing)
                 }
             }
         }

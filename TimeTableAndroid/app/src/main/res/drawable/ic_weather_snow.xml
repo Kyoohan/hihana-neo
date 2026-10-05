@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+<!-- 눈 -->
+<path android:fillColor="#FFB8C2D1" android:pathData="M7,15a4.5,4.5 0,0 1,-0.6 -8.96A6,6 0,0 1,17.6 7.6A3.8,3.8 0,0 1,17 15Z"/>
+<path android:fillColor="#FFE8F1FF" android:pathData="M8,19.5m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0M12,21m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0M16,19.5m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0"/>
+</vector>

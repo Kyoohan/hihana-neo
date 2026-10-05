@@ -1219,11 +1219,16 @@ private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLinked: () 
         scope.launch {
             PlanStore.setStudentGrade(context, grade)
             val result = withContext(Dispatchers.IO) {
-                runCatching { HanaPortalClient.get().fetchDailySync(context, PlanStore.today()) }
+                runCatching {
+                    val portal = HanaPortalClient.get()
+                    portal.relogin(context)
+                    portal.fetchDailySync(context, PlanStore.today())
+                }
             }
             checking = false
             result.fold(
                 onSuccess = {
+                    HanaSyncGate.clear(context)
                     onLinked()
                     onLoggedIn()
                 },

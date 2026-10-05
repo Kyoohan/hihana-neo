@@ -107,7 +107,7 @@ private class PrivacyHost(val name: String, val use: String, val sends: String, 
 private val PRIVACY_HOSTS = listOf(
     PrivacyHost("하나고 학사시스템", "로그인 · 시간표 · 신청 · 게시판", "아이디·비밀번호\nHTTPS", PvBlue),
     PrivacyHost("심야면학 사이트", "심야면학 로그인 · 신청", "이름·비밀번호\nHTTPS", PvViolet),
-    PrivacyHost("AI 요약 서버", "Cloudflare · 게시판 글 요약", "글 제목·본문", PvPink),
+    PrivacyHost("AI 요약 서버", "Cloudflare · 게시판 글 요약 · 서울 날씨", "글 제목·본문", PvPink),
     PrivacyHost("나이스 교육정보", "급식 칼로리·영양·원산지", "학교 코드·날짜", PvOrange),
     PrivacyHost("하나고 홈페이지", "급식 메뉴", "날짜", PvYellow),
     PrivacyHost("GitHub", "업데이트 확인·다운로드", "보내는 정보 없음", PvGreen),
@@ -769,7 +769,7 @@ private fun FlowSection() {
                 }
             }
         }
-        Fine("AI 요약 서버(Cloudflare)에는 게시판 글만 갑니다. 계정 정보를 다른 곳으로 보내는 코드는 앱 어디에도 없으며, 앱의 전체 코드가 GitHub에 공개되어 있습니다.")
+        Fine("AI 요약 서버(Cloudflare)에는 게시판 글만 갑니다. 귀가 기간의 서울 날씨도 이 서버에서 받지만, 날씨를 물을 때는 아무 정보도 보내지 않습니다. 계정 정보를 다른 곳으로 보내는 코드는 앱 어디에도 없으며, 앱의 전체 코드가 GitHub에 공개되어 있습니다.")
     }
 }
 
@@ -849,7 +849,7 @@ private class Promise(val title: String, val body: String, val color: Color, val
 
 private val PROMISES = listOf(
     Promise("비밀번호를 볼 수 없습니다", "비밀번호는 학사시스템에만 곧장 갑니다. 개발자에게 전달될 길이 없습니다.", PvViolet, R.drawable.ic_tour_eye_off),
-    Promise("요약 서버엔 게시판 글만", "AI 요약 서버(Cloudflare)는 게시판 글의 제목·본문·이미지 주소만 받습니다. 요약을 끄면 이것도 보내지 않습니다.", PvPink, R.drawable.ic_pv_cloud),
+    Promise("요약 서버엔 게시판 글만", "AI 요약 서버(Cloudflare)는 게시판 글의 제목·본문·이미지 주소만 받습니다. 요약을 끄면 이것도 보내지 않습니다. 같은 서버에서 받는 서울 날씨는 아무것도 보내지 않고 받기만 합니다.", PvPink, R.drawable.ic_pv_cloud),
     Promise("원격 조작 기능 없음", "서버에서 명령이나 코드를 받아 실행하지 않습니다. 앱이 하는 일을 바꾸려면 새 버전을 내야 합니다.", PvBlue, R.drawable.ic_tour_swap),
     Promise("사용 기록 수집 없음", "광고·사용 분석·오류 수집 도구를 넣지 않았습니다. 무엇을 봤는지 같은 기록이 어디로도 가지 않습니다.", PvOrange, R.drawable.ic_query_stats),
 )

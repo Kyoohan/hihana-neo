@@ -560,6 +560,22 @@ object Timetable {
         RETURN,
     }
 
+    @Volatile private var holidayNames: Map<LocalDate, String> = emptyMap()
+
+    /** 학사일정의 공휴일(빨간날) 설치 — 날짜 → 이름("대체공휴일"). 앱이 학사일정 캐시에서 넘깁니다. */
+    fun installHolidays(byDate: Map<LocalDate, String>) {
+        holidayNames = byDate
+    }
+
+    /** 학사일정에 빨간날로 들어 있는 평일이면 그 이름, 아니면 null. */
+    fun holidayName(date: LocalDate): String? = holidayNames[date]
+
+    /**
+     * 휴일 일과인지 — 토·일요일이거나 학사일정의 빨간날. 요일만 보면 대체공휴일 같은 평일 휴일에 수업 시간표가 떴습니다.
+     * 휴일은 주말과 같은 1~4타임 일과·면학 슬롯을 씁니다.
+     */
+    fun isRestDay(date: LocalDate): Boolean = date.dayOfWeek.value >= 6 || date in holidayNames
+
     @Volatile private var homeStayByDate: Map<LocalDate, HomeStay>? = null
 
     /** 날짜별 귀가 상태 설치 — 학사일정에서 계산해 앱이 넘깁니다. */
@@ -575,13 +591,13 @@ object Timetable {
     fun nextHomeReturn(from: LocalDate): LocalDate? =
         homeStayByDate?.filter { (date, stay) -> stay == HomeStay.RETURN && !date.isBefore(from) }?.keys?.minOrNull()
 
-    /** 귀가일 일정이 끝나는 시각(자정 기준 분) — 그날 1타임 시작, 평일 19:00 · 주말 13:30. */
+    /** 귀가일 일정이 끝나는 시각(자정 기준 분) — 그날 1타임 시작, 평일 19:00 · 휴일 13:30. */
     fun homeLeaveAt(date: LocalDate): Int =
-        if (date.dayOfWeek.value >= 6) Sessions.weekend1.start else Sessions.weekday1.start
+        if (isRestDay(date)) Sessions.weekend1.start else Sessions.weekday1.start
 
     /** 귀교일 일정이 시작하는 타임 — 저녁에 돌아오므로 그날 마지막 타임(평일 2타임 · 주말 4타임, 둘 다 21:30). */
     fun homeReturnSession(date: LocalDate): StudySession =
-        if (date.dayOfWeek.value >= 6) Sessions.weekend4 else Sessions.weekday2
+        if (isRestDay(date)) Sessions.weekend4 else Sessions.weekday2
 
     /** 귀교일 일정이 시작하는 시각(자정 기준 분). */
     fun homeReturnAt(date: LocalDate): Int = homeReturnSession(date).start
@@ -641,16 +657,17 @@ object Timetable {
         val week = installedWeek
         val times = week?.periodTimes ?: periodTimes
 
-        if (weekday >= 6) {
+        if (isRestDay(date)) {
 
-            // ================= 주말 =================
+            // ================= 주말·휴일 =================
 
             val weekendWake = minOf(wakeTime, Sessions.weekend1.start)
             if (weekendWake > 0) {
                 result += Block(BlockKind.BlankKind, at(0), at(weekendWake))
             }
+            val restLabel = holidayName(date)?.let { "$it · 수업 없음" } ?: "주말 · 수업 없음"
             result += gapBlock(
-                Gap("주말 · 수업 없음", "수업 없음", "1타임까지", nextStudy(Sessions.weekend1, PlanSlot.weekend1), Accent.IDLE),
+                Gap(restLabel, "수업 없음", "1타임까지", nextStudy(Sessions.weekend1, PlanSlot.weekend1), Accent.IDLE),
                 weekendWake, Sessions.weekend1.start,
             )
             result += studyBlock(Sessions.weekend1, PlanSlot.weekend1)

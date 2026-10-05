@@ -416,12 +416,28 @@ fun OneUiActionPill(
     content: @Composable RowScope.() -> Unit,
 ) {
     // 접히면 액체 유리 섬(서리 유리 + 무지개 림)으로 떠오릅니다.
-    OneUiLiquidGlassBox(modifier = modifier, cornerRadius = 24.dp, alpha = pillAlpha) {
+    OneUiLiquidGlassBox(modifier = modifier, cornerRadius = 22.dp, alpha = pillAlpha) {
         Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
         )
+    }
+}
+
+/**
+ * 액션 섬([OneUiActionPill]) 안의 아이콘 버튼 — 기본 IconButton(48dp·아이콘 24dp)보다 작게(40dp·아이콘 22dp) 둡니다.
+ * 탭마다 편집 같은 버튼이 더 붙어도 섬이 왼쪽 제목 쪽으로 밀려 붙지 않게 하려는 것입니다.
+ */
+@Composable
+fun OneUiActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size(40.dp)) {
+        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { content() }
     }
 }
 
