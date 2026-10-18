@@ -199,7 +199,10 @@ fun AcademicTab(
                 visible.groupBy { it.date }.forEach { (date, entries) ->
                     item(key = "schedule-header-$date") { ScheduleDateHeader(date) }
                     item(key = "schedule-group-$date") {
-                        GroupedContainer(entries) { entry -> ScheduleRow(entry) }
+                        // 같은 날 같은 선생님의 면학감독(0·1타임 등)은 한 줄에 시간만 이어 붙입니다.
+                        val rows = entries.groupBy { if (it.code == SUPERVISION_CODE) "sv:" + scheduleTitle(it) else "e:" + System.identityHashCode(it) }
+                            .values.map { group -> group.first() to group.mapNotNull { scheduleTime(it) }.distinct() }
+                        GroupedContainer(rows) { (entry, times) -> ScheduleRow(entry, times) }
                     }
                 }
             }
@@ -254,7 +257,8 @@ private fun ExamDdayCard(exam: ExamDday) {
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Text(
-                    "${shortDate(exam.date)} · ${exam.days}일 남음",
+                    // 남은 날은 오른쪽 큰 D-day 가 보여 줘 날짜만.
+                    shortDate(exam.date),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
                 )
@@ -278,17 +282,16 @@ private fun ScheduleDateHeader(date: LocalDate) {
  * 안에 얇은 구분선으로만 나눕니다. 이 컴포저블 자체는 행 내용만 그리고, 컨테이너·구분선은
  * 호출부(같은 날짜로 묶은 곳)에서 담당합니다. */
 @Composable
-private fun ScheduleRow(entry: HanaScheduleEntry) {
+private fun ScheduleRow(entry: HanaScheduleEntry, times: List<String> = listOfNotNull(scheduleTime(entry))) {
+    // 종류는 오른쪽 색 글자(하나일정·학사일정·면학감독)로 보여 줘, 같은 뜻의 색 점은 두지 않습니다.
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = OneUi.RowPadding, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(scheduleColor(entry.code)))
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(scheduleTitle(entry), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             val meta = buildList {
-                if (!entry.allDay) scheduleTime(entry)?.let { add(it) }
+                if (!entry.allDay && times.isNotEmpty()) add(times.joinToString(", "))
                 entry.place?.let { add(it) }
             }
             if (meta.isNotEmpty()) {

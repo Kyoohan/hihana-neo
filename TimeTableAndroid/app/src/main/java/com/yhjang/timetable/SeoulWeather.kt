@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 서울특별시 날씨 — 귀가 기간 홈·위젯 안내용. 앱은 AI 요약 서버(Cloudflare Worker)의 `/weather` 만 부르고, 서버가
- * 날씨 제공처에서 받아 30분씩 보관해 모든 사용자에게 나눠 줍니다(사용자 위치는 보내지 않음). 제공처를 바꿔도 앱은 그대로입니다.
+ * 기상청 단기예보(장애 때만 Open-Meteo)에서 받아 30분씩 보관해 모든 사용자에게 나눠 줍니다(사용자 위치는 보내지 않음).
  */
 object SeoulWeather {
 
@@ -22,7 +22,16 @@ object SeoulWeather {
 
     data class Hour(val time: LocalDateTime, val temp: Double?, val code: Int?, val pop: Int?)
     data class Day(val date: LocalDate, val code: Int?, val max: Double?, val min: Double?, val pop: Int?)
-    data class Forecast(val currentTemp: Double?, val currentCode: Int?, val hours: List<Hour>, val days: List<Day>)
+    data class Forecast(
+        val currentTemp: Double?,
+        val currentCode: Int?,
+        val hours: List<Hour>,
+        val days: List<Day>,
+        /** 서버가 받은 곳 — "kma"(기상청) 또는 "open-meteo"(기상청 장애 때 대신). */
+        val source: String? = null,
+        /** 서버가 받아 온 시각. */
+        val updated: java.time.Instant? = null,
+    )
 
     private val client by lazy {
         OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
@@ -68,7 +77,11 @@ object SeoulWeather {
                 Day(LocalDate.parse(o.getString("date")), o.int("code"), o.num("max"), o.num("min"), o.int("pop"))
             }
         }.orEmpty()
-        Forecast(current?.num("temp"), current?.int("code"), hours, days)
+        Forecast(
+            current?.num("temp"), current?.int("code"), hours, days,
+            source = json.optString("source").takeIf { it.isNotBlank() },
+            updated = runCatching { java.time.Instant.parse(json.getString("updated")) }.getOrNull(),
+        )
     }.getOrNull()
 
     // MARK: - 날씨 코드 (WMO)
@@ -86,13 +99,19 @@ object SeoulWeather {
         else -> Kind.CLOUDY
     }
 
+    /** 기상청 표현에 맞춘 이름 — 서버가 기상청 하늘·강수형태를 WMO 코드로 바꿔 보냅니다(구름많음 2, 빗방울 51, 진눈깨비 66 …). */
     fun label(code: Int?): String = when (kind(code)) {
         Kind.CLEAR -> "맑음"
-        Kind.PARTLY -> "구름 조금"
+        Kind.PARTLY -> if (code == 2) "구름많음" else "구름 조금"
         Kind.CLOUDY -> "흐림"
         Kind.FOG -> "안개"
-        Kind.RAIN -> if (code in 80..82) "소나기" else "비"
-        Kind.SNOW -> "눈"
+        Kind.RAIN -> when (code) {
+            in 80..82 -> "소나기"
+            in 51..57 -> "빗방울"
+            66, 67 -> "진눈깨비"
+            else -> "비"
+        }
+        Kind.SNOW -> if (code == 77) "눈날림" else "눈"
         Kind.STORM -> "뇌우"
     }
 

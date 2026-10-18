@@ -69,8 +69,8 @@ fun DevTab(
             )
             OneUiDivider()
             OneUiListItem(
-                title = "업데이트 투어 (11.x → 12.0)",
-                subtitle = "바뀐 것만 — 게시판·학사 탭·귀가 기간·개인정보 보호 (+ 권한이 빠졌으면 권한)",
+                title = "업데이트 투어 (12.x → 13.0)",
+                subtitle = "바뀐 것만 — 외출·외박 · 교과교실 · 귀가 날씨 · 검색 · 버튼 섬 · 캘린더 · 그 밖에 (+ 권한이 빠졌으면 권한)",
                 onClick = { onStartTour(TourKind.UPDATE) },
             )
         }
@@ -128,6 +128,8 @@ fun DevTab(
 
         // 귀가 기간 '지금' 카드의 날씨·귀교 후 첫 일정·시험 줄 — 실제 귀가 날을 기다리지 않고 오늘 예보로 미리 봅니다.
         OneUiSectionTitle("귀가 기간 미리보기")
+    var devWeatherUntil by remember { mutableStateOf<java.time.LocalDateTime?>(null) }
+    devWeatherUntil?.let { SeoulWeatherScreen(it, onDismiss = { devWeatherUntil = null }) }
         var homeStayPreview by remember { mutableStateOf<Pair<String, HomeStayExtras?>?>(null) }
         OneUiGroupColumn {
             listOf(
@@ -152,7 +154,7 @@ fun DevTab(
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                     Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (extras == null) Text("보여 줄 줄이 없습니다", style = MaterialTheme.typography.bodySmall)
-                    else HomeStayExtraRows(extras)
+                    else HomeStayExtraRows(extras, onOpenWeather = { devWeatherUntil = extras.backAt })
                 }
             }
         }

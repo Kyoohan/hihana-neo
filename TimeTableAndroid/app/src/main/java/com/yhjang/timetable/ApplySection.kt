@@ -20,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,13 +91,39 @@ internal fun ApplyHistorySection(
     var showingClassroomStatus by remember { mutableStateOf(false) }
     if (showingClassroomStatus) ClassroomStatusScreen(onDismiss = { showingClassroomStatus = false })
 
-    // 아직 API 를 모르는 페이지의 엔드포인트를 로그로 조사합니다 (프로세스당 한 번, 실패해도 조용히).
-    LaunchedEffect(Unit) {
-        runCatching { HanaApplyApi.discoverEndpoints(context) }
-    }
-
     fun openHistory(service: ApplyService) {
         onOpenWeb("$PORTAL_BASE${service.historyPath}", "${service.label} 내역")
+    }
+
+    // 면학실·도서관·외출외박 내역은 앱 안 전체 화면 — 오른쪽 위 버튼으로 포털 내역 페이지도 열 수 있습니다.
+    var historyScreen by remember { mutableStateOf<ApplyService?>(null) }
+    when (val shown = historyScreen) {
+        ApplyService.STUDY_ROOM, ApplyService.LIBRARY -> SeatHistoryScreen(
+            place = if (shown == ApplyService.LIBRARY) SeatHistoryPlace.LIBRARY else SeatHistoryPlace.STUDY_ROOM,
+            onDismiss = { historyScreen = null },
+            onOpenPortal = { historyScreen = null; openHistory(shown) },
+        )
+        ApplyService.OUTING -> OutingHistoryScreen(
+            onDismiss = { historyScreen = null },
+            onOpenPortal = { historyScreen = null; openHistory(shown) },
+        )
+        else -> Unit
+    }
+
+    // 교과교실·외출외박 신청도 앱 안 화면 — 신청·취소는 확인 창에서 한 번 더 눌러야 보냅니다.
+    var applyScreen by remember { mutableStateOf<ApplyService?>(null) }
+    fun openApplyPortal(service: ApplyService) = onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label)
+    when (applyScreen) {
+        ApplyService.CLASSROOM -> ClassroomApplyScreen(
+            onDismiss = { applyScreen = null },
+            onOpenPortal = { applyScreen = null; openApplyPortal(ApplyService.CLASSROOM) },
+        )
+        ApplyService.OUTING -> OutingApplyScreen(
+            onDismiss = { applyScreen = null },
+            onOpenPortal = { applyScreen = null; openApplyPortal(ApplyService.OUTING) },
+            onOpenHistory = { applyScreen = null; historyScreen = ApplyService.OUTING },
+        )
+        else -> Unit
     }
 
     fun loadHistory(service: ApplyService) {
@@ -125,8 +150,10 @@ internal fun ApplyHistorySection(
     }
 
     if (editing) {
-        ApplyOrderEditor(
+        OrderEditor(
             order = order,
+            defaultOrder = ApplyOrderStore.defaultOrder,
+            label = ApplyOrderStore::label,
             onMove = { from, to ->
                 order = order.toMutableList().apply { add(to, removeAt(from)) }
                 ApplyOrderStore.set(context, order)
@@ -152,14 +179,14 @@ internal fun ApplyHistorySection(
                 state = states[service] ?: ApplyHistoryState.Idle,
                 // 교과교실은 "누가 어느 교실에 있는지" 현황 조회를 하나 더.
                 onStatus = if (service == ApplyService.CLASSROOM) ({ showingClassroomStatus = true }) else null,
-                // 면학실 내역은 포털 페이지가 더 보기 좋아 바로 웹뷰로.
-                onHistory = { if (service == ApplyService.STUDY_ROOM) openHistory(service) else loadHistory(service) },
-                // 도서관·면학실은 앱 안 좌석 화면, 교과교실·외출외박은 포털 신청 페이지.
+                // 교과교실은 카드 안에 목록, 나머지 셋은 전체 화면.
+                onHistory = { if (service == ApplyService.CLASSROOM) loadHistory(service) else historyScreen = service },
+                // 도서관·면학실은 좌석 화면, 교과교실·외출외박은 신청 화면 — 모두 앱 안.
                 onApply = {
                     when (service) {
                         ApplyService.LIBRARY -> onOpenSeats(SeatService.LIBRARY)
                         ApplyService.STUDY_ROOM -> onOpenSeats(SeatService.STUDY_ROOM)
-                        else -> onOpenWeb("$PORTAL_BASE${service.applyPath}", service.label)
+                        ApplyService.CLASSROOM, ApplyService.OUTING -> applyScreen = service
                     }
                 },
             )
@@ -169,7 +196,13 @@ internal fun ApplyHistorySection(
 
 /** 순서 편집 — 블록 이름마다 위·아래 버튼. 바꾸는 즉시 저장되고, 헤더의 체크 아이콘으로 끝냅니다. */
 @Composable
-private fun ApplyOrderEditor(order: List<String>, onMove: (from: Int, to: Int) -> Unit, onReset: () -> Unit) {
+internal fun OrderEditor(
+    order: List<String>,
+    defaultOrder: List<String>,
+    label: (String) -> String,
+    onMove: (from: Int, to: Int) -> Unit,
+    onReset: () -> Unit,
+) {
     Column {
         Text(
             "위·아래 버튼으로 순서를 바꾸고, 끝나면 위의 체크를 누르세요.",
@@ -190,16 +223,16 @@ private fun ApplyOrderEditor(order: List<String>, onMove: (from: Int, to: Int) -
                         modifier = Modifier.width(24.dp),
                     )
                     Text(
-                        ApplyOrderStore.label(key),
+                        label(key),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) {
-                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "${ApplyOrderStore.label(key)} 위로")
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "${label(key)} 위로")
                     }
                     IconButton(onClick = { onMove(index, index + 1) }, enabled = index < order.lastIndex) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "${ApplyOrderStore.label(key)} 아래로")
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "${label(key)} 아래로")
                     }
                 }
                 if (index != order.lastIndex) OneUiDivider()
@@ -210,7 +243,7 @@ private fun ApplyOrderEditor(order: List<String>, onMove: (from: Int, to: Int) -
             text = "기본 순서로",
             onClick = onReset,
             style = OneUiButtonStyle.Neutral,
-            enabled = order != ApplyOrderStore.defaultOrder,
+            enabled = order != defaultOrder,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -227,7 +260,7 @@ private fun ApplyServiceCard(
 ) {
     // 내역 조회와 신청하기는 같은 급의 동작이라, 카드 아래에 같은 모양·같은 폭의 알약 버튼 두 개로 나란히 둡니다.
     val historyLabel = when (state) {
-        null, ApplyHistoryState.Idle -> "내역 조회"
+        null, ApplyHistoryState.Idle -> "내역"
         ApplyHistoryState.Loading -> "불러오는 중"
         is ApplyHistoryState.Error -> "다시 시도"
         is ApplyHistoryState.Rows -> "새로고침"
@@ -248,7 +281,7 @@ private fun ApplyServiceCard(
                 modifier = Modifier.weight(1f),
             )
             OneUiButton(
-                text = "신청하기",
+                text = "신청",
                 onClick = onApply,
                 style = OneUiButtonStyle.Neutral,
                 modifier = Modifier.weight(1f),

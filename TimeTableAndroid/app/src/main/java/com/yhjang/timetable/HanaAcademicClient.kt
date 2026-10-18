@@ -160,6 +160,29 @@ object HanaAcademicApi {
     /** 포털 메인 위젯 요약에서만 면학감독이 내려오는 경우를 위한 추가 필터. */
     private val MAIN_VARIANT_EXTRA = listOf("mainYn" to "Y")
 
+    /**
+     * 알리미 읽음을 포털에도 기록 — 포털 알리미 화면(received.do)이 항목을 열 때 보내는 요청과 같습니다.
+     * POST /main/alim/alim-target-view.json  aimIdxs=<att_idx>(여러 개) → { result, unreadCount }.
+     * 앱 안 읽음 표시는 따로(AlimReadStore) 남기므로 실패해도 화면은 읽음으로 둡니다.
+     */
+    suspend fun markAlimRead(context: Context, ids: List<String>): Boolean {
+        if (ids.isEmpty()) return true
+        return runCatching {
+            HanaPortalClient.get().authenticatedJson(
+                context, "/main/alim/alim-target-view.json", ids.map { "aimIdxs" to it },
+                referer = "https://hh.hana.hs.kr/main/mypage_alert/received.do",
+            ).optString("result") == "success"
+        }.getOrDefault(false)
+    }
+
+    /** 알리미 모두 읽음 — 포털의 "전체 읽음"과 같은 요청(POST /main/alim/alim-target-view-all.json, 값 없음). */
+    suspend fun markAllAlimRead(context: Context): Boolean = runCatching {
+        HanaPortalClient.get().authenticatedJson(
+            context, "/main/alim/alim-target-view-all.json", emptyList(),
+            referer = "https://hh.hana.hs.kr/main/mypage_alert/received.do",
+        ).optString("result") == "success"
+    }.getOrDefault(false)
+
     suspend fun fetchAlim(context: Context): List<HanaAlim> {
         val json = HanaPortalClient.get().authenticatedJson(
             context,
@@ -551,7 +574,8 @@ object HanaAcademicRepository {
             throw e
         }
 
-        if (fresh.isEmpty()) return emptyList()
+        // 새 응답이 비었으면(파라미터가 안 맞는 날 등) 캐시를 덮어쓰지 않고, 있던 일정이라도 돌려줍니다.
+        if (fresh.isEmpty()) return stored?.let { decodeSchedule(it.value) } ?: emptyList()
         // 다음 달 중간·기말고사처럼 2주 범위 밖의 정기고사를 덧붙입니다 (실패해도 2주치 일정은 그대로).
         val exams = runCatching { upcomingExams(context, today, force) }.getOrDefault(emptyList())
         val merged = fresh + exams.filter { exam -> fresh.none { it.date == exam.date && it.name == exam.name } }

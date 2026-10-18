@@ -41,6 +41,8 @@ data class LibrarySeat(
     val gender: String? = null,
     /** 지정석(sre_assign_yn=Y) — 취소할 수 없습니다. */
     val assigned: Boolean = false,
+    /** 서버가 "이미 예약된 좌석"이라 했지만 좌석표로 아직 확인하지 않은 자리 — 다시 누를 수 있습니다. */
+    val pending: Boolean = false,
 ) {
     val isSeat: Boolean get() = type == "1"
     val available: Boolean get() = isSeat && usable && sreIdx == null && !holiday
@@ -56,10 +58,14 @@ data class LibrarySeatMap(
 ) {
     val seats: List<LibrarySeat> get() = areas.flatMap { it.seats }
 
-    /** 서버가 "이미 예약된 좌석"이라고 한 자리를 새 좌석표를 받기 전에 먼저 사용 중으로 칠합니다. */
-    fun markTaken(cont: String): LibrarySeatMap = copy(
+    /**
+     * 서버가 "이미 예약된 좌석"이라고 한 자리를 새 좌석표를 받기 전까지 '확인 중'으로 표시합니다. 사용 중으로 칠하지는
+     * 않습니다 — 오픈 직후엔 같은 자리를 동시에 누른 다른 신청이 처리되는 동안만 잠겼다가 풀리는 일이 있어, 그대로 다시
+     * 누르면 잡히는 자리입니다.
+     */
+    fun markPending(cont: String): LibrarySeatMap = copy(
         areas = areas.map { area ->
-            area.copy(seats = area.seats.map { if (it.cont == cont && it.sreIdx == null) it.copy(sreIdx = 0) else it })
+            area.copy(seats = area.seats.map { if (it.cont == cont && it.sreIdx == null) it.copy(pending = true) else it })
         },
     )
 }

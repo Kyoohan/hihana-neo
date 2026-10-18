@@ -97,6 +97,7 @@ internal fun AppInfoScreen(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        androidx.compose.runtime.CompositionLocalProvider(com.yhjang.timetable.ui.LocalMaterialHazeState provides null) {
         val view = LocalView.current
         val dark = scheme.isDark
         SideEffect {
@@ -172,6 +173,7 @@ internal fun AppInfoScreen(
                 }
             }
         }
+        }
     }
 
     if (showChangelog) {
@@ -240,19 +242,20 @@ private fun UpdateActionButton(state: UpdateState, onCheck: () -> Unit, onInstal
     }
 }
 
-/** 갤러리 정보 화면 아래의 넓은 회색 알약 버튼 */
+/** 갤러리 정보 화면 아래의 넓은 알약 버튼 — 앱의 다른 보조 버튼·칩과 같은 액체 유리(색 판 위의 렌즈). */
 @Composable
 private fun BottomPillButton(text: String, onClick: () -> Unit) {
-    Box(
+    val scheme = MaterialTheme.colorScheme
+    com.yhjang.timetable.ui.OneUiLiquidGlassBox(
         modifier = Modifier
             .width(260.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.floatingPill)
-            .clickable(onClick = onClick)
-            .padding(vertical = 17.dp),
-        contentAlignment = Alignment.Center,
+            .clickable(onClick = onClick),
+        cornerRadius = 27.dp,
+        strength = 0.6f,
+        fill = scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 17.dp))
     }
 }
 
@@ -405,7 +408,7 @@ private val LEGAL_SECTIONS = listOf(
             "3. 급식의 열량, 영양성분 및 원산지: 나이스 교육정보 개방 포털(open.neis.go.kr)",
             "4. 심야면학 좌석 및 신청 현황: 심야면학 신청 사이트(midnight-study.vercel.app)",
             "5. 앱 업데이트 정보: GitHub",
-            "6. 귀가 기간의 서울특별시 날씨: Open-Meteo(open-meteo.com)의 예보를 요약 서버를 거쳐 제공하며, 이 과정에서 이용자의 위치 등 어떠한 정보도 전송되지 아니합니다",
+            "6. 귀가 기간의 서울특별시 날씨: 기상청 단기예보(공공데이터포털)를 요약 서버를 거쳐 제공하고, 기상청 서비스 장애 시에는 Open-Meteo(open-meteo.com)의 예보로 대신하며, 이 과정에서 이용자의 위치 등 어떠한 정보도 전송되지 아니합니다",
         ),
     ),
     LegalSection(

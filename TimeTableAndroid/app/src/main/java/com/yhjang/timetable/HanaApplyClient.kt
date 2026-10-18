@@ -54,18 +54,10 @@ object HanaApplyApi {
     /** 진단용 — JSON 이 아닐 때 사용자가 원문을 신고할 수 있게 앞부분만 남깁니다. */
     private const val TAG = "HanaApply"
 
-    /** 서비스별 내역 JSON 엔드포인트 후보 — 확인된 것은 하나, 아직 모르는 서비스는 있을 법한 이름을 차례로 시도합니다. */
+    /** 서비스별 내역 JSON — 교과교실만 이 경로로 받고, 면학실·도서관·외출외박은 [SeatHistoryApi]·[OutingApi] 가 맡습니다. */
     private fun historyEndpoints(service: ApplyService): List<String> = when (service) {
         ApplyService.CLASSROOM -> listOf("/main/classroom/apply-list.json")
-        ApplyService.STUDY_ROOM -> listOf("/main/studyroom/study-only-req-list.json")
-        ApplyService.LIBRARY -> listOf(
-            "/main/library/library-req-list.json", "/main/library/library-apply-list.json",
-            "/main/library/apply-list.json", "/main/library/library-list.json",
-        )
-        ApplyService.OUTING -> listOf(
-            "/main/outing/apply-list.json", "/main/outing/history-list.json",
-            "/main/outing/outing-list.json", "/main/outing/req-list.json",
-        )
+        else -> emptyList()
     }
 
     /**
@@ -158,33 +150,6 @@ object HanaApplyApi {
                     }
                 }
             Log.d("HanaDiscover", "dump $path → ${html.length} chars")
-        }
-    }
-
-    @Volatile private var discovered = false
-    suspend fun discoverEndpoints(context: Context) = withContext(Dispatchers.IO) {
-        if (discovered) return@withContext
-        discovered = true
-        val client = HanaPortalClient.get()
-        val urlRegex = Regex("""["'](/main/[A-Za-z0-9_\-/.]+?\.(?:json|do))["']""")
-        val nameRegex = Regex("""name=["']([A-Za-z0-9_\-]+)["']""")
-        val dataRegex = Regex("""data\s*:\s*\{([^}]{0,400})\}""")
-        for (service in ApplyService.entries) {
-            for (path in listOf(service.historyPath, service.applyPath)) {
-                val html = runCatching { client.authenticatedText(context, path) }.getOrNull() ?: continue
-                // Accept: json 으로 부르면 .do 도 HTML 대신 페이지 데이터 JSON 을 주는 경우가 많습니다 — 통째로 남깁니다.
-                if (html.trimStart().startsWith("{") || html.trimStart().startsWith("[")) {
-                    Log.d("HanaDiscover", "== ${service.label} $path JSON: ${html.take(2500)}")
-                    continue
-                }
-                val urls = urlRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
-                val names = nameRegex.findAll(html).map { it.groupValues[1] }.distinct().toList()
-                val datas = dataRegex.findAll(html).map { it.groupValues[1].replace(Regex("\\s+"), " ").take(300) }.distinct().toList()
-                Log.d("HanaDiscover", "== ${service.label} $path (${html.length} chars)")
-                Log.d("HanaDiscover", "urls: $urls")
-                Log.d("HanaDiscover", "names: $names")
-                datas.forEach { Log.d("HanaDiscover", "data: $it") }
-            }
         }
     }
 

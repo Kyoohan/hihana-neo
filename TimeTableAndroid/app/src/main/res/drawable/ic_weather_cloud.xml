@@ -1,5 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-<!-- 흐림·안개 -->
-<path android:fillColor="#FFB8C2D1" android:pathData="M7,18a4.5,4.5 0,0 1,-0.6 -8.96A6,6 0,0 1,17.6 10.6A3.8,3.8 0,0 1,17 18Z"/>
+<!-- 흐림 — 뒤에 옅은 구름 한 장, 앞에 위가 밝고 아래로 그늘지는 구름. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp" android:height="24dp" android:viewportWidth="48" android:viewportHeight="48">
+  <group android:scaleX="0.62" android:scaleY="0.62" android:translateX="17" android:translateY="4">
+    <path android:pathData="M14,30a9,9 0 0 1,-1.2 -17.92A12,12 0 0 1,35.2 15.2A7.6,7.6 0 0 1,34 30Z">
+      <aapt:attr name="android:fillColor">
+        <gradient android:type="linear" android:startX="20" android:startY="4" android:endX="22" android:endY="30">
+          <item android:offset="0" android:color="#FFD9E2ED"/>
+          <item android:offset="1" android:color="#FFA9B6C8"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+  </group>
+  <group android:translateX="0" android:translateY="10">
+    <path android:pathData="M14,30a9,9 0 0 1,-1.2 -17.92A12,12 0 0 1,35.2 15.2A7.6,7.6 0 0 1,34 30Z">
+      <aapt:attr name="android:fillColor">
+        <gradient android:type="linear" android:startX="20" android:startY="4" android:endX="22" android:endY="30">
+          <item android:offset="0" android:color="#FFFFFFFF"/>
+          <item android:offset="0.55" android:color="#FFE9EEF5"/>
+          <item android:offset="1" android:color="#FFC3CEDC"/>
+        </gradient>
+      </aapt:attr>
+    </path>
+  </group>
 </vector>

@@ -595,12 +595,12 @@ object Timetable {
     fun homeLeaveAt(date: LocalDate): Int =
         if (isRestDay(date)) Sessions.weekend1.start else Sessions.weekday1.start
 
-    /** 귀교일 일정이 시작하는 타임 — 저녁에 돌아오므로 그날 마지막 타임(평일 2타임 · 주말 4타임, 둘 다 21:30). */
-    fun homeReturnSession(date: LocalDate): StudySession =
-        if (isRestDay(date)) Sessions.weekend4 else Sessions.weekday2
-
-    /** 귀교일 일정이 시작하는 시각(자정 기준 분). */
-    fun homeReturnAt(date: LocalDate): Int = homeReturnSession(date).start
+    /**
+     * 귀교 시각(자정 기준 분) — 밤 9시. 그 전까지가 귀가 기간이고(일정 비움·귀가 안내·서울 날씨), 9시부터는 그날 일정이
+     * 평소처럼 보입니다(이어지는 쉬는 시간 → 21:30 마지막 타임).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun homeReturnAt(date: LocalDate): Int = 21 * 60
 
     /**
      * 귀가 기간에는 일정을 비웁니다 — 귀가일은 1타임부터, 그 사이 날은 하루 종일, 귀교일은 마지막 타임(21:30) 전까지.
@@ -614,8 +614,10 @@ object Timetable {
         return when (stay) {
             HomeStay.AWAY -> listOf(Block(BlockKind.BlankKind, startOfDay, endOfDay))
             HomeStay.RETURN -> {
+                // 귀교 시각 전은 비우고, 그 시각에 걸친 일정은 귀교 시각부터 남깁니다.
                 val cutoff = startOfDay.plusMinutes(homeReturnAt(date).toLong())
-                val kept = blocks.filter { !it.start.isBefore(cutoff) }
+                val kept = blocks.filter { it.end.isAfter(cutoff) }
+                    .map { if (it.start.isBefore(cutoff)) it.copy(start = cutoff) else it }
                 listOf(Block(BlockKind.BlankKind, startOfDay, cutoff)) + kept
             }
             HomeStay.LEAVE -> {

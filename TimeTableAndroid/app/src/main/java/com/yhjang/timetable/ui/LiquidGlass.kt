@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -138,6 +139,15 @@ object LiquidLens {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) runCatching { RuntimeShader(AGSL) }.getOrNull() else null
 }
 
+/**
+ * 유리 움직임 멈춤 — 대화상자가 떠 있는 동안엔 뒤 화면의 광택 흐름·기울기 반사광을 멈춥니다. 대화상자 카드는 뒤 화면 전체를
+ * 크게 흐려 비추는데, 뒤가 매 프레임 바뀌면 그 흐림도 매 프레임 다시 계산돼 대화상자(휠 선택기 등)가 버벅였습니다.
+ */
+object LiquidMotion {
+    var pauseCount by androidx.compose.runtime.mutableIntStateOf(0)
+    val paused: Boolean get() = pauseCount > 0
+}
+
 /** 캡슐 반사광의 광원 — 화면 좌표계 방향(x 오른쪽, y 아래)과 광택 띠용 시간. */
 class LiquidLight(x: Float, y: Float) {
     var x by mutableFloatStateOf(x)
@@ -156,11 +166,18 @@ fun rememberLiquidLight(enabled: Boolean): LiquidLight {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // 광택 띠가 흐르도록 프레임마다 시간을 올립니다.
+    // 광택 띠가 흐르도록 프레임마다 시간을 올립니다 — 대화상자가 떠 있는 동안엔 멈췄다가 이어서 흐릅니다.
     LaunchedEffect(Unit) {
-        val start = withFrameNanos { it }
+        var last = withFrameNanos { it }
         while (true) {
-            withFrameNanos { now -> light.time = (now - start) / 1_000_000_000f }
+            if (LiquidMotion.paused) {
+                androidx.compose.runtime.snapshotFlow { LiquidMotion.paused }.first { !it }
+                last = withFrameNanos { it }
+            }
+            withFrameNanos { now ->
+                light.time += (now - last) / 1_000_000_000f
+                last = now
+            }
         }
     }
 
@@ -170,6 +187,7 @@ fun rememberLiquidLight(enabled: Boolean): LiquidLight {
             ?: manager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
         val listener = object : android.hardware.SensorEventListener {
             override fun onSensorChanged(event: android.hardware.SensorEvent) {
+                if (LiquidMotion.paused) return
                 // 기기 x: 오른쪽이 +, y: 위가 +. 화면 y 는 아래가 + 라 뒤집습니다. 기본(똑바로 세움)은 왼쪽 위 광원.
                 val gx = event.values[0] / 9.81f
                 val gy = event.values[1] / 9.81f

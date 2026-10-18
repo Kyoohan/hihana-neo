@@ -457,7 +457,7 @@ internal fun MidnightStudyCard() {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OneUiButton(
                 text = when (state) {
-                    MidnightHistoryState.Idle -> "내역 조회"
+                    MidnightHistoryState.Idle -> "내역"
                     MidnightHistoryState.Loading -> "불러오는 중"
                     is MidnightHistoryState.Error -> "다시 시도"
                     is MidnightHistoryState.Loaded -> "새로고침"
@@ -468,7 +468,7 @@ internal fun MidnightStudyCard() {
                 modifier = Modifier.weight(1f),
             )
             OneUiButton(
-                text = "신청하기",
+                text = "신청",
                 onClick = { showingScreen = true },
                 style = OneUiButtonStyle.Neutral,
                 modifier = Modifier.weight(1f),
@@ -519,8 +519,8 @@ fun MidnightStudyScreen(onDismiss: () -> Unit) {
                     MidnightApi.dashboard(context, 1, floor)
                 } else throw e
             }
+            // 층은 서버 기본값을 그대로 씁니다 — 예전엔 받은 층을 상태에 다시 써서 같은 현황을 두 번 받았습니다.
             data = result
-            if (floor == null) floor = result.floor
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

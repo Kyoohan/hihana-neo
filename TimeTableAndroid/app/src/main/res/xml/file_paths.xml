@@ -2,4 +2,6 @@
 <!-- 앱 내 업데이트로 받은 APK 를 패키지 설치기에 넘기기 위한 FileProvider 경로 -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- 학사일정 캘린더 파일(ICS)을 캘린더 앱에 넘길 때 -->
+    <cache-path name="share" path="share/" />
 </paths>

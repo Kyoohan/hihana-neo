@@ -7,9 +7,11 @@
  *   line   : 게시판 목록에 붙는 한 줄 요약
  *   points : 글 화면 위에 보이는 자세한 요약(글머리표)
  *
- * GET /weather → 서울특별시 날씨(현재·시간별 3일·일별 7일). 귀가 기간 홈·위젯 안내용. 지금은 키가 필요 없는
- *   Open-Meteo(서울은 일본 기상청 5km 모델 + 앙상블 강수확률)에서 받아 30분 KV 에 보관하고 모든 사용자에게 나눠 줍니다.
- *   앱은 이 모양만 알면 되므로, 나중에 기상청 등으로 바꿔도 앱 업데이트 없이 여기만 고치면 됩니다.
+ * GET /weather → 서울특별시 날씨(현재·시간별 3일·일별 7일). 귀가 기간 홈·위젯 안내용. 30분 KV 에 보관해 모든 사용자에게
+ *   나눠 줍니다. 기상청 단기예보 조회서비스(공공데이터포털, 서울 중구 소공동=서울시청 격자 60,127)만 씁니다 — 현재는
+ *   초단기실황, 6시간은 초단기예보, 그 뒤는 단기예보(+3일까지 1시간, +4·5일은 3시간 간격). Open-Meteo 는 기상청 호출이
+ *   실패하거나 키(KMA_SERVICE_KEY, 공공데이터포털 일반 인증키)가 없을 때만 통째로 대신 씁니다. 날씨는 WMO 코드로
+ *   바꿔 보내 앱은 제공처를 몰라도 됩니다.
  *
  * 키 앞의 v3 는 프롬프트 버전 — 프롬프트를 바꾸면 올려서 예전 요약 대신 새로 만들게 합니다.
  * 요약은 (제목 + 본문) 해시마다 딱 한 번만 AI 로 만들고 KV 에 보관합니다. 같은 글을 다른 사용자가 열면
@@ -20,6 +22,8 @@
 export interface Env {
   AI: Ai;
   SUMMARIES: KVNamespace;
+  /** 공공데이터포털 '기상청_단기예보 조회서비스' 일반 인증키 — `wrangler secret put KMA_SERVICE_KEY`. 없으면 Open-Meteo 만. */
+  KMA_SERVICE_KEY?: string;
 }
 
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
@@ -225,10 +229,36 @@ function json(data: unknown, status = 200): Response {
 
 // MARK: - 날씨
 
-/** 서울특별시청 좌표 — 서울 날씨 한 곳만 씁니다(사용자 위치는 받지 않음). */
-const SEOUL = { lat: 37.5665, lon: 126.978 };
-const WEATHER_KEY = "weather:seoul:v1";
+/** 서울특별시청 — 위경도(Open-Meteo)와 기상청 격자(60,127). 사용자 위치는 받지 않습니다. */
+const SEOUL = { lat: 37.5665, lon: 126.978, nx: 60, ny: 127 };
+const WEATHER_KEY = "weather:seoul:v3";
 const WEATHER_SECONDS = 30 * 60;
+
+interface Hour { t: string; temp: number | null; code: number | null; pop: number | null }
+interface Day { date: string; code: number | null; max: number | null; min: number | null; pop: number | null }
+interface Forecast { source: string; current: { time: string; temp: number | null; code: number | null }; hourly: Hour[]; daily: Day[] }
+
+async function weather(req: Request, env: Env): Promise<Response> {
+  if (req.method !== "GET") return json({ error: "method" }, 405);
+  if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
+  const cached = await env.SUMMARIES.get(WEATHER_KEY);
+  if (cached) return new Response(cached, { headers: { "content-type": "application/json; charset=utf-8" } });
+
+  // 기상청만 씁니다. 기상청이 실패(또는 키 없음)할 때만 Open-Meteo 로 통째로 대신합니다 — 섞어 채우지 않습니다.
+  let forecast: Forecast | null = null;
+  if (env.KMA_SERVICE_KEY) {
+    forecast = await kmaForecast(env.KMA_SERVICE_KEY).catch((e) => { console.log("kma failed", String(e)); return null; });
+  }
+  if (!forecast) forecast = await openMeteo().catch((e) => { console.log("open-meteo failed", String(e)); return null; });
+  if (!forecast) return json({ error: "upstream" }, 502);
+
+  // 대신 쓴 응답은 짧게(5분) 보관해 기상청이 돌아오면 곧 바뀌게 합니다.
+  const body = JSON.stringify({ place: "서울", ...forecast, updated: new Date().toISOString() });
+  await env.SUMMARIES.put(WEATHER_KEY, body, { expirationTtl: forecast.source === "kma" ? WEATHER_SECONDS : 5 * 60 });
+  return new Response(body, { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+// MARK: Open-Meteo (기상청이 안 될 때만)
 
 interface OpenMeteo {
   current?: { time: string; temperature_2m: number | null; weather_code: number | null };
@@ -242,12 +272,7 @@ interface OpenMeteo {
   };
 }
 
-async function weather(req: Request, env: Env): Promise<Response> {
-  if (req.method !== "GET") return json({ error: "method" }, 405);
-  if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
-  const cached = await env.SUMMARIES.get(WEATHER_KEY);
-  if (cached) return new Response(cached, { headers: { "content-type": "application/json; charset=utf-8" } });
-
+async function openMeteo(): Promise<Forecast> {
   const api = new URL("https://api.open-meteo.com/v1/forecast");
   api.search = new URLSearchParams({
     latitude: String(SEOUL.lat),
@@ -259,30 +284,190 @@ async function weather(req: Request, env: Env): Promise<Response> {
     forecast_days: "7",
   }).toString();
   const res = await fetch(api.toString(), { headers: { "user-agent": "hihana-neo-weather" } });
-  if (!res.ok) return json({ error: `upstream ${res.status}` }, 502);
+  if (!res.ok) throw new Error(`open-meteo ${res.status}`);
   const data = (await res.json()) as OpenMeteo;
-  if (!data.current || !data.hourly || !data.daily) return json({ error: "upstream_shape" }, 502);
-
+  if (!data.current || !data.hourly || !data.daily) throw new Error("open-meteo shape");
   const now = data.current.time.slice(0, 13);
-  const hourly = data.hourly.time
-    .map((t, i) => ({ t, temp: data.hourly!.temperature_2m[i], code: data.hourly!.weather_code[i], pop: data.hourly!.precipitation_probability[i] }))
-    .filter((h) => h.t.slice(0, 13) >= now)
-    .slice(0, 72);
-  const daily = data.daily.time.map((date, i) => ({
-    date,
-    code: data.daily!.weather_code[i],
-    max: data.daily!.temperature_2m_max[i],
-    min: data.daily!.temperature_2m_min[i],
-    pop: data.daily!.precipitation_probability_max[i],
-  }));
-  const body = JSON.stringify({
-    place: "서울",
+  return {
     source: "open-meteo",
-    updated: new Date().toISOString(),
     current: { time: data.current.time, temp: data.current.temperature_2m, code: data.current.weather_code },
-    hourly,
-    daily,
-  });
-  await env.SUMMARIES.put(WEATHER_KEY, body, { expirationTtl: WEATHER_SECONDS });
-  return new Response(body, { headers: { "content-type": "application/json; charset=utf-8" } });
+    hourly: data.hourly.time
+      .map((t, i) => ({ t, temp: data.hourly!.temperature_2m[i], code: data.hourly!.weather_code[i], pop: data.hourly!.precipitation_probability[i] }))
+      .filter((h) => h.t.slice(0, 13) >= now)
+      .slice(0, 72),
+    daily: data.daily.time.map((date, i) => ({
+      date,
+      code: data.daily!.weather_code[i],
+      max: data.daily!.temperature_2m_max[i],
+      min: data.daily!.temperature_2m_min[i],
+      pop: data.daily!.precipitation_probability_max[i],
+    })),
+  };
+}
+
+// MARK: 기상청 단기예보 (공공데이터포털 VilageFcstInfoService_2.0)
+
+const KMA_BASE = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0";
+
+interface KmaItem { category: string; fcstDate?: string; fcstTime?: string; fcstValue?: string; obsrValue?: string }
+
+/** 한국 시각의 날짜·시각 조각. */
+function kst(date: Date) {
+  const k = new Date(date.getTime() + 9 * 3600_000);
+  const ymd = k.toISOString().slice(0, 10).replaceAll("-", "");
+  return { ymd, hour: k.getUTCHours(), minute: k.getUTCMinutes(), date: k };
+}
+
+async function kmaCall(key: string, op: string, baseDate: string, baseTime: string): Promise<KmaItem[]> {
+  const url = new URL(`${KMA_BASE}/${op}`);
+  // 포털의 '인코딩' 키를 넣어도 되게 한 번 풀어서 다시 인코딩합니다.
+  const serviceKey = key.includes("%") ? decodeURIComponent(key) : key;
+  url.search = new URLSearchParams({
+    // 단기예보는 +5일까지(요소 12종 × 시간) 라 넉넉히 한 번에 받습니다.
+    serviceKey, pageNo: "1", numOfRows: "3000", dataType: "JSON",
+    base_date: baseDate, base_time: baseTime, nx: String(SEOUL.nx), ny: String(SEOUL.ny),
+  }).toString();
+  const res = await fetch(url.toString());
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { throw new Error(`kma ${op} not json: ${text.slice(0, 120)}`); }
+  const code = data?.response?.header?.resultCode;
+  if (code !== "00") throw new Error(`kma ${op} ${code} ${data?.response?.header?.resultMsg}`);
+  return (data.response.body?.items?.item ?? []) as KmaItem[];
+}
+
+/** 하늘(SKY)·강수형태(PTY)·낙뢰 → WMO 코드. 앱은 이 코드로 이름·아이콘을 고릅니다. */
+function kmaCode(sky: number | null, pty: number | null, lightning = false): number | null {
+  if (lightning) return 95;
+  switch (pty) {
+    case 1: return 61; // 비
+    case 2: return 66; // 비/눈 → 진눈깨비
+    case 3: return 71; // 눈
+    case 4: return 80; // 소나기
+    case 5: return 51; // 빗방울
+    case 6: return 56; // 빗방울눈날림
+    case 7: return 77; // 눈날림
+  }
+  switch (sky) {
+    case 1: return 0; // 맑음
+    case 3: return 2; // 구름많음
+    case 4: return 3; // 흐림
+  }
+  return null;
+}
+
+/** 강수(가장 심한 것) 우선, 없으면 낮 동안 가장 흔한 하늘. */
+function representative(codes: number[]): number | null {
+  if (!codes.length) return null;
+  const severity = (c: number) => (c >= 95 ? 6 : c >= 71 && c <= 77 ? 5 : c === 66 || c === 56 ? 4 : c >= 51 && c <= 82 ? 3 : 0);
+  const wet = codes.filter((c) => severity(c) > 0);
+  if (wet.length) return wet.reduce((a, b) => (severity(b) > severity(a) ? b : a));
+  const counts = new Map<number, number>();
+  for (const c of codes) counts.set(c, (counts.get(c) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+}
+
+async function kmaForecast(key: string): Promise<Forecast> {
+  const now = new Date();
+  const k = kst(now);
+  // 가이드 기준 — 초단기실황: 매시 정시 자료를 10분 이후. 초단기예보: 매시 30분 자료를 45분 이후.
+  const ncstAt = kst(new Date(now.getTime() - 10 * 60_000));
+  const fcstAt = kst(new Date(now.getTime() - 45 * 60_000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // 단기예보: 02·05·08·11·14·17·20·23시 발표, 10분쯤 올라옵니다.
+  const vilAt = kst(new Date(now.getTime() - 10 * 60_000));
+  let vilHour = [23, 20, 17, 14, 11, 8, 5, 2].find((h) => h <= vilAt.hour);
+  let vilDate = vilAt.ymd;
+  if (vilHour === undefined) {
+    vilHour = 23;
+    vilDate = kst(new Date(now.getTime() - 24 * 3600_000)).ymd;
+  }
+
+  // 단기예보가 바탕이라 그것만 꼭 필요하고, 실황·초단기예보가 잠깐 안 되면 단기예보만으로 채웁니다.
+  const optional = (op: string, d: string, t: string) =>
+    kmaCall(key, op, d, t).catch((e) => { console.log(`kma ${op} skipped`, String(e)); return [] as KmaItem[]; });
+  const [ncst, ultra, vil, morning] = await Promise.all([
+    optional("getUltraSrtNcst", ncstAt.ymd, `${pad(ncstAt.hour)}00`),
+    optional("getUltraSrtFcst", fcstAt.ymd, `${pad(fcstAt.hour)}30`),
+    kmaCall(key, "getVilageFcst", vilDate, `${pad(vilHour)}00`),
+    // 오늘 최저·최고(TMN 06시, TMX 15시)는 그 시각이 지나면 최신 발표에서 빠지므로 오늘 02시 발표에서 가져옵니다.
+    k.hour >= 3 ? kmaCall(key, "getVilageFcst", k.ymd, "0200").catch(() => [] as KmaItem[]) : Promise.resolve([] as KmaItem[]),
+  ]);
+
+  const iso = (d: string, t: string) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${t.slice(0, 2)}:00`;
+  const num = (v: string | undefined) => {
+    const n = Number(v);
+    return v == null || Number.isNaN(n) || n <= -900 || n >= 900 ? null : n;
+  };
+
+  // 시간별 — 단기예보를 깔고, 6시간은 더 정확한 초단기예보로 덮습니다(강수확률은 단기예보에만 있음).
+  type Slot = { temp: number | null; sky: number | null; pty: number | null; pop: number | null; lgt: boolean };
+  const slots = new Map<string, Slot>();
+  const slot = (t: string) => slots.get(t) ?? (slots.set(t, { temp: null, sky: null, pty: null, pop: null, lgt: false }), slots.get(t)!);
+  for (const it of vil) {
+    if (!it.fcstDate || !it.fcstTime) continue;
+    const s = slot(iso(it.fcstDate, it.fcstTime));
+    if (it.category === "TMP") s.temp = num(it.fcstValue);
+    else if (it.category === "SKY") s.sky = num(it.fcstValue);
+    else if (it.category === "PTY") s.pty = num(it.fcstValue);
+    else if (it.category === "POP") s.pop = num(it.fcstValue);
+  }
+  for (const it of ultra) {
+    if (!it.fcstDate || !it.fcstTime) continue;
+    const s = slot(iso(it.fcstDate, it.fcstTime));
+    if (it.category === "T1H") s.temp = num(it.fcstValue);
+    else if (it.category === "SKY") s.sky = num(it.fcstValue);
+    else if (it.category === "PTY") s.pty = num(it.fcstValue);
+    else if (it.category === "LGT") s.lgt = (num(it.fcstValue) ?? 0) > 0;
+    else if (it.category === "POP") s.pop = num(it.fcstValue) ?? s.pop; // 2026-06-23 부터 초단기예보에도 강수확률
+  }
+
+  // 지금 — 초단기실황의 기온·강수형태, 하늘은 가장 가까운 초단기예보 시간에서.
+  const obs = (cat: string) => num(ncst.find((i) => i.category === cat)?.obsrValue);
+  const nowIso = `${k.date.toISOString().slice(0, 13)}:00`;
+  const nextSlots = [...slots.entries()].filter(([t]) => t >= nowIso).sort(([a], [b]) => a.localeCompare(b));
+  const nearest = nextSlots[0]?.[1];
+  const curPty = obs("PTY");
+  // 실황이 없으면(잠깐 실패) 가장 가까운 예보 시간으로.
+  const current = {
+    time: nowIso,
+    temp: obs("T1H") ?? nearest?.temp ?? null,
+    code: kmaCode(nearest?.sky ?? null, curPty ?? nearest?.pty ?? null, nearest?.lgt ?? false),
+  };
+
+  const hourly: Hour[] = [];
+  // 지금 시간 칸 — 예보엔 다음 시간부터라 실황으로 채웁니다(귀가일 23시대처럼 남은 칸이 지금뿐일 때 필요).
+  if (!slots.has(nowIso)) hourly.push({ t: nowIso, temp: current.temp, code: current.code, pop: nearest?.pop ?? null });
+  for (const [t, s] of nextSlots) hourly.push({ t, temp: s.temp, code: kmaCode(s.sky, s.pty, s.lgt), pop: s.pop });
+
+  // 일별 — 최저·최고는 TMN·TMX(없으면 시간별 기온), 강수확률은 그날 최대, 날씨는 06~21시 대표값.
+  const days = new Map<string, { codes: number[]; temps: number[]; pops: number[]; max: number | null; min: number | null }>();
+  const day = (d: string) => days.get(d) ?? (days.set(d, { codes: [], temps: [], pops: [], max: null, min: null }), days.get(d)!);
+  for (const it of [...morning, ...vil]) {
+    if (!it.fcstDate) continue;
+    if (it.category === "TMX") day(it.fcstDate).max ??= num(it.fcstValue);
+    if (it.category === "TMN") day(it.fcstDate).min ??= num(it.fcstValue);
+  }
+  for (const [t, s] of slots) {
+    const d = day(t.slice(0, 10).replaceAll("-", ""));
+    if (s.temp != null) d.temps.push(s.temp);
+    if (s.pop != null) d.pops.push(s.pop);
+    const hour = Number(t.slice(11, 13));
+    const c = kmaCode(s.sky, s.pty, s.lgt);
+    if (c != null && hour >= 6 && hour <= 21) d.codes.push(c);
+  }
+  // 단기예보가 그날을 몇 시간만 덮으면(마지막 날의 자정 무렵 등) 하루 값이 틀리므로 그날은 뺍니다 —
+  // 최고·최저 예보(TMX·TMN)가 둘 다 있거나 시간별 자료가 하루 대부분(20시간 이상)을 덮는 날만. (+4·5일은 3시간 간격이라 TMX·TMN 으로)
+  const daily: Day[] = [...days.entries()]
+    .filter(([, v]) => (v.max != null && v.min != null) || v.temps.length >= 20)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([d, v]) => ({
+      date: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`,
+      code: representative(v.codes),
+      max: v.max ?? (v.temps.length ? Math.max(...v.temps) : null),
+      min: v.min ?? (v.temps.length ? Math.min(...v.temps) : null),
+      pop: v.pops.length ? Math.max(...v.pops) : null,
+    }));
+
+  return { source: "kma", current, hourly: hourly.slice(0, 72), daily };
 }

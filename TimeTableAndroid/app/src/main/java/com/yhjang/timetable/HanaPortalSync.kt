@@ -480,22 +480,24 @@ class HanaPortalClient private constructor() {
         isValid: (JSONObject) -> Boolean = { true },
     ): JSONObject = withContext(Dispatchers.IO) {
         // 빈 응답(과부하)은 짧게 몇 번 다시 시도하고, 그래도 안 되면 그대로 알립니다 — 재로그인은 하지 않습니다.
+        // 로그인이 필요한 응답(목록 키가 빠진 JSON·로그인 HTML)은 한 번만 보고 바로 로그인으로 — 예전엔 같은 요청을
+        // 네 번 보낸 뒤에야 로그인해 포털에 쓸데없는 요청이 쌓였습니다.
         var transient: HanaPortalException.Transient? = null
-        repeat(4) { attempt ->
+        var attempt = 0
+        while (attempt < 4) {
             try {
                 val json = requestJson(path, params, referer)
                 if (isValid(json)) {
                     lastAuthenticatedAt = System.currentTimeMillis()
                     return@withContext json
                 }
-                transient = null
-                return@repeat
+                break
             } catch (e: HanaPortalException.Transient) {
                 transient = e
-                kotlinx.coroutines.delay(250L * (attempt + 1))
+                attempt++
+                kotlinx.coroutines.delay(250L * attempt)
             } catch (e: HanaPortalException.UnexpectedResponse) {
-                transient = null
-                return@repeat
+                break
             }
         }
         transient?.let { throw it }
@@ -605,6 +607,39 @@ class HanaPortalClient private constructor() {
                 val body = resp.body?.string().orEmpty()
                 if (looksLikeLoginPage(body)) throw HanaPortalException.LoginPage
                 return body
+            }
+        }
+        try {
+            fetch()
+        } catch (e: HanaPortalException.LoginPage) {
+            login(context)
+            fetch()
+        }
+    }
+
+    /**
+     * 로그인 세션으로 이미지 같은 바이너리를 GET 으로 받습니다 (외출외박 출입 QR — /common/qrcode.do).
+     * 이미지 대신 로그인 페이지가 오면 한 번 다시 로그인해 받습니다.
+     */
+    suspend fun authenticatedBytes(
+        context: Context,
+        path: String,
+        params: List<Pair<String, String>> = emptyList(),
+        referer: String = "$BASE/",
+    ): ByteArray = withContext(Dispatchers.IO) {
+        fun fetch(): ByteArray {
+            val request = browserLikeRequestBuilder(BASE + path, referer)
+                .header("Accept", "image/avif,image/webp,image/png,image/*,*/*;q=0.8")
+                .removeHeader("X-Requested-With")
+                .removeHeader("Content-Type")
+                .url(httpUrl(path, params))
+                .get().build()
+            client.newCall(request).execute().use { resp ->
+                val bytes = resp.body?.bytes() ?: ByteArray(0)
+                val type = resp.header("Content-Type").orEmpty()
+                if (!type.startsWith("image") && looksLikeLoginPage(String(bytes.take(4000).toByteArray()))) throw HanaPortalException.LoginPage
+                if (!resp.isSuccessful || bytes.isEmpty()) throw HanaPortalException.UnexpectedResponse("[$path] HTTP ${resp.code}")
+                return bytes
             }
         }
         try {

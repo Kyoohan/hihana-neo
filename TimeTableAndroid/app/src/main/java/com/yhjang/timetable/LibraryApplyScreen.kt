@@ -111,9 +111,13 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     var registering by remember { mutableStateOf(false) }
     suspend fun refreshDevice() { deviceRegistered = HanaLibraryApi.isDeviceRegistered(context, service) }
 
-    suspend fun loadMap() {
+    /**
+     * 좌석표를 새로 받습니다. [quiet] 는 신청·취소 뒤의 재확인 — 이미 좌석표가 떠 있으니 불러오는 중 상태로 바꾸지 않아
+     * 그동안에도 자리를 누를 수 있습니다 (예약 오픈 직후엔 좌석표가 4~8초씩 걸립니다).
+     */
+    suspend fun loadMap(quiet: Boolean = false) {
         val id = slotId ?: return
-        loading = true
+        if (!quiet) loading = true
         error = null
         val loaded = try {
             HanaLibraryApi.seatMap(context, id, service)
@@ -122,7 +126,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             // "The coroutine scope left the composition" 을 띄우지 말고 그대로 전파합니다.
             throw e
         } catch (e: Exception) {
-            error = e.message ?: "좌석을 불러오지 못했습니다"
+            // 조용한 재확인이 실패하면 떠 있는 좌석표를 오류 카드로 바꾸지 않고 그대로 둡니다.
+            if (!quiet) error = e.message ?: "좌석을 불러오지 못했습니다"
             null
         }
         if (slotId == id) {
@@ -135,9 +140,9 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     }
 
     /** 좌석을 누르면 확인 없이 바로 — 빈 자리는 신청, 내 자리는 취소. 결과 문구는 아래 팝업으로. */
-    fun act(seat: LibrarySeat, retriesLeft: Int = 2) {
+    fun act(seat: LibrarySeat, retriesLeft: Int = 3) {
         val id = slotId ?: return
-        if (loading || mapSlotId != id) return
+        if (mapSlotId != id) return
         val cancelling = seat.mine && seat.sreIdx != null
         busy = true
         // 기다리는 동안엔 팝업에 진행 상황을 — 예약 오픈 직후엔 서버가 1분 넘게 붙들기도 해서 멈춘 게 아님을 보여줍니다.
@@ -162,28 +167,30 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             }
             slowHint.cancel()
             // 서버가 분명히 거절했으면(다른 사람이 먼저 잡음 등) 좌석표를 새로 받을 때까지 기다리게 하지 않습니다 — 예약 오픈
-            // 직후엔 좌석표가 8초 넘게 걸려 그동안 다음 자리를 못 눌렀습니다. 그 자리는 먼저 사용 중으로 칠하고 바로 풀어 주고,
-            // 좌석표는 뒤에서 받아 드물게 사실 내 자리로 잡힌 경우(빈 응답 뒤 재전송이 거절된 경우)만 다시 알립니다.
+            // 직후엔 좌석표가 8초 넘게 걸려 그동안 다음 자리를 못 눌렀습니다. 그 자리는 '확인 중'으로만 표시하고 바로 풀어
+            // 줍니다. 회색(사용 중)으로 칠하지 않는 이유: 거절이 잠깐의 잠김인 경우가 있어 그 자리를 그대로 다시 누르면 잡힙니다.
+            // 좌석표는 뒤에서 조용히 받아 사실 내 자리로 잡힌 경우(빈 응답 뒤 재전송이 거절된 경우)나 비어 있는 경우를 가립니다.
             if (!cancelling && !timedOut && success == null && failure != null) {
-                map = map?.markTaken(seat.cont)
+                map = map?.markPending(seat.cont)
                 busy = false
                 pendingText = null
-                notice = "$failure — 다른 자리를 눌러 주세요"
+                notice = "$failure — 확인하는 중이니 그대로 두거나 다른 자리를 눌러도 됩니다"
                 val before = map
-                loadMap()
+                loadMap(quiet = true)
                 val after = map?.takeIf { it !== before }?.seats?.firstOrNull { it.cont == seat.cont }
                 when {
                     after?.mine == true -> notice = "${seat.cont} 신청이 실제로는 반영됐습니다"
                     // 서버는 "이미 예약된 좌석"이라 했는데 새 좌석표에선 비어 있는 경우 — 오픈 직후 같은 자리를 거의 동시에 누른
                     // 다른 사람의 신청이 처리되는 동안 그 자리가 잠겨 있다가, 그 신청이 끝내 실패하면(이미 다른 자리가 있음 등)
-                    // 다시 풀립니다. 그사이 다른 자리를 누르지 않았으면 그대로 두 번까지 다시 신청합니다.
+                    // 다시 풀립니다. 잠김은 10초 넘게 가기도 해서(10/9 2타임: 거절 2번 뒤 세 번째에 성공) 그사이 다른 자리를
+                    // 누르지 않았으면 그대로 세 번까지 다시 신청합니다.
                     after?.available == true && !busy && retriesLeft > 0 -> {
                         notice = "${seat.cont} 은 비어 있어 다시 신청합니다"
                         act(after, retriesLeft - 1)
                         return@launch
                     }
                     after?.available == true && !busy ->
-                        notice = "${seat.cont} 은 비어 있지만 서버가 계속 거절했습니다 — 잠시 뒤 다시 눌러 주세요"
+                        notice = "${seat.cont} 은 비어 있지만 서버가 계속 거절했습니다 — 다시 눌러 보세요"
                 }
                 runCatching { refreshDevice() }
                 onChanged()
@@ -193,7 +200,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             // (2) 첫 요청은 처리됐는데 응답 본문이 비어 다시 보낸 요청에 "이미 선택된 좌석입니다"가 오는 일이 있어서,
             // 서버 문구만 믿으면 실제로는 잡힌 자리를 실패로 보여줍니다.
             val before = map
-            loadMap()
+            loadMap(quiet = true)
             busy = false
             pendingText = null
             val after = map?.takeIf { it !== before }?.seats?.firstOrNull { it.cont == seat.cont }
@@ -296,8 +303,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     val seat = current?.seats?.firstOrNull { it.cont == cont }
                     when {
                         busy -> Unit
-                        loading || mapSlotId != slotId -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
-                        current == null -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
+                        current == null || mapSlotId != slotId -> notice = "좌석표를 불러온 뒤 다시 눌러 주세요"
                         seat == null -> notice = "$cont 자리를 이 타임 좌석표에서 찾지 못했습니다"
                         seat.mine || seat.available -> act(seat)
                         else -> notice = "$cont 은 이미 다른 사람이 신청했습니다"
@@ -448,7 +454,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                                             notice = "${seat.cont} 을 빠른 예약에 추가했습니다"
                                         }
                                     }
-                                    !busy && !loading && mapSlotId == slotId -> act(seat)
+                                    !busy && mapSlotId == slotId -> act(seat)
                                 }
                             },
                             modifier = Modifier.padding(horizontal = OneUi.PagePadding),
@@ -577,7 +583,7 @@ private fun parseHexColor(text: String): Color? {
     return Color(0xFF000000.toInt() or body.toInt(16))
 }
 
-private data class SeatPalette(val free: Color, val taken: Color, val mine: Color, val blocked: Color, val label: Color, val labelOnDark: Color)
+private data class SeatPalette(val free: Color, val taken: Color, val mine: Color, val blocked: Color, val pending: Color, val label: Color, val labelOnDark: Color)
 
 @Composable
 private fun seatPalette(): SeatPalette {
@@ -587,6 +593,8 @@ private fun seatPalette(): SeatPalette {
         taken = if (dark) Color(0xFF3A3A3D) else Color(0xFFE5E7EB),
         mine = MaterialTheme.colorScheme.primary,
         blocked = if (dark) Color(0xFF2A2A2D) else Color(0xFFF3F4F6),
+        // 확인 중 — 서버가 거절했지만 좌석표로 아직 확인하지 않은 자리. 빈 자리와 구분되게 노란 기운.
+        pending = if (dark) Color(0xFF4A3F1F) else Color(0xFFFDEFC2),
         label = if (dark) Color(0xFFE5E7EB) else Color(0xFF1F2937),
         labelOnDark = Color.White,
     )
@@ -681,6 +689,7 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                     }
                     val fill = when {
                         seat.mine -> palette.mine
+                        seat.pending -> palette.pending
                         seat.available -> palette.free
                         else -> palette.taken
                     }
@@ -696,9 +705,10 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                         android.graphics.Color.argb((c.alpha * 255).toInt(), (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt())
                     }
                     textPaint.alpha = if (!seat.available && !seat.mine) 170 else 255
-                    // 두 번째 줄: 내 자리는 '나', 남이 잡은 자리는 포털이 보여 주는 대로 성별만.
+                    // 두 번째 줄: 내 자리는 '나', 남이 잡은 자리는 포털이 보여 주는 대로 성별만, 거절 뒤 확인 중인 자리는 '확인 중'.
                     val who = when {
                         seat.mine -> "나"
+                        seat.pending -> "확인 중"
                         seat.sreIdx != null -> seat.gender
                         else -> null
                     }

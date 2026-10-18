@@ -66,6 +66,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -136,6 +138,12 @@ val LocalHazeState = compositionLocalOf<HazeState?> { null }
 val LocalDialogHazeState = compositionLocalOf<HazeState?> { null }
 
 /**
+ * 내용 카드가 비추는 **배경만**의 Haze 상태 — 페이지 배경(사진·그레인)만 소스라, 카드는 뒤 배경을 흐려 비추는 재질이 되지만
+ * 다른 카드·글자는 비추지 않습니다 (iOS 의 regular material: 벽지만 흐려 보임). 없으면 반투명 색으로 대신합니다.
+ */
+val LocalMaterialHazeState = compositionLocalOf<HazeState?> { null }
+
+/**
  * One UI 글래스 재질 — 흰색/짙은 회색 반투명 바탕 위에 블러. [strong] 이면 다이얼로그처럼 더 불투명하게.
  */
 @OptIn(ExperimentalHazeMaterialsApi::class)
@@ -186,13 +194,45 @@ fun OneUiCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    // 내용 카드는 유리가 아니라 '재질'입니다 — 리퀴드 글래스는 조작부(하단 바·헤더 섬·다이얼로그)에만 두고 내용은 표준 재질로
+    // 두되, 둘이 따로 놀지 않도록 바탕을 살짝 비치게(배경의 결이 은은히 보임) 하고 위쪽에 가는 빛 테두리를 둡니다
+    // (Apple HIG 의 "glass for controls, materials for content"). 색을 따로 준 카드(강조색 시험 카드 등)는 그대로입니다.
+    val material = color == scheme.surface
+    val backdrop = LocalMaterialHazeState.current
+    val edge = Color.White.copy(alpha = if (scheme.isDark) 0.12f else 0.9f)
+    val materialStyle = HazeStyle(
+        backgroundColor = color,
+        tints = listOf(HazeTint(color.copy(alpha = if (scheme.isDark) 0.46f else 0.48f))),
+        blurRadius = 26.dp,
+        noiseFactor = 0.02f,
+    )
     Column(
         modifier = modifier
             .clip(shape)
-            .background(color)
+            .then(
+                when {
+                    material && backdrop != null -> Modifier.hazeEffect(backdrop, materialStyle)
+                    material -> Modifier.background(color.copy(alpha = if (scheme.isDark) 0.74f else 0.78f))
+                    else -> Modifier.background(color)
+                },
+            )
+            .then(if (material) Modifier.materialEdge(shape, edge) else Modifier)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(contentPadding),
         content = content,
+    )
+}
+
+/** 재질 카드의 유리 테두리 — 위는 [top] 색으로 밝고, 아래는 옅게 남습니다. 카드가 [shape] 로 잘려 있어 선의 안쪽 절반만 보입니다. */
+private fun Modifier.materialEdge(shape: Shape, top: Color): Modifier = drawWithContent {
+    drawContent()
+    val outline = shape.createOutline(size, layoutDirection, this)
+    // 아래쪽은 살짝 어두운 윤곽 — 비치는 판이 배경과 구분되게 (유리 섬의 테두리와 같은 결).
+    drawOutline(
+        outline,
+        brush = Brush.verticalGradient(0f to top, 0.45f to top.copy(alpha = top.alpha * 0.3f), 1f to Color.Black.copy(alpha = 0.07f)),
+        style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()),
     )
 }
 
@@ -350,20 +390,7 @@ fun OneUiButton(
     val height = if (compact) 36.dp else 46.dp
     val horizontal = if (compact) 16.dp else 24.dp
 
-    Row(
-        modifier = modifier
-            .alpha(if (enabled) 1f else 0.4f)
-            .clip(CircleShape)
-            .background(container)
-            .then(
-                if (style == OneUiButtonStyle.Outlined) Modifier.border(1.5.dp, scheme.primary, CircleShape) else Modifier,
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .defaultMinSize(minHeight = height)
-            .padding(horizontal = horizontal),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
+    val label: @Composable RowScope.() -> Unit = {
         CompositionLocalProvider(LocalContentColor provides content) {
             if (leading != null) {
                 leading()
@@ -378,6 +405,40 @@ fun OneUiButton(
             )
         }
     }
+    val base = modifier
+        .alpha(if (enabled) 1f else 0.4f)
+        .clip(CircleShape)
+        .clickable(enabled = enabled, onClick = onClick)
+        .defaultMinSize(minHeight = height)
+    if (style == OneUiButtonStyle.Neutral) {
+        // 보조 버튼은 칩과 같은 액체 유리(색 판 위의 렌즈 림·반사광) — 화면마다 칩은 유리인데 버튼만 밋밋한 회색이던 것을
+        // 한 결로 맞춥니다. 강조색(주 동작) 버튼은 그대로 칠합니다 — 유리에 색을 입히는 건 주 동작 하나뿐이라는 원칙.
+        OneUiLiquidGlassBox(
+            modifier = base,
+            cornerRadius = height / 2,
+            strength = 0.6f,
+            fill = scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
+        ) {
+            Row(
+                modifier = Modifier.defaultMinSize(minHeight = height).padding(horizontal = horizontal),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                content = label,
+            )
+        }
+        return
+    }
+    Row(
+        modifier = base
+            .background(container)
+            .then(
+                if (style == OneUiButtonStyle.Outlined) Modifier.border(1.5.dp, scheme.primary, CircleShape) else Modifier,
+            )
+            .padding(horizontal = horizontal),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        content = label,
+    )
 }
 
 /**
@@ -434,11 +495,27 @@ fun OneUiActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    size: Dp = 40.dp,
     content: @Composable () -> Unit,
 ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size(40.dp)) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size(size)) {
         Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { content() }
     }
+}
+
+/**
+ * 액션 섬 안의 묶음 구분선 — [새로고침 | 탭 버튼 둘 | 알리미 · 설정]. 섬 바탕이 없는 펼친 헤더에서도 묶음이 보이도록
+ * 가는 세로선으로 나눕니다 (홈 날씨 블록·다이얼로그 버튼 사이의 세로선과 같은 결).
+ */
+@Composable
+fun OneUiActionDivider(height: Dp = 18.dp, gap: Dp = 4.dp) {
+    Box(
+        Modifier
+            .padding(horizontal = gap)
+            .size(width = 1.dp, height = height)
+            .clip(CircleShape)
+            .background(LocalContentColor.current.copy(alpha = if (MaterialTheme.colorScheme.isDark) 0.28f else 0.22f)),
+    )
 }
 
 // MARK: - 선택 컨트롤
@@ -726,6 +803,11 @@ fun OneUiDialog(
     val scheme = MaterialTheme.colorScheme
     val hazeState = LocalDialogHazeState.current ?: LocalHazeState.current
     val shape = RoundedCornerShape(OneUi.CornerLarge)
+    // 떠 있는 동안 뒤 화면의 유리 움직임을 멈춰, 카드의 큰 흐림이 매 프레임 다시 계산되지 않게 합니다.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        LiquidMotion.pauseCount++
+        onDispose { LiquidMotion.pauseCount-- }
+    }
     // 키트의 Dialog 프레임처럼 뒤 화면을 흐려 비추는 글래스 컨테이너 — 메인 화면의 Haze 상태를 다른
     // 창(Dialog)에서 이어받기 위해 HazeDialog 를 씁니다.
     val body: @Composable () -> Unit = {
@@ -842,10 +924,12 @@ fun OneUiDialog(
         }
         }
     }
+    // 다이얼로그는 다른 창이라 안쪽 카드가 메인 화면의 배경 Haze 를 비출 수 없습니다 — 반투명 색으로.
+    val content: @Composable () -> Unit = { CompositionLocalProvider(LocalMaterialHazeState provides null, content = body) }
     if (hazeState != null) {
-        HazeDialog(hazeState = hazeState, onDismissRequest = onDismissRequest, properties = properties, content = body)
+        HazeDialog(hazeState = hazeState, onDismissRequest = onDismissRequest, properties = properties, content = content)
     } else {
-        Dialog(onDismissRequest = onDismissRequest, properties = properties, content = body)
+        Dialog(onDismissRequest = onDismissRequest, properties = properties, content = content)
     }
 }
 
@@ -923,9 +1007,16 @@ fun OneUiFullScreen(
         // 이 화면 안에서 여는 다이얼로그(컬러 피커 등)가 메인 화면이 아니라 이 화면을 흐려 비추도록,
         // 콘텐츠용·다이얼로그용 Haze 상태를 둘 다 여기 것으로 바꿔 줍니다.
         val dialogHazeState = remember { HazeState() }
-        CompositionLocalProvider(LocalHazeState provides hazeState, LocalDialogHazeState provides dialogHazeState) {
+        // 카드 재질이 비출 배경만의 소스 — 배경을 따로 한 겹 깔고 그 위에 내용을 올립니다.
+        val materialHazeState = remember { HazeState() }
+        CompositionLocalProvider(
+            LocalHazeState provides hazeState,
+            LocalDialogHazeState provides dialogHazeState,
+            LocalMaterialHazeState provides materialHazeState,
+        ) {
         Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
-            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(dialogHazeState)) {
+            Box(Modifier.fillMaxSize().hazeSource(dialogHazeState)) {
+                Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(materialHazeState))
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -1070,6 +1161,8 @@ fun OneUiCollapsingHeader(
     title: String,
     subtitle: String?,
     modifier: Modifier = Modifier,
+    /** 오른쪽 버튼 섬이 차지하는 폭 — 접힌 제목 섬은 여기까지만 늘어납니다 (호출부가 섬을 재서 넘김). 버튼이 다섯이면 200dp 로는 겹쳤습니다. */
+    endReserve: Dp = 200.dp,
 ) {
     val density = LocalDensity.current
     val scheme = MaterialTheme.colorScheme
@@ -1111,7 +1204,7 @@ fun OneUiCollapsingHeader(
         OneUiLiquidGlassBox(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(start = 12.dp, top = 4.dp, end = 200.dp)
+                .padding(start = 12.dp, top = 4.dp, end = endReserve)
                 .height(OneUiCompactBarHeight)
                 .alpha(barAlpha),
             cornerRadius = 24.dp,

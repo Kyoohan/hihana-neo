@@ -103,7 +103,7 @@ object HomeStaySchedule {
 /** 홈 '지금' 카드·위젯에 띄우는 귀가 안내 — [shortDetail] 은 위젯 한 줄용. */
 data class HomeStayNotice(val title: String, val detail: String, val shortDetail: String)
 
-/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 마지막 타임 전까지만. */
+/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 귀교 시각(밤 9시) 전까지만. */
 fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
     val stay = Timetable.homeStay(today) ?: return null
     val minutes = if (now.toLocalDate() == today) now.hour * 60 + now.minute else 0
@@ -131,41 +131,43 @@ fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
 }
 
 /**
- * 귀가 기간 '지금' 카드·위젯에 안내 문구 아래로 붙이는 정보 — 서울 날씨, 귀교 후 첫 일정, 귀교 뒤 2주 안의 시험.
- * 귀가·귀교일에는 석식이 없어 급식은 넣지 않습니다. 없는 줄은 null 이라 그리지 않습니다.
+ * 귀가 기간 '지금' 카드·위젯에 안내 문구 아래로 붙이는 정보 — 크게 보이는 서울 날씨 두 칸(지금 · 귀교 밤 9시)과,
+ * 그 아래 귀교 후 첫 일정·귀교 뒤 2주 안의 시험. 귀가·귀교일에는 석식이 없어 급식은 넣지 않습니다. 없는 칸은 null.
  */
 data class HomeStayExtras(
-    val weather: WeatherLine?,
+    /** 지금 서울 날씨. */
+    val weatherNow: WeatherTile?,
+    /** 귀교일 밤 9시(귀교 시각) 서울 날씨 — 예보 범위 밖이면 null. */
+    val weatherBack: WeatherTile?,
     /** 귀교 후 첫 일정 — "면학 4타임 · 6층 몰입형G G16" 과 시작 시각 "21:30". */
     val firstPlan: Pair<String, String>?,
     /** 다가오는 시험 이름과 오늘 기준 남은 날. */
     val exam: Pair<String, Long>?,
+    /** 귀교 시각(귀교일 밤 9시) — 날씨 칸을 누르면 여는 시간별 날씨가 여기까지. 모르면 null. */
+    val backAt: LocalDateTime? = null,
 ) {
-    val isEmpty: Boolean get() = weather == null && firstPlan == null && exam == null
+    val isEmpty: Boolean get() = weatherNow == null && weatherBack == null && firstPlan == null && exam == null
 }
 
-/** 날씨 한 줄 — [label] "오늘 서울 날씨", [value] "흐림 · 18°", [tip] "저녁부터 비 · 우산 챙기세요", [side] "강수 60%". */
-data class WeatherLine(
+/** 날씨 한 칸 — [label] "지금 서울", [temp] "17°", [desc] "맑음 · 25° / 13°", [tip] "15시부터 비" · "우산 챙기세요". */
+data class WeatherTile(
     val label: String,
-    val value: String,
-    val tip: String?,
-    val side: String?,
     val icon: Int,
-    /** 위젯용 큰 기온 "18°" 과 짧은 설명 "서울 · 흐림 · 저녁 비". */
-    val bigTemp: String?,
-    val short: String,
+    val temp: String?,
+    val desc: String,
+    val tip: String?,
 )
 
-/** [homeStayNotice] 가 뜨는 때에만 값을 줍니다. 날씨·학사일정은 캐시만 읽어 바로 그립니다. */
+/** [homeStayNotice] 가 뜨는 때에만 값을 줍니다(귀교일은 밤 9시까지). 날씨·학사일정은 캐시만 읽어 바로 그립니다. */
 suspend fun homeStayExtras(context: Context, today: LocalDate, now: LocalDateTime): HomeStayExtras? {
     homeStayNotice(today, now) ?: return null
     val stay = Timetable.homeStay(today) ?: return null
     val back = if (stay == Timetable.HomeStay.RETURN) today else Timetable.nextHomeReturn(today.plusDays(1))
-    return buildHomeStayExtras(context, stay, today, back, now)
+    return buildHomeStayExtras(context, today, back, now)
 }
 
 /**
- * Dev 탭 미리보기 — 오늘 날씨(예보가 있는 범위)로 귀가일·귀가 중·귀교일 줄을 미리 봅니다.
+ * Dev 탭 미리보기 — 지금 받은 날씨로 귀가일·귀가 중·귀교일 화면을 미리 봅니다.
  * 귀교일은 귀가일이면 이틀 뒤, 귀가 중이면 내일, 귀교일이면 오늘로 둡니다.
  */
 suspend fun previewHomeStayExtras(context: Context, stay: Timetable.HomeStay, now: LocalDateTime): HomeStayExtras? {
@@ -176,18 +178,18 @@ suspend fun previewHomeStayExtras(context: Context, stay: Timetable.HomeStay, no
         Timetable.HomeStay.AWAY -> today.plusDays(1)
         Timetable.HomeStay.RETURN -> today
     }
-    return buildHomeStayExtras(context, stay, today, back, now)
+    return buildHomeStayExtras(context, today, back, now)
 }
 
 private suspend fun buildHomeStayExtras(
     context: Context,
-    stay: Timetable.HomeStay,
     today: LocalDate,
     back: LocalDate?,
     now: LocalDateTime,
 ): HomeStayExtras? {
     val forecast = SeoulWeather.cached(context)
-    val weather = forecast?.let { weatherLine(it, stay, today, back, now) }
+    val weatherNow = forecast?.let { nowTile(it, today, now) }
+    val weatherBack = forecast?.let { f -> back?.let { backTile(f, it) } }
 
     val firstPlan = back?.let { date ->
         val places = runCatching { PlanStore.placesForToday(context, date) }.getOrDefault(emptyMap())
@@ -206,74 +208,66 @@ private suspend fun buildHomeStayExtras(
             ?.takeIf { !it.date.isBefore(date) && !it.date.isAfter(date.plusDays(14)) }
             ?.let { it.name to it.days }
     }
-    return HomeStayExtras(weather, firstPlan, exam).takeIf { !it.isEmpty }
+    val backAt = back?.let { it.atStartOfDay().plusMinutes(Timetable.homeReturnAt(it).toLong()) }
+    return HomeStayExtras(weatherNow, weatherBack, firstPlan, exam, backAt).takeIf { !it.isEmpty }
 }
 
-private fun weatherLine(
-    forecast: SeoulWeather.Forecast,
-    stay: Timetable.HomeStay,
-    today: LocalDate,
-    back: LocalDate?,
-    now: LocalDateTime,
-): WeatherLine? {
-    fun deg(value: Double?) = value?.let { "${Math.round(it)}°" }
-    fun umbrella(code: Int?) = if (SeoulWeather.kind(code) == SeoulWeather.Kind.SNOW) "눈 소식 · 우산 챙기세요" else "우산 챙기세요"
-    return when (stay) {
-        // 귀가일 — 나가는 길의 저녁 날씨.
-        Timetable.HomeStay.LEAVE -> {
-            val evening = forecast.hours.filter { it.time.toLocalDate() == today && it.time.hour in 18..23 && !it.time.isBefore(now.withMinute(0)) }
-            if (evening.isEmpty()) return null
-            val code = SeoulWeather.worst(evening.map { it.code })
-            val pop = evening.mapNotNull { it.pop }.maxOrNull()
-            val temp = evening.first().temp
-            val wet = SeoulWeather.wet(code, pop)
-            WeatherLine(
-                label = "오늘 저녁 서울 날씨",
-                value = listOfNotNull(SeoulWeather.label(code), deg(temp)).joinToString(" · "),
-                tip = if (wet) umbrella(code) else null,
-                side = pop?.takeIf { it > 0 }?.let { "강수 $it%" },
-                icon = SeoulWeather.icon(code),
-                bigTemp = deg(temp),
-                short = "서울 · " + SeoulWeather.label(code) + if (wet) " · 우산" else "",
-            )
-        }
-        // 귀가 중 — 귀교일 예보(예보가 잡히는 3일 전부터).
-        Timetable.HomeStay.AWAY -> {
-            val date = back ?: return null
-            if (java.time.temporal.ChronoUnit.DAYS.between(today, date) > 3) return null
-            val day = forecast.days.firstOrNull { it.date == date } ?: return null
-            val wet = SeoulWeather.wet(day.code, day.pop)
-            val dayName = date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN)
-            WeatherLine(
-                label = "귀교일 서울 날씨",
-                value = SeoulWeather.label(day.code) + (if (day.max != null && day.min != null) " · ${deg(day.max)} / ${deg(day.min)}" else ""),
-                tip = if (wet) umbrella(day.code) else null,
-                side = dayName,
-                icon = SeoulWeather.icon(day.code),
-                bigTemp = deg(day.max),
-                short = "$dayName 서울 · " + SeoulWeather.label(day.code),
-            )
-        }
-        // 귀교일 — 지금 날씨와, 돌아오는 저녁의 비 소식.
-        Timetable.HomeStay.RETURN -> {
-            val rest = forecast.hours.filter { it.time.toLocalDate() == today && !it.time.isBefore(now.withMinute(0)) && it.time.hour <= 22 }
-            val firstWet = rest.firstOrNull { SeoulWeather.wet(it.code, it.pop) }
-            val pop = rest.mapNotNull { it.pop }.maxOrNull()
-            val tip = firstWet?.let {
-                val code = SeoulWeather.worst(rest.map { h -> h.code }.filter { c -> SeoulWeather.wet(c, null) }) ?: it.code
-                val what = if (SeoulWeather.kind(code) == SeoulWeather.Kind.SNOW) "눈" else "비"
-                (if (it.time.hour >= 17 && it.time.hour > now.hour) "저녁부터 $what" else "$what 소식") + " · 우산 챙기세요"
-            }
-            val code = forecast.currentCode
-            WeatherLine(
-                label = "오늘 서울 날씨",
-                value = listOfNotNull(SeoulWeather.label(code), deg(forecast.currentTemp)).joinToString(" · "),
-                tip = tip,
-                side = pop?.takeIf { it > 0 }?.let { "강수 $it%" },
-                icon = SeoulWeather.icon(code),
-                bigTemp = deg(forecast.currentTemp),
-                short = "서울 · " + SeoulWeather.label(code) + (tip?.let { " · " + it.substringBefore(" · ") } ?: ""),
-            )
-        }
+private fun deg(value: Double?) = value?.let { "${Math.round(it)}°" }
+
+private fun umbrella(code: Int?) = if (SeoulWeather.kind(code) == SeoulWeather.Kind.SNOW) "눈 소식 · 우산 챙기세요" else "우산 챙기세요"
+
+private fun precipWord(code: Int?) = if (SeoulWeather.kind(code) == SeoulWeather.Kind.SNOW) "눈" else "비"
+
+/** 지금 서울 — 지금 날씨와 오늘 최고·최저, 오늘 남은 시간에 비·눈이 오면 몇 시부터인지. */
+private fun nowTile(f: SeoulWeather.Forecast, today: LocalDate, now: LocalDateTime): WeatherTile? {
+    // 지금이 속한 시간 칸의 시작 — withMinute(0) 은 초·나노초가 남아 지금 칸이 빠졌습니다.
+    val hourStart = now.truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+    val rest = f.hours.filter { it.time.toLocalDate() == today && !it.time.isBefore(hourStart) }
+    // 오늘 남은 시간 칸이 없으면(자정 직전 등) 가장 가까운 예보 칸으로.
+    val nearest = rest.firstOrNull() ?: f.hours.firstOrNull { !it.time.isBefore(hourStart) }
+    val code = f.currentCode ?: nearest?.code ?: return null
+    val day = f.days.firstOrNull { it.date == today }
+    val raining = SeoulWeather.wet(code, null)
+    val firstWet = rest.drop(1).firstOrNull { SeoulWeather.wet(it.code, it.pop) }
+    val tip = when {
+        raining -> umbrella(code)
+        firstWet != null -> "${firstWet.time.hour}시부터 ${precipWord(firstWet.code)}"
+        else -> null
     }
+    val range = if (day?.max != null && day.min != null) "${deg(day.max)} / ${deg(day.min)}" else null
+    return WeatherTile(
+        label = "지금 서울",
+        icon = SeoulWeather.icon(code),
+        temp = deg(f.currentTemp ?: nearest?.temp),
+        desc = listOfNotNull(SeoulWeather.label(code), range).joinToString(" · "),
+        tip = tip,
+    )
+}
+
+/**
+ * 귀교 밤 9시 — 그날 21시 예보(시간별 예보 범위 안이면). 범위 밖이면 그날 하루 예보(최고·최저). 둘 다 없으면 null.
+ * 우산 안내는 돌아오는 길(15~21시) 중 한 번이라도 비·눈이거나 강수확률이 높으면.
+ */
+private fun backTile(f: SeoulWeather.Forecast, back: LocalDate): WeatherTile? {
+    val atReturn = back.atTime(21, 0)
+    val hour = f.hours.firstOrNull { it.time == atReturn }
+    val day = f.days.firstOrNull { it.date == back }
+    if (hour == null && day == null) return null
+    val travel = f.hours.filter { it.time.toLocalDate() == back && it.time.hour in 15..21 }
+    val code = hour?.code ?: day?.code
+    val pop = travel.mapNotNull { it.pop }.maxOrNull() ?: day?.pop
+    val wetCode = SeoulWeather.worst(travel.map { it.code }.filter { SeoulWeather.wet(it, null) })
+    val wet = wetCode != null || SeoulWeather.wet(code, pop)
+    val desc = if (hour != null) {
+        listOfNotNull(SeoulWeather.label(code), pop?.takeIf { it > 0 }?.let { "강수 $it%" }).joinToString(" · ")
+    } else {
+        listOfNotNull(SeoulWeather.label(code), if (day?.max != null && day.min != null) "${deg(day.max)} / ${deg(day.min)}" else null).joinToString(" · ")
+    }
+    return WeatherTile(
+        label = if (hour != null) "귀교 밤 9시" else "귀교일",
+        icon = SeoulWeather.icon(wetCode ?: code),
+        temp = deg(hour?.temp ?: day?.max),
+        desc = desc,
+        tip = if (wet) umbrella(wetCode ?: code) else null,
+    )
 }

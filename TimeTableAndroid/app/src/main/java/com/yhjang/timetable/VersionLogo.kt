@@ -26,12 +26,14 @@ import androidx.compose.ui.unit.sp
  * 흰 테두리·윗면 반사광(리퀴드 글래스)과 오른쪽 위 작은 표식으로 그 버전의 대표 기능을 나타냅니다.
  * 업데이트 투어 첫 장, 하이하나 Neo 정보 화면, 변경 사항의 버전 묶음 머리에 씁니다.
  */
-private enum class Emblem { SPARKLE, MOON, SEATS, PILL, GLASS, APP_ICON, NONE }
+private enum class Emblem { SUN, SPARKLE, MOON, SEATS, PILL, GLASS, APP_ICON, NONE }
 
 private class VersionStyle(val colors: List<Color>, val emblem: Emblem, val emblemColor: Color)
 
 /** 큰 버전별 색과 표식 — 그 버전 변경 사항의 첫 줄(대표 기능)에서 따왔습니다. */
 private fun styleFor(major: Int): VersionStyle = when (major) {
+    // 13 · 신청·내역을 앱 안에서, 귀가 기간 서울 날씨 — 맑은 하늘 파랑·청록에서 햇빛 노랑, 해
+    13 -> VersionStyle(listOf(Color(0xFF4F9DFF), Color(0xFF35C2E0), Color(0xFFFFD27A)), Emblem.SUN, Color(0xFFFFC83D))
     // 12 · 앱 안 게시글과 AI 요약 — AI 요약 카드의 파랑·보라·분홍, 반짝이
     12 -> VersionStyle(listOf(Color(0xFF6EA8FF), Color(0xFFA78BFA), Color(0xFFF29FC8)), Emblem.SPARKLE, Color.White)
     // 11 · 심야면학 — 밤하늘 남색·보라, 달
@@ -98,6 +100,17 @@ fun VersionLogo(major: Int, size: Dp, modifier: Modifier = Modifier) {
 
 private fun DrawScope.drawEmblem(emblem: Emblem, c: Offset, w: Float, color: Color, accent: Color) {
     when (emblem) {
+        Emblem.SUN -> {
+            // 해 — 가운데 원과 여덟 줄기 빛.
+            val r = w * 0.042f
+            drawCircle(color, r, c)
+            for (i in 0 until 8) {
+                val a = Math.toRadians(i * 45.0)
+                val dx = kotlin.math.cos(a).toFloat()
+                val dy = kotlin.math.sin(a).toFloat()
+                drawLine(color, Offset(c.x + dx * r * 1.55f, c.y + dy * r * 1.55f), Offset(c.x + dx * r * 2.25f, c.y + dy * r * 2.25f), w * 0.014f, StrokeCap.Round)
+            }
+        }
         Emblem.SPARKLE -> {
             drawSparkle(c, w * 0.085f, color)
             drawSparkle(Offset(w * 0.9f, w * 0.34f), w * 0.035f, Color(0xFFF29FC8))

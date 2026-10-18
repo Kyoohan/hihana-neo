@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-<!-- 맑음 -->
-<path android:fillColor="#FFFFC65C" android:pathData="M12,7.5a4.5,4.5 0,1 1,0 9a4.5,4.5 0,1 1,0 -9z"/>
-<path android:strokeColor="#FFFFC65C" android:strokeWidth="2" android:strokeLineCap="round" android:pathData="M12,2.5v2.5M12,19v2.5M2.5,12H5M19,12h2.5M5.3,5.3l1.8,1.8M16.9,16.9l1.8,1.8M5.3,18.7l1.8,-1.8M16.9,7.1l1.8,-1.8"/>
+<!-- 맑음 — One UI 날씨처럼 부드러운 그라데이션 해: 옅은 빛무리, 둥근 햇살, 위가 밝은 구체. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp" android:height="24dp" android:viewportWidth="48" android:viewportHeight="48">
+  <path android:pathData="M24,24m-22,0a22,22 0 1,1 44,0a22,22 0 1,1 -44,0">
+    <aapt:attr name="android:fillColor">
+      <gradient android:type="radial" android:centerX="24" android:centerY="24" android:gradientRadius="22">
+        <item android:offset="0.5" android:color="#38FFB224"/>
+        <item android:offset="1" android:color="#00FFB224"/>
+      </gradient>
+    </aapt:attr>
+  </path>
+  <path android:strokeWidth="3.4" android:strokeLineCap="round"
+      android:pathData="M24,4.5v5.5M24,38v5.5M4.5,24h5.5M38,24h5.5M10.2,10.2l3.9,3.9M33.9,33.9l3.9,3.9M10.2,37.8l3.9,-3.9M33.9,14.1l3.9,-3.9">
+    <aapt:attr name="android:strokeColor">
+      <gradient android:type="radial" android:centerX="24" android:centerY="24" android:gradientRadius="24">
+        <item android:offset="0" android:color="#FFFFD54F"/>
+        <item android:offset="1" android:color="#FFFFA726"/>
+      </gradient>
+    </aapt:attr>
+  </path>
+  <path android:pathData="M24,24m-10.5,0a10.5,10.5 0 1,1 21,0a10.5,10.5 0 1,1 -21,0">
+    <aapt:attr name="android:fillColor">
+      <gradient android:type="linear" android:startX="16" android:startY="13" android:endX="32" android:endY="35">
+        <item android:offset="0" android:color="#FFFFE68A"/>
+        <item android:offset="1" android:color="#FFFFA000"/>
+      </gradient>
+    </aapt:attr>
+  </path>
 </vector>

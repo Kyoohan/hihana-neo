@@ -211,6 +211,8 @@ fun ClassroomStatusScreen(onDismiss: () -> Unit) {
     }
     LaunchedEffect(timeId, buildingNum, roomIdx, reload) {
         val id = timeId ?: return@LaunchedEffect
+        // 건물 목록이 아직 안 왔으면 기다립니다 — 예전엔 건물 없이 전교 목록을 한 번 받고, 첫 건물이 정해지면 또 받았습니다.
+        if (buildingNum == null && buildings.isEmpty()) return@LaunchedEffect
         loading = true
         occupants = guarded { HanaClassroomApi.occupants(context, id, buildingNum, roomIdx) }
         loading = false

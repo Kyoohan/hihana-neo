@@ -149,7 +149,8 @@ class TimeTableWidget : GlanceAppWidget() {
 
             // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시) 안내 아래에 날씨·귀교 후 첫 일정·시험을 붙입니다.
             val homeStay = homeStayNotice(today, now)
-            if (homeStay != null) runCatching { SeoulWeather.get(context) }
+            // 위젯 갱신은 짧게 끝나야 합니다 — 서버가 느리면 캐시된 날씨로 그리고 다음 갱신에 다시 받습니다.
+            if (homeStay != null) runCatching { kotlinx.coroutines.withTimeoutOrNull(8_000L) { SeoulWeather.get(context) } }
             WidgetSnapshot(
                 block = block,
                 homeStay = homeStay,
@@ -160,7 +161,10 @@ class TimeTableWidget : GlanceAppWidget() {
                 mealAllergyPrefix = mealAllergyPrefix,
                 supervisionText = supervisionText,
                 remainingMillis = block?.let { Duration.between(now, it.end).toMillis().coerceAtLeast(0) },
-                refreshDelayMillis = boundary?.let { Duration.between(now, it).toMillis() } ?: -1L,
+                // 귀가 기간엔 경계가 없어 30분 동기화에만 기대면 자정(귀가→귀가 중)이나 저녁 날씨 칸이 늦게 바뀝니다 — 매시 정각에 다시 그립니다.
+                refreshDelayMillis = boundary?.let { Duration.between(now, it).toMillis() }
+                    ?: homeStay?.let { Duration.between(now, now.truncatedTo(java.time.temporal.ChronoUnit.HOURS).plusHours(1)).toMillis() }
+                    ?: -1L,
             )
         }.getOrNull()
 
@@ -404,8 +408,8 @@ internal fun isDarkTheme(context: Context, theme: String): Boolean = when (theme
 }
 
 /**
- * 귀가 기간 — 안내 문구·귀교 날짜 아래 서울 날씨를 아이콘·큰 기온으로(2x2 이상이라 작게 줄일 필요가 없음).
- * 폭이 넉넉하면(4x2 이상) 오른쪽 칸에 귀교 후 첫 일정과 시험을 더합니다.
+ * 귀가 기간 — 안내 문구·귀교 날짜 아래 서울 날씨 두 칸(지금 · 귀교 밤 9시)을 아이콘·큰 기온으로.
+ * 폭이 넉넉하면(4x2 이상) 오른쪽 칸에 귀교 후 첫 일정과 시험을 더합니다. 귀교일 밤 9시면 평소 화면으로.
  */
 @Composable
 private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
@@ -427,29 +431,38 @@ private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
                 Spacer(GlanceModifier.width(5.dp))
                 Text(if (returning) "귀교" else "귀가", style = TextStyle(color = subtextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold))
             }
-            Spacer(GlanceModifier.height(6.dp))
-            Text(homeStay.title, style = TextStyle(color = titleColor, fontSize = 16.sp, fontWeight = FontWeight.Bold), maxLines = 2)
-            Spacer(GlanceModifier.height(2.dp))
+            Spacer(GlanceModifier.height(4.dp))
+            Text(homeStay.title, style = TextStyle(color = titleColor, fontSize = 15.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             Text(homeStay.shortDetail, style = TextStyle(color = subtextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
-            Spacer(GlanceModifier.defaultWeight())
-            extras.weather?.let { w ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(provider = ImageProvider(w.icon), contentDescription = null, modifier = GlanceModifier.size(34.dp))
-                    Spacer(GlanceModifier.width(8.dp))
-                    Column {
-                        w.bigTemp?.let {
-                            Text(it, style = TextStyle(color = titleColor, fontSize = 24.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+            val tiles = listOfNotNull(extras.weatherNow, extras.weatherBack)
+            if (tiles.isNotEmpty()) {
+                // 서울 날씨 두 칸(지금 · 귀교 밤 9시) — 남는 높이를 다 써서 아이콘·기온을 크게, 위아래 가운데에.
+                Spacer(GlanceModifier.defaultWeight())
+                Row(modifier = GlanceModifier.fillMaxWidth()) {
+                    tiles.forEachIndexed { index, tile ->
+                        if (index > 0) Spacer(GlanceModifier.width(10.dp))
+                        Column(modifier = GlanceModifier.defaultWeight()) {
+                            Text(tile.label, style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                            Spacer(GlanceModifier.height(2.dp))
+                            Image(provider = ImageProvider(tile.icon), contentDescription = null, modifier = GlanceModifier.size(34.dp))
+                            Text(tile.temp ?: "–", style = TextStyle(color = titleColor, fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                            // 좁은 칸이라 "강수 90%" 는 "90%" 로.
+                            Text(tile.desc.replace("강수 ", ""), style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                            tile.tip?.let {
+                                Text(it, style = TextStyle(color = ColorProvider(Color(0xFF3D8BFF)), fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                            }
                         }
-                        Text(
-                            w.short,
-                            style = TextStyle(
-                                color = if (w.tip != null) ColorProvider(Color(0xFF3D8BFF)) else subtextColor,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                            maxLines = 1,
-                        )
                     }
+                }
+                Spacer(GlanceModifier.defaultWeight())
+            } else if (!wide) {
+                // 날씨를 아직 못 받았으면 좁은 위젯에서도 빈칸 대신 귀교 후 첫 일정·시험을 한 줄씩.
+                extras.firstPlan?.let { (plan, time) ->
+                    Text("귀교 후 $time", style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                    Text(plan, style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                }
+                extras.exam?.let { (name, days) ->
+                    Text("$name ${if (days == 0L) "D-day" else "D-$days"}", style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
                 }
             }
         }

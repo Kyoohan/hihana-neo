@@ -99,6 +99,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.automirrored.outlined.List
@@ -180,7 +185,9 @@ import com.yhjang.timetable.ui.AccentPresets
 import com.yhjang.timetable.ui.CustomAccentSwatch
 import com.yhjang.timetable.ui.LocalHazeState
 import com.yhjang.timetable.ui.LocalDialogHazeState
+import com.yhjang.timetable.ui.LocalMaterialHazeState
 import com.yhjang.timetable.ui.OneUiActionButton
+import com.yhjang.timetable.ui.OneUiActionDivider
 import com.yhjang.timetable.ui.OneUiActionPill
 import com.yhjang.timetable.ui.isDark
 import com.yhjang.timetable.ui.oneUiGlassSurface
@@ -424,6 +431,14 @@ private fun TimeTableAppContent(
     var offline by remember { mutableStateOf(false) }
     var lastSyncAt by remember { mutableStateOf(0L) }
     var showingSettings by remember { mutableStateOf(false) }
+    // 헤더 탭 버튼들이 쓰는 상태 — 설정을 특정 페이지로 열기, 홈 카드 순서 편집, 서울 날씨, 게시판 검색, 외출 QR.
+    var settingsStartPage by remember { mutableStateOf<SettingsPage?>(null) }
+    var editingHomeOrder by remember { mutableStateOf(false) }
+    var showingWeather by remember { mutableStateOf(false) }
+    var showingPortalSearch by remember { mutableStateOf(false) }
+    var approvedOuting by remember { mutableStateOf<OutingRow?>(null) }
+    var approvedOutingChecked by remember { mutableStateOf(false) }
+    var outingQr by remember { mutableStateOf<OutingRow?>(null) }
     var showingAppInfo by remember { mutableStateOf(false) }
     // 앱 내 업데이트 상태 — 실행 시 한 번(6시간 캐시) 조용히 확인하고, 정보 화면에서 수동 확인/설치합니다.
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -443,6 +458,11 @@ private fun TimeTableAppContent(
     var neisDays by remember { mutableStateOf<Map<String, Map<String, NeisMealInfo>>>(emptyMap()) }
     var mealWeekMode by rememberSaveable { mutableStateOf(false) }
     var selectedMealDay by rememberSaveable { mutableStateOf(PlanStore.dayKey(PlanStore.today())) }
+    // 급식 일간·주간 전환(헤더 버튼) — 일간 보기로 돌아오면 주간에서 고른 날짜를 버리고 오늘로 돌아갑니다.
+    fun toggleMealWeek() {
+        mealWeekMode = !mealWeekMode
+        if (!mealWeekMode) selectedMealDay = PlanStore.dayKey(PlanStore.today())
+    }
     var tab by rememberSaveable { mutableStateOf(0) }
 
     // 포털 시간표를 새로 설치할 때마다 증가 — 설치된 표가 아니라 Compose 상태라, 주간 표와
@@ -594,7 +614,9 @@ private fun TimeTableAppContent(
             val list = HanaAcademicRepository.alim(context, force)
             // 서버 readYn 이 안 내려와도 사용자가 앱에서 읽은 항목은 읽음으로 반영합니다.
             val readIds = AlimReadStore.read(context)
+            // 같은 선생님이 같은 내용을 잇달아 두 번 보내면(10/12 면학장소 안내처럼) 하나만 — 최신 것을 남깁니다.
             alimList = list.map { if (!it.read && it.id in readIds) it.copy(read = true) else it }
+                .distinctBy { it.writer.orEmpty() + "\u0000" + it.content.trim() }
             alimUnread = alimList.count { !it.read }
             AlimNotifier.process(context, alimList)
         } catch (e: HanaPortalException.MissingCredentials) {
@@ -626,7 +648,10 @@ private fun TimeTableAppContent(
         AlimReadStore.markRead(context, listOf(alim.id))
         alimList = alimList.map { if (it.id == alim.id) it.copy(read = true) else it }
         alimUnread = alimList.count { !it.read }
-        openUrl(context, alimUrl(alim.id))
+        // 포털에도 읽음으로 — 예전엔 앱 안에서만 읽음이라 하이하나에선 계속 안 읽음이었습니다.
+        if (!alim.read) scope.launch { HanaAcademicApi.markAlimRead(context, listOf(alim.id)) }
+        // 외부 브라우저는 하이하나에 로그인돼 있지 않아 로그인 화면이 떴습니다 — 세션을 쓰는 앱 안 웹뷰로.
+        webPage = HanaWebPage(alimUrl(alim.id), "알리미")
     }
 
     /** 게시글 열기 — 화면은 즉시 뜨고, 세션 확인·로그인은 웹뷰가 페이지를 읽기 직전에 화면 안에서 합니다. */
@@ -812,7 +837,15 @@ private fun TimeTableAppContent(
     // 비어 있을 때만 조용히 채우고, TTL 캐시라 대부분 네트워크를 타지 않습니다. 캐시가 "빈 목록"이면
     // (세션이 없을 때 받은 응답일 수 있음) 이번 실행에 한 번은 강제로 새로 받아 옵니다.
     var boardForcedOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(tab) { if (tab != TabIndex.APPLY) editingApplyOrder = false }
+    LaunchedEffect(tab) {
+        if (tab != TabIndex.APPLY) editingApplyOrder = false
+        if (tab != TabIndex.HOME) editingHomeOrder = false
+        // 신청·내역 탭의 QR 버튼 — 승인된(아직 복귀 전) 외출·외박이 있는지 미리 봐 두고, 없으면 버튼을 흐리게.
+        if (tab == TabIndex.APPLY && hasCredentials) {
+            approvedOuting = runCatching { OutingApi.list(context, OutingFilter.APPROVED, 1).rows.firstOrNull { it.state == 4 } }.getOrNull()
+            approvedOutingChecked = true
+        }
+    }
     LaunchedEffect(tab) {
         if (tab != TabIndex.HOME) return@LaunchedEffect
         if (!HanaCredentialStore.hasCredentials(context)) return@LaunchedEffect
@@ -877,15 +910,20 @@ private fun TimeTableAppContent(
         isRefreshingAll = true
         try {
             loadMealDay(today, force = true)
+            // 계정이 없으면 학사시스템·알리미는 건너뜁니다 — 예전엔 아래로 당길 때마다 연동 창이 튀어나왔습니다
+            // (연동은 헤더의 새로고침 버튼이나 홈 '지금' 카드에서 엽니다).
+            val linked = HanaCredentialStore.hasCredentials(context)
             // 학사시스템과 심야면학은 서로 독립 — 학사시스템에서 오류가 나도 심야면학은 이어서 확인합니다.
-            try {
-                syncFromHana()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (_: Exception) {
+            if (linked) {
+                try {
+                    syncFromHana()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
             }
             syncMidnight()
-            loadAlim(true)
+            if (linked) loadAlim(true)
             when {
                 tab == TabIndex.BOARD -> loadBoard(true)
                 tab == TabIndex.HOME -> loadHomeBoard(true)
@@ -904,6 +942,8 @@ private fun TimeTableAppContent(
         val now = HanaCredentialStore.hasCredentials(context)
         val linkedNow = now && !hasCredentials
         hasCredentials = now
+        // 연결을 끊었으면 신청·내역 탭의 QR 버튼이 예전 승인 건을 들고 있지 않게.
+        if (!now) { approvedOuting = null; approvedOutingChecked = false }
         if (linkedNow) {
             runCatching { syncFromHana() }
             runCatching { loadSchedule(true) }
@@ -941,11 +981,12 @@ private fun TimeTableAppContent(
     val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision, HomeStaySchedule.revision) {
         Timetable.blocks(today) { places[it] }
     }
-    // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 2타임 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
+    // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 밤 9시 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
     val homeStayNotice = HomeStaySchedule.revision.let { homeStayNotice(today, now) }
     // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시), 안내 아래 줄(날씨·귀교 후 첫 일정·시험)을 계산합니다.
     var weatherRevision by remember { mutableIntStateOf(0) }
-    LaunchedEffect(homeStayNotice != null, today) {
+    // '지금 서울' 칸이 낡지 않게 30분마다 다시 확인합니다(서버·기기 모두 30분 캐시라 대부분 네트워크 없이 끝남).
+    LaunchedEffect(homeStayNotice != null, today, now.hour, now.minute / 30) {
         if (homeStayNotice != null && SeoulWeather.get(context) != null) weatherRevision++
     }
     val homeStayExtras by produceState<HomeStayExtras?>(
@@ -985,6 +1026,8 @@ private fun TimeTableAppContent(
     // 대신 각 탭의 스크롤 끝에 바 높이만큼 여백을 줘서 마지막 카드가 바 위까지 올라올 수 있게 합니다.
     // 메인 화면 콘텐츠를 Haze 소스로 캡처해 하단 바·플로팅 아이콘 알약·다이얼로그가 뒤를 흐려 비춥니다.
     val hazeState = remember { HazeState() }
+    // 카드 재질이 비출 배경만의 소스 (LocalMaterialHazeState) — 배경 한 겹을 따로 깔아 등록합니다.
+    val materialHazeState = remember { HazeState() }
 
     // 탭 사이 스와이프 — 페이저가 자리를 잡으면 tab 을 따라가고, 하단 바 탭은 페이저를 그 페이지로 넘깁니다.
     val pagerState = rememberPagerState(initialPage = tab) { tabTitles.size }
@@ -1006,6 +1049,9 @@ private fun TimeTableAppContent(
     val pullState = rememberPullToRefreshState()
     var rootSize by remember { mutableStateOf(IntSize.Zero) }
     var refreshIconOrigin by remember { mutableStateOf(Offset.Zero) }
+    // 오른쪽 버튼 섬의 실제 폭 — 접힌 제목 섬이 여기까지만 늘어나게 헤더에 넘깁니다 (탭마다 버튼 수가 달라 폭이 다릅니다).
+    // 섬의 왼쪽 끝(루트 기준) — 접힌 제목 섬이 거기까지만 늘어나게 헤더에 넘깁니다 (탭마다 버튼 수가 달라 폭이 다릅니다).
+    var pillLeftPx by remember { mutableFloatStateOf(Float.NaN) }
     val refreshTravel by animateFloatAsState(
         targetValue = if (isRefreshingAll) 1f else pullState.distanceFraction.coerceIn(0f, 1f),
         animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
@@ -1024,6 +1070,10 @@ private fun TimeTableAppContent(
             OneUiCollapsingHeader(
                 state = headerState,
                 title = tabTitles[tab],
+                endReserve = with(LocalDensity.current) {
+                    if (pillLeftPx.isNaN() || rootSize.width == 0) 200.dp
+                    else (rootSize.width - pillLeftPx).toDp() + 16.dp
+                },
                 subtitle = buildString {
                     append(dateText(today))
                     if (offline) {
@@ -1060,7 +1110,9 @@ private fun TimeTableAppContent(
             // 글래스 요소(하단 바·알약)는 소스 바깥에 둬야 자기 자신을 다시 흐리지 않습니다.
             // 배경(사진·그레인)도 이 소스 안에 그려야 하단 바·섬 유리가 배경 이미지를 비춥니다 — 루트에만 그리면
             // 유리 뒤가 비어 검은 바탕색으로 채워졌습니다.
-            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(hazeState)) {
+            Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
+            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(materialHazeState))
+            CompositionLocalProvider(LocalMaterialHazeState provides materialHazeState) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -1076,11 +1128,7 @@ private fun TimeTableAppContent(
                     isLoading = isLoadingMeals,
                     allergyCodes = allergyCodes,
                     weekMode = mealWeekMode,
-                    onToggleWeek = {
-                        mealWeekMode = !mealWeekMode
-                        // 일간 보기로 돌아오면 주간에서 고른 날짜를 버리고 오늘로 돌아갑니다.
-                        if (!mealWeekMode) selectedMealDay = PlanStore.dayKey(PlanStore.today())
-                    },
+                    onToggleWeek = { toggleMealWeek() },
                     weekDates = mealWeekDates,
                     selectedDate = selectedMealDate,
                     availableDays = availableMealDays,
@@ -1155,7 +1203,6 @@ private fun TimeTableAppContent(
                 TabIndex.SCHEDULE -> if (scheduleSubTab == 1) {
                     AcademicTab(
                         subTab = 0,
-                        topContent = { ScheduleSubTabs(scheduleSubTab) { scheduleSubTab = it } },
                         schedule = scheduleEntries,
                         scheduleLoading = scheduleLoading,
                         scheduleError = scheduleError,
@@ -1179,8 +1226,8 @@ private fun TimeTableAppContent(
                     // 표가 화면에 다 들어가면 스크롤(그리고 그에 딸린 헤더 접힘)을 아예 두지 않습니다 — 행 높이를
                     // 남는 높이에 맞춰 56~78dp 사이로 정하고, 그래도 넘칠 때만 스크롤을 붙입니다.
                     val periodRows = remember(timetableRevision) { Timetable.activePeriodTimes.size + 1 }
-                    // 위의 시간표/학사일정 칩 줄 높이만큼도 뺍니다.
-                    val cardChrome = 16.dp + ScheduleSubTabsHeight
+                    // 시간표/학사일정 전환은 헤더 버튼으로 옮겨 칩 줄이 없습니다.
+                    val cardChrome = 16.dp
                     // 헤더가 접혀 있으면 maxHeight 가 그만큼 커지는데, 그걸 기준으로 "다 들어간다"고 판단하면 스크롤이
                     // 사라지면서 헤더를 다시 펼칠 방법이 없어집니다 — 헤더가 펼쳐진 상태의 높이로 계산합니다.
                     val collapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() }
@@ -1197,7 +1244,6 @@ private fun TimeTableAppContent(
                             .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
                             .padding(tabContentPadding),
                     ) {
-                        ScheduleSubTabs(scheduleSubTab) { scheduleSubTab = it }
                         OneUiCard(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(if (timetableInstalled) 8.dp else 24.dp),
@@ -1290,14 +1336,32 @@ private fun TimeTableAppContent(
                         tab = TabIndex.SCHEDULE
                     },
                     onNavigateToTab = { tab = it },
+                    editingOrder = editingHomeOrder,
                     contentPadding = tabContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             }
             }
+            // 스크롤 가장자리 효과 — 하단 바 뒤로 지나가는 내용이 바 아래에서 배경색으로 잦아들어, 유리 밑의 글자가 바 테두리에
+            // 걸려 끊겨 보이지 않습니다 (iOS 26 의 scroll edge effect). 탭 내용의 아래 여백(navBarSpace)과 같은 높이라
+            // 끝까지 내린 마지막 카드는 가리지 않습니다.
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(navBarSpace)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.45f to MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
+                            1f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                        ),
+                    ),
+            )
             // 포털 시간표 페이지를 JS로 렌더링해 DOM을 읽어올 숨은 WebView — 모든 탭에서 동작하도록 앱 루트에 둡니다.
             HanaTimetableWebViewHost()
+            }
             }
             AppNavBar(
                 selected = tab,
@@ -1313,36 +1377,110 @@ private fun TimeTableAppContent(
         }
         }
     }
-    // 오른쪽 위 액션 아이콘 — 헤더가 펼쳐져 있을 땐 배경 없이, 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다.
+    // 오른쪽 위 버튼 섬 하나 — [알리미 · 새로고침 · 설정], 새로고침이 가운데. 헤더가 펼쳐져 있을 땐 배경 없이,
+    // 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다. 학사시스템 연동(계정)은 설정 → 계정·학년으로 옮겼습니다.
     OneUiActionPill(
         pillAlpha = ((headerState.fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
+        // 새로고침 버튼이 화면 가로 정중앙에 오도록 섬을 놓습니다 — 당겨서 새로고침하면 그 자리에서 곧게 내려옵니다.
+        // 섬 오른쪽이 화면 끝(여백 6dp)을 넘으면 그만큼만 왼쪽으로 물러납니다 (좁은 폰). 버튼을 38dp, 구분선 여백을 3dp 로
+        // 줄여 S25+ 폭(411dp)에서는 다섯 버튼으로도 정중앙에 맞습니다.
         modifier = Modifier
-            .align(Alignment.TopEnd)
+            .align(Alignment.TopStart)
+            .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(top = 4.dp, end = 12.dp),
-    ) {
-        if (tab == TabIndex.APPLY) {
-            OneUiActionButton(onClick = { editingApplyOrder = !editingApplyOrder }) {
-                if (editingApplyOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
-                else Icon(Icons.Default.Edit, contentDescription = "블록 순서 편집")
+            .padding(top = 4.dp)
+            .layout { measurable, constraints ->
+                val island = measurable.measure(constraints.copy(minWidth = 0))
+                // 섬 안에서 새로고침 버튼 가운데까지의 실제 거리 — 처음엔 계산값, 한 번 배치된 뒤엔 잰 값(버튼 터치 영역 보정 등 포함).
+                val measured = refreshIconOrigin.x - pillLeftPx
+                val refreshCenter = if (!pillLeftPx.isNaN() && measured > 0f && measured < island.width) measured
+                else (IslandPadding + IslandButton / 2).toPx()
+                val maxX = constraints.maxWidth - 6.dp.toPx() - island.width
+                val x = (constraints.maxWidth / 2f - refreshCenter).coerceAtMost(maxX).coerceAtLeast(0f)
+                layout(constraints.maxWidth, island.height) { island.place(x.roundToInt(), 0) }
             }
-        }
+            .onGloballyPositioned { pillLeftPx = it.positionInRoot().x },
+    ) {
+        // [새로고침 | 탭 버튼 · 탭 버튼 | 알리미 · 설정] — 모든 탭에 있는 새로고침·알리미·설정은 자리를 고정(맨 왼쪽 / 오른쪽 둘째 / 맨 오른쪽),
+        // 탭마다 다른 두 버튼은 그 사이, 세 묶음은 가는 세로선으로 나눕니다. Dev 탭은 [새로고침 | 알리미 · 설정].
         OneUiActionButton(
-            onClick = { scope.launch { refreshAll() } },
+            // 계정이 없으면 새로고침 대신 연동 창을 엽니다 (당겨서 새로고침은 조용히 급식만 받습니다).
+            onClick = { if (hasCredentials) scope.launch { refreshAll() } else showingAccountSheet = true },
             enabled = !isSyncing && !isRefreshingAll,
+            size = IslandButton,
             modifier = Modifier.onGloballyPositioned { coords ->
                 val pos = coords.positionInRoot()
                 refreshIconOrigin = Offset(pos.x + coords.size.width / 2f, pos.y + coords.size.height / 2f)
             },
         ) {
-            // 전체 새로고침 중엔 아이콘이 가운데로 내려가 있으므로 여기 자리는 비워 둡니다.
+            // 당기거나 새로고침하는 동안엔 아이콘이 화면 가운데로 내려가 있으므로 여기 자리는 비워 둡니다.
             when {
                 isRefreshingAll || refreshTravel > 0.01f -> Spacer(Modifier.size(24.dp))
                 isSyncing -> OneUiLoading(size = 20.dp, stroke = 2.dp)
                 else -> Icon(Icons.Default.Refresh, contentDescription = "동기화")
             }
         }
-        OneUiActionButton(onClick = { openAlimScreen() }) {
+        OneUiActionDivider(gap = IslandDividerGap)
+        @Composable
+        fun TabButton(desc: String, onClick: () -> Unit, dim: Boolean = false, icon: @Composable () -> Unit) {
+            OneUiActionButton(onClick = onClick, modifier = Modifier.alpha(if (dim) 0.4f else 1f), size = IslandButton) { icon() }
+        }
+        val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
+        when (tab) {
+            TabIndex.HOME -> TabButton("카드 순서", { editingHomeOrder = !editingHomeOrder }) {
+                if (editingHomeOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
+                else Icon(Icons.Default.Edit, contentDescription = "홈 카드 순서 편집")
+            }
+            TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
+                if (editingApplyOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
+                else Icon(Icons.Default.Edit, contentDescription = "블록 순서 편집")
+            }
+            TabIndex.MEAL -> TabButton("일간·주간", { toggleMealWeek() }) {
+                Icon(
+                    Icons.Default.DateRange,
+                    contentDescription = if (mealWeekMode) "일간 보기로" else "주간 보기로",
+                    tint = if (mealWeekMode) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
+            }
+            // 하이하나 통합검색 — 모든 게시판·모든 기간 (예전엔 불러온 10건 안에서만 찾았습니다).
+            TabIndex.BOARD -> TabButton("검색", { showingPortalSearch = true }) {
+                Icon(Icons.Default.Search, contentDescription = "하이하나 검색")
+            }
+            TabIndex.SCHEDULE -> TabButton("전환", { scheduleSubTab = if (scheduleSubTab == 0) 1 else 0 }) {
+                if (scheduleSubTab == 0) Icon(Icons.AutoMirrored.Filled.List, contentDescription = "학사일정 보기")
+                else Icon(Icons.Default.DateRange, contentDescription = "시간표 보기")
+            }
+            else -> Unit
+        }
+        when (tab) {
+            TabIndex.HOME -> TabButton("서울 날씨", { showingWeather = true }) {
+                Icon(painterResource(R.drawable.ic_weather_outline), contentDescription = "서울 날씨")
+            }
+            TabIndex.APPLY -> TabButton("외출 QR", {
+                val row = approvedOuting
+                if (row != null) outingQr = row else toast(if (approvedOutingChecked) "승인된 외출·외박이 없습니다" else "외출·외박을 확인하는 중입니다")
+            }, dim = approvedOutingChecked && approvedOuting == null) {
+                Icon(painterResource(R.drawable.ic_qr_code), contentDescription = "외출·외박 출입 QR")
+            }
+            TabIndex.MEAL -> TabButton("알레르기", { settingsStartPage = SettingsPage.MEAL; showingSettings = true }) {
+                Icon(Icons.Default.Warning, contentDescription = "알레르기 설정")
+            }
+            TabIndex.BOARD -> TabButton("새 글 알림", { settingsStartPage = SettingsPage.NOTIFY; showingSettings = true }) {
+                Icon(painterResource(R.drawable.ic_notify_settings), contentDescription = "새 글 알림 설정")
+            }
+            TabIndex.SCHEDULE -> TabButton("캘린더로", {
+                scope.launch {
+                    if (scheduleEntries.isEmpty()) loadSchedule(false)
+                    if (!ScheduleExport.share(context, scheduleEntries)) toast("내보낼 학사일정이 없습니다")
+                }
+            }) {
+                Icon(Icons.Default.Share, contentDescription = "학사일정을 캘린더로 내보내기")
+            }
+            else -> Unit
+        }
+        // 탭 버튼이 있는 탭만 두 번째 구분선 — Dev 탭은 새로고침 바로 뒤에 알리미·설정이 옵니다.
+        if (tab != TabIndex.DEV) OneUiActionDivider(gap = IslandDividerGap)
+        OneUiActionButton(onClick = { openAlimScreen() }, size = IslandButton) {
             BadgedBox(badge = {
                 if (alimUnread > 0) {
                     Badge(
@@ -1354,19 +1492,18 @@ private fun TimeTableAppContent(
                 Icon(Icons.Default.Notifications, contentDescription = "알리미")
             }
         }
-        OneUiActionButton(onClick = { showingAccountSheet = true }) {
-            Icon(Icons.Default.AccountCircle, contentDescription = "계정")
-        }
-        OneUiActionButton(onClick = { showingSettings = true }) {
+        // 설정은 늘 맨 오른쪽.
+        OneUiActionButton(onClick = { settingsStartPage = null; showingSettings = true }, size = IslandButton) {
             Icon(Icons.Default.Settings, contentDescription = "설정")
         }
     }
-    // 알약에서 떠난 새로고침 아이콘 — 당긴 만큼 알약 자리에서 화면 가운데(펼친 헤더 아래)로 내려오고,
-    // 새로고침 중에는 거기서 돌다가 끝나면 다시 알약으로 돌아갑니다.
+    // 섬의 새로고침 아이콘 — 당긴 만큼 섬 맨 왼쪽 자리에서 화면 정중앙으로 내려오고,
+    // 새로고침 중에는 거기서 돌다가 끝나면 다시 섬으로 올라갑니다.
     if (refreshTravel > 0.005f) {
         val density = LocalDensity.current
         val statusTop = WindowInsets.statusBars.getTop(density)
-        val targetX = rootSize.width / 2f
+        // 섬이 새로고침을 화면 가운데에 두므로 제자리에서 곧게 — 좁은 폰에서 섬이 물러났어도 비스듬히 내려오지 않게 같은 x.
+        val targetX = refreshIconOrigin.x
         val targetY = statusTop + with(density) { (OneUiCompactBarHeight + OneUiHeaderExpandedExtra + 28.dp).toPx() }
         val cx = refreshIconOrigin.x + (targetX - refreshIconOrigin.x) * refreshTravel
         val cy = refreshIconOrigin.y + (targetY - refreshIconOrigin.y) * refreshTravel
@@ -1382,7 +1519,7 @@ private fun TimeTableAppContent(
                 .graphicsLayer {
                     translationX = cx - halfPx
                     translationY = cy - halfPx
-                    // 알약 자리에선 투명 배경, 내려올수록 글래스 원이 드러납니다.
+                    // 섬 자리에선 투명 배경, 내려올수록 글래스 원이 드러납니다.
                     alpha = 1f
                 }
                 .size(40.dp)
@@ -1419,6 +1556,9 @@ private fun TimeTableAppContent(
     if (showingAccountSheet) {
         HanaAccountDialog(onDismiss = { showingAccountSheet = false })
     }
+    // 홈 헤더의 해 — 서울 날씨. 귀가 기간이면 귀교 시각까지, 아니면 받은 예보 끝까지.
+    if (showingWeather) SeoulWeatherScreen(until = homeStayExtras?.backAt, onDismiss = { showingWeather = false })
+    outingQr?.let { OutingQrDialog(it, onDismiss = { outingQr = null }) }
 
     tourKind?.let { kind ->
         OnboardingTour(
@@ -1484,6 +1624,8 @@ private fun TimeTableAppContent(
             },
             onMarkAllRead = {
                 AlimReadStore.markRead(context, alimList.map { it.id })
+                // 포털에도 모두 읽음으로.
+                scope.launch { HanaAcademicApi.markAllAlimRead(context) }
                 alimList = alimList.map { it.copy(read = true) }
                 alimUnread = 0
             },
@@ -1521,6 +1663,14 @@ private fun TimeTableAppContent(
             onDismiss = { seatService = null },
             // 자리를 잡거나 취소하면 오늘·주·위젯의 면학 위치를 바로 새로 받습니다.
             onChanged = { scope.launch { syncFromHana() } },
+        )
+    }
+
+    if (showingPortalSearch) {
+        PortalSearchScreen(
+            onDismiss = { showingPortalSearch = false },
+            // 검색 화면은 그대로 두고 그 위에 글을 엽니다 — 닫으면 결과 목록으로 돌아옵니다.
+            onOpenPost = { url, title -> boardPost = url to title },
         )
     }
 
@@ -1638,7 +1788,8 @@ private fun TimeTableAppContent(
             },
             updateAvailable = updateAvailable,
             onOpenAppInfo = { showingAppInfo = true },
-            onDismiss = { showingSettings = false },
+            onDismiss = { showingSettings = false; settingsStartPage = null },
+            initialPage = settingsStartPage,
         )
     }
 
@@ -1721,6 +1872,8 @@ private fun SettingsScreen(
     updateAvailable: Boolean,
     onOpenAppInfo: () -> Unit,
     onDismiss: () -> Unit,
+    /** 헤더 버튼에서 바로 열 세부 페이지(급식 알레르기·알림 등) — null 이면 분류 목록부터. */
+    initialPage: SettingsPage? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1729,7 +1882,7 @@ private fun SettingsScreen(
     val exactAlarmGranted = ExactAlarmPermission.isGranted(context)
 
     // 첫 화면은 분류만 보여 주고(삼성 설정처럼), 누르면 그 분류의 세부 화면이 위에 열립니다.
-    var page by remember { mutableStateOf<SettingsPage?>(null) }
+    var page by remember { mutableStateOf(initialPage) }
     val liveOnNow = LiveActivity.isEnabled(context)
     val boardNotifyCount = BoardNotifier.enabledCategories(context).size
     val aiSummaryOn = PostSummarizer.isEnabled(context)
@@ -1810,7 +1963,8 @@ private fun SettingsScreen(
     }
 
     page?.let { current ->
-        OneUiFullScreen(title = current.title, onDismiss = { page = null }) { toolbar ->
+        // 헤더 버튼으로 이 페이지를 바로 열었으면 닫을 때 설정 목록이 아니라 원래 탭으로 돌아갑니다.
+        OneUiFullScreen(title = current.title, onDismiss = { if (current == initialPage) onDismiss() else page = null }) { toolbar ->
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -2172,6 +2326,11 @@ private fun allergySummary(codes: Set<Int>): String {
  * 하단 내비게이션 — 화면 가장자리와 여백을 두고 뜬 알약 모양 바. 선택된 탭의 아이콘만
  * 바 위로 살짝 올라온 동그란 배지로 떠오르고, 나머지는 옅은 색 아이콘+라벨로 가라앉습니다.
  */
+/** 헤더 버튼 섬의 버튼 크기와 섬 안쪽 여백(OneUiActionPill 의 Row 패딩) — 새로고침을 화면 정중앙에 놓는 계산에 씁니다. */
+private val IslandButton = 38.dp
+private val IslandPadding = 4.dp
+private val IslandDividerGap = 3.dp
+
 /** 하단 바 자체 높이와 화면 가장자리 여백 — 콘텐츠 하단 여백 계산에 씁니다. 시각 값은 바꾸지 않습니다. */
 private val AppNavBarHeight = 64.dp
 private val AppNavBarMargin = 10.dp
@@ -2506,10 +2665,7 @@ private fun MealTab(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 일간 / 주간 — 둘 중 하나가 항상 켜져 있어 전환 버튼임이 드러납니다.
-                OneUiChip(selected = !weekMode, onClick = { if (weekMode) onToggleWeek() }, label = "일간 보기")
-                Spacer(Modifier.width(8.dp))
-                OneUiChip(selected = weekMode, onClick = { if (!weekMode) onToggleWeek() }, label = "주간 보기")
+                // 일간·주간 전환은 헤더 버튼(달력)으로 옮겼습니다 — 여기엔 불러오는 중 표시만.
                 Spacer(Modifier.weight(1f))
                 if (isLoading) {
                     OneUiLoading(size = 18.dp, stroke = 2.dp)
