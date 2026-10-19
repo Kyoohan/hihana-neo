@@ -20,14 +20,21 @@ import java.util.Locale
 
 // MARK: - 모델
 
-/** 알리미 한 건 — [id] 는 att_idx, [content] 는 HTML 디코드·태그 제거를 마친 본문입니다. */
+/**
+ * 알리미 한 건 — [id] 는 att_idx, [content] 는 HTML 디코드·태그 제거를 마친 본문입니다.
+ * [aimIdx] 는 받은 사람별 번호(aim_idx) — 포털의 읽음 처리·화면 선택(?aimIdx=)은 att_idx 가 아니라 이 번호를 씁니다.
+ */
 data class HanaAlim(
     val id: String,
     val content: String,
     val writer: String?,
     val date: String?,
     val read: Boolean,
-)
+    val aimIdx: String? = null,
+) {
+    /** 포털에 보낼 번호 — aim_idx, 없으면(옛 캐시) att_idx. */
+    val portalIdx: String get() = aimIdx ?: id
+}
 
 /**
  * 학사일정 한 건. [date] 는 더 이상 응답에서 추측하지 않습니다 — 하루씩 조회하면서
@@ -162,14 +169,15 @@ object HanaAcademicApi {
 
     /**
      * 알리미 읽음을 포털에도 기록 — 포털 알리미 화면(received.do)이 항목을 열 때 보내는 요청과 같습니다.
-     * POST /main/alim/alim-target-view.json  aimIdxs=<att_idx>(여러 개) → { result, unreadCount }.
+     * POST /main/alim/alim-target-view.json  aimIdxs=<aim_idx>(여러 개) → { result, unreadCount }.
+     * 번호는 [HanaAlim.portalIdx](aim_idx) 여야 합니다 — 예전엔 att_idx 를 보내 포털에선 계속 안 읽음이었습니다.
      * 앱 안 읽음 표시는 따로(AlimReadStore) 남기므로 실패해도 화면은 읽음으로 둡니다.
      */
-    suspend fun markAlimRead(context: Context, ids: List<String>): Boolean {
-        if (ids.isEmpty()) return true
+    suspend fun markAlimRead(context: Context, aimIdxs: List<String>): Boolean {
+        if (aimIdxs.isEmpty()) return true
         return runCatching {
             HanaPortalClient.get().authenticatedJson(
-                context, "/main/alim/alim-target-view.json", ids.map { "aimIdxs" to it },
+                context, "/main/alim/alim-target-view.json", aimIdxs.map { "aimIdxs" to it },
                 referer = "https://hh.hana.hs.kr/main/mypage_alert/received.do",
             ).optString("result") == "success"
         }.getOrDefault(false)
@@ -200,6 +208,7 @@ object HanaAcademicApi {
                 writer = row.optStr("send_mem_name") ?: row.optStr("writer"),
                 date = row.optStr("display_inputdate") ?: row.optStr("inputdate"),
                 read = listOf("readYn", "ait_read_yn", "ait_vyn").any { row.optStr(it) == "Y" },
+                aimIdx = row.opt("aim_idx")?.toString()?.takeIf { it.isNotBlank() && it != "null" },
             )
         }
     }
@@ -212,6 +221,18 @@ object HanaAcademicApi {
      * 즉시 중단하고 그대로 던집니다. 그 외 오류는 하루라도 성공하면 부분 결과를 돌려줍니다.
      */
     suspend fun fetchSchedule(context: Context, start: LocalDate, end: LocalDate): List<HanaScheduleEntry> {
+        val rememberedBefore = ScheduleVariantStore.get(context, scheduleVariants.size)
+        val first = fetchScheduleRange(context, start, end)
+        // 기억해 둔 요청 형식이 2주 내내 빈 응답만 주면(학생 필터 형식처럼 응답 모양은 맞는데 일정이 안 오는 형식을
+        // 한 번 기억하면 그 기기에서는 학사일정·귀가 기간이 계속 비었습니다) 기억을 지우고 형식을 처음부터 다시 찾습니다.
+        if (first.isEmpty() && rememberedBefore != null) {
+            ScheduleVariantStore.clear(context)
+            return fetchScheduleRange(context, start, end)
+        }
+        return first
+    }
+
+    private suspend fun fetchScheduleRange(context: Context, start: LocalDate, end: LocalDate): List<HanaScheduleEntry> {
         val entries = mutableListOf<HanaScheduleEntry>()
         var firstError: Exception? = null
         var anySuccess = false
@@ -392,8 +413,9 @@ object HanaAcademicApi {
             }
         }
 
+        // 모든 형식이 빈 응답 — 그날 일정이 없는 것일 수 있으니 형식을 기억하지 않습니다(빈 응답만 보고 기억하면
+        // 일정이 오지 않는 형식이 굳어 버립니다). 일정이 실제로 온 형식만 위에서 기억합니다.
         firstValid?.let { valid ->
-            ScheduleVariantStore.set(context, firstValidIndex)
             val variant = scheduleVariants[firstValidIndex]
             return mergeMissingSupervision(context, date, valid.entries, variant, diagnostics)
         }
@@ -552,6 +574,10 @@ object HanaAcademicRepository {
             HanaAcademicApi.fetchBoard(context, category)
         }
 
+    /** 캐시에 있는 게시판 목록만(네트워크 없이) — 게시판 선택기의 새 글 수 표시용. 한 번도 안 받은 게시판은 null. */
+    suspend fun cachedBoard(context: Context, category: BoardCategory): List<HanaBoardPost>? =
+        PlanStore.cachedJson(context, "academic_board_${category.bmtIdx}")?.let { decodeBoard(it.value) }
+
     /**
      * 학사일정은 다른 캐시와 달리 빈 응답으로 기존 캐시를 덮어쓰지 않습니다. 포털 파라미터가
      * 안 맞아 결과가 비었을 때 이전 일정이라도 남겨 두고, UI 가 '다시 시도'를 띄울 수 있게 합니다.
@@ -652,6 +678,7 @@ object HanaAcademicRepository {
                     put("writer", alim.writer)
                     put("date", alim.date)
                     put("read", alim.read)
+                    put("aimIdx", alim.aimIdx)
                 },
             )
         }
@@ -669,6 +696,7 @@ object HanaAcademicRepository {
                     writer = row.optString("writer").takeIf { it.isNotEmpty() && it != "null" },
                     date = row.optString("date").takeIf { it.isNotEmpty() && it != "null" },
                     read = row.optBoolean("read"),
+                    aimIdx = row.optString("aimIdx").takeIf { it.isNotEmpty() && it != "null" },
                 )
             }
         }
@@ -780,6 +808,10 @@ private object ScheduleVariantStore {
     fun set(context: Context, index: Int) {
         prefs(context).edit().putInt(KEY_VARIANT, index).apply()
     }
+
+    fun clear(context: Context) {
+        prefs(context).edit().remove(KEY_VARIANT).apply()
+    }
 }
 
 // MARK: - 알림 (알리미)
@@ -821,6 +853,52 @@ object AlimReadStore {
         if (ids.isEmpty()) return
         val merged = (read(context) + ids).toList().takeLast(MAX_KEEP).toSet()
         prefs(context).edit().putStringSet(KEY_IDS, merged).apply()
+    }
+}
+
+/**
+ * 게시글을 앱에서 읽었는지 — 'N' 표시와 세그먼트의 안 읽은 수는 포털의 new_yn 이 아니라 이 저장소를 기준으로 합니다.
+ * 게시판마다 처음 한 번은 포털이 새 글로 표시하지 않는(오래된) 글을 읽은 것으로 심어, 설치 전 글이 전부 안 읽음으로
+ * 쏟아지지 않게 합니다. 바뀔 때마다 [revision] 이 올라 화면이 따라 그립니다.
+ */
+object BoardReadStore {
+
+    private const val PREFS_NAME = "board_read"
+    private const val KEY_KEYS = "keys"
+    private const val MAX_KEEP = 3000
+
+    private val revisionState = androidx.compose.runtime.mutableIntStateOf(0)
+    /** 읽음 상태가 바뀔 때마다 1 씩 — 화면이 이 값을 읽으면 바뀔 때 따라 그립니다. */
+    val revision: Int get() = revisionState.intValue
+    private var cache: MutableSet<String>? = null
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private fun keys(context: Context): MutableSet<String> =
+        cache ?: prefs(context).getStringSet(KEY_KEYS, emptySet()).orEmpty().toMutableSet().also { cache = it }
+
+    fun key(post: HanaBoardPost): String = "${post.bmtIdx}:${post.bdIdx}"
+
+    fun isRead(context: Context, post: HanaBoardPost): Boolean = key(post) in keys(context)
+
+    fun unreadCount(context: Context, posts: List<HanaBoardPost>): Int = posts.count { !isRead(context, it) }
+
+    fun markRead(context: Context, posts: Collection<HanaBoardPost>) {
+        if (posts.isEmpty()) return
+        val set = keys(context)
+        val before = set.size
+        posts.forEach { set += key(it) }
+        if (set.size == before) return
+        val trimmed = if (set.size > MAX_KEEP) set.toList().takeLast(MAX_KEEP).toMutableSet().also { cache = it } else set
+        prefs(context).edit().putStringSet(KEY_KEYS, trimmed.toSet()).apply()
+        revisionState.intValue++
+    }
+
+    /** 그 게시판을 처음 볼 때 한 번 — 포털이 새 글로 표시하지 않는 글은 읽은 것으로. */
+    fun seedIfNeeded(context: Context, category: BoardCategory, posts: List<HanaBoardPost>) {
+        val key = "seeded_${category.bmtIdx}"
+        if (posts.isEmpty() || prefs(context).getBoolean(key, false)) return
+        markRead(context, posts.filter { !it.isNew })
+        prefs(context).edit().putBoolean(key, true).apply()
     }
 }
 

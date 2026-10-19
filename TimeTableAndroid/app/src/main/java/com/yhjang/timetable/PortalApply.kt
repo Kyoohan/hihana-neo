@@ -1,5 +1,8 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -382,7 +385,7 @@ private fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
     )
     Spacer(Modifier.height(6.dp))
@@ -411,7 +414,7 @@ private fun InlineLoading(text: String) {
     Row(Modifier.padding(horizontal = OneUi.PagePadding, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         OneUiLoading(size = 16.dp, stroke = 2.dp)
         Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
     }
 }
 
@@ -447,7 +450,7 @@ internal fun ConfirmSendDialog(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             lines.forEach { (label, value) ->
                 Row {
-                    Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(72.dp))
+                    Text(label, style = MaterialTheme.typography.bodyMedium, color = onPageVariantColor(), modifier = Modifier.width(72.dp))
                     Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -552,24 +555,32 @@ fun ClassroomApplyScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
-            SectionLabel("건물")
-            if (buildings.isEmpty() && error == null) InlineLoading("건물을 불러오는 중")
-            ChipFlow { buildings.forEach { b -> OneUiChip(selected = b == building, onClick = { building = b }, label = b.name) } }
+            // 선택 칩들은 사진 위에 바로 두지 않고 서리 카드 안에.
+            OneUiFormCard {
+                SectionLabel("건물")
+                if (buildings.isEmpty() && error == null) InlineLoading("건물을 불러오는 중")
+                ChipFlow { buildings.forEach { b -> OneUiChip(selected = b == building, onClick = { building = b }, label = b.name) } }
+            }
+            Spacer(Modifier.height(12.dp))
 
             if (building != null) {
-                SectionLabel("교실")
-                val list = rooms
-                when {
-                    list == null -> InlineLoading("교실을 불러오는 중")
-                    list.isEmpty() -> ErrorLine("이 건물에 신청할 수 있는 교실이 없습니다")
-                    else -> ChipFlow { list.forEach { r -> OneUiChip(selected = r == room, onClick = { room = r }, label = r.name) } }
+                OneUiFormCard {
+                    SectionLabel("교실")
+                    val list = rooms
+                    when {
+                        list == null -> InlineLoading("교실을 불러오는 중")
+                        list.isEmpty() -> ErrorLine("이 건물에 신청할 수 있는 교실이 없습니다")
+                        else -> ChipFlow { list.forEach { r -> OneUiChip(selected = r == room, onClick = { room = r }, label = r.name) } }
+                    }
                 }
+                Spacer(Modifier.height(12.dp))
             }
 
             if (room != null) {
                 if (d == null) {
                     InlineLoading("교실 정보를 불러오는 중")
                 } else {
+                    OneUiFormCard {
                     Row(Modifier.padding(horizontal = OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
                         OneUiBadge(
                             d.approvalLabel ?: room?.approvalLabel ?: "승인 방식",
@@ -592,17 +603,19 @@ fun ClassroomApplyScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
                         if (d.teachers.isEmpty()) ErrorLine("승인 교사가 없습니다 — 포털에서 신청해 주세요")
                         else ChipFlow { d.teachers.forEach { t -> OneUiChip(selected = t == teacher, onClick = { teacher = t }, label = t.name) } }
                     }
+                    }
+                    Spacer(Modifier.height(12.dp))
 
                     if (d.needsAgreement) {
                         OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
                             Text("주의사항", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             d.notice?.let {
                                 Spacer(Modifier.height(6.dp))
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                             }
                             d.procedure?.let {
                                 Spacer(Modifier.height(6.dp))
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                             }
                             if (d.checks.isNotEmpty()) {
                                 Spacer(Modifier.height(8.dp))
@@ -650,12 +663,14 @@ fun ClassroomApplyScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
             when {
                 mineError != null -> ErrorLine(mineError!!)
                 list == null -> InlineLoading("불러오는 중")
-                list.isEmpty() -> Text(
-                    "오늘 신청한 교과교실이 없습니다",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = OneUi.PagePadding),
-                )
+                list.isEmpty() -> OneUiFormCard {
+                    Text(
+                        "오늘 신청한 교과교실이 없습니다",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = onPageVariantColor(),
+                        modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                    )
+                }
                 else -> OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
                     list.forEachIndexed { i, a ->
                         if (i > 0) OneUiDivider(startIndent = 0.dp)
@@ -669,7 +684,7 @@ fun ClassroomApplyScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
                                         a.reason,
                                     ).joinToString(" · "),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = onPageVariantColor(),
                                 )
                             }
                             if (a.cancellable) {
@@ -874,12 +889,14 @@ fun OutingApplyScreen(
                 form == null -> InlineLoading("신청 양식을 불러오는 중")
                 else -> form?.notice?.let { notice ->
                     OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
-                        Text(notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(notice, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                     }
                     Spacer(Modifier.height(16.dp))
                 }
             }
 
+            // 조작부는 사진 위에 바로 두지 않고 서리 카드 안에 — 어느 색으로 맞춰도 사진 위에선 글자가 묻혔습니다.
+            OneUiFormCard {
             DateTimeRow("출발", outDate, outTime, today, onDate = { picking = "outDate" }, onTime = { picking = "outTime" })
             DateTimeRow("복귀", backDate, backTime, today, onDate = { picking = "backDate" }, onTime = { picking = "backTime" })
 
@@ -900,7 +917,7 @@ fun OutingApplyScreen(
                     "신청 기한 ${deadline.monthValue}/${deadline.dayOfMonth}(${deadline.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)}) 09:00" +
                         if (late) " · 지났습니다, 서버가 거절할 수 있어요" else "",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (late) MaterialTheme.colorScheme.error else onPageVariantColor(),
                     modifier = Modifier.padding(horizontal = OneUi.PagePadding, vertical = 4.dp),
                 )
             }
@@ -929,6 +946,8 @@ fun OutingApplyScreen(
                 )
                 Spacer(Modifier.height(16.dp))
             }
+            }
+            Spacer(Modifier.height(16.dp))
 
             OneUiButton(
                 text = if (edit != null) "수정하기" else "신청하기",

@@ -1,5 +1,10 @@
 package com.yhjang.timetable
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import com.yhjang.timetable.ui.onPageVariantColor
+import androidx.compose.material3.LocalContentColor
 import android.graphics.Bitmap
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -17,6 +22,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.view.ViewGroup
 import com.yhjang.timetable.ui.OneUi
@@ -93,7 +101,8 @@ private fun scheduleLabel(code: String): String = when (code) {
     else -> "일정"
 }
 
-internal fun alimUrl(id: String): String = "https://hh.hana.hs.kr/main/mypage_alert/received.do?aimIdx=$id"
+/** 포털 알리미 화면에서 한 건을 미리 골라 여는 주소 — 번호는 [HanaAlim.portalIdx](aim_idx). */
+internal fun alimUrl(aimIdx: String): String = "https://hh.hana.hs.kr/main/mypage_alert/received.do?aimIdx=$aimIdx"
 
 internal fun shortDate(date: LocalDate): String {
     val dow = date.dayOfWeek.getDisplayName(JavaTextStyle.SHORT, Locale.KOREAN)
@@ -139,13 +148,30 @@ fun AcademicTab(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     /** 헤더가 접혀 있는 만큼(dp) — "다 들어가는지"는 헤더가 펼쳐진 상태의 높이로 판단해야 합니다. */
-    headerCollapsedBy: Dp = 0.dp,
+    /** 람다인 이유: 스크롤 프레임마다 바뀌는 값이라, 호출부가 아닌 여기(높이 계산 범위)만 다시 구성되게. */
+    headerCollapsedBy: () -> Dp = { 0.dp },
     onFitsWithoutScroll: () -> Unit = {},
     /** 목록 맨 위에 얹을 내용(예: 일정 탭의 시간표/학사일정 칩). */
     topContent: (@Composable () -> Unit)? = null,
     /** 신청·내역 블록 순서 편집 중 (헤더의 연필 아이콘). */
     applyEditing: Boolean = false,
+    /** 큰 화면에서 오른쪽 칸에 열려 있는 글 — 목록에서 그 줄을 표시합니다. */
+    selectedPostUrl: String? = null,
+    /** 큰 화면 신청·내역 — 내역을 오른쪽 칸에 (ApplyHistorySection 참고). */
+    onShowHistory: ((ApplyService) -> Unit)? = null,
+    historyShown: ApplyService? = null,
+    /** 바뀌면 맨 위로 — 탭에 다시 들어올 때(페이지를 새로 만들지 않고 스크롤만 되돌림). */
+    resetTick: Int = 0,
+    /** 게시판별 안 읽은 글 수(세그먼트 배지) 와 '모두 읽음'. */
+    boardUnreadCounts: Map<BoardCategory, Int> = emptyMap(),
+    onMarkAllBoardsRead: () -> Unit = {},
 ) {
+    val listState = rememberLazyListState()
+    val applyScroll = rememberScrollState()
+    LaunchedEffect(resetTick) {
+        listState.scrollToItem(0)
+        applyScroll.scrollTo(0)
+    }
     // 신청·내역은 카드 몇 장뿐이라 시간표 탭처럼 화면에 다 들어가면 스크롤(과 헤더 접힘)을 두지 않습니다 —
     // 내용 높이를 재 보고 넘칠 때만 스크롤을 켭니다. 높이는 항상 스크롤 컨테이너 안에서(제한 없이) 재야 합니다:
     // 예전엔 안 넘친다고 보고 스크롤 없는 Column 에 넣어 재서 높이가 화면 크기로 잘려 보고됐고, 그래서 마지막
@@ -154,26 +180,26 @@ fun AcademicTab(
         BoxWithConstraints(modifier) {
             var contentHeightPx by remember { mutableIntStateOf(0) }
             val availablePx = with(LocalDensity.current) {
-                (maxHeight - headerCollapsedBy - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding()).roundToPx()
+                (maxHeight - headerCollapsedBy() - contentPadding.calculateTopPadding() - contentPadding.calculateBottomPadding()).roundToPx()
             }
             val fits = contentHeightPx in 1..availablePx
             LaunchedEffect(fits) { if (fits) onFitsWithoutScroll() }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState(), enabled = !fits)
+                    .verticalScroll(applyScroll, enabled = !fits)
                     .padding(contentPadding),
             ) {
                 Column(Modifier.fillMaxWidth().onSizeChanged { contentHeightPx = it.height }) {
                     topContent?.invoke()
-                    ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenSeats = onOpenSeats, editing = applyEditing)
+                    ApplyHistorySection(onOpenWeb = onOpenWeb, onOpenSeats = onOpenSeats, editing = applyEditing, onShowHistory = onShowHistory, historyShown = historyShown)
                 }
             }
         }
         return
     }
 
-    LazyColumn(modifier = modifier, contentPadding = contentPadding) {
+    LazyColumn(state = listState, modifier = modifier, contentPadding = contentPadding) {
         topContent?.let { content -> item { content() } }
 
         if (subTab == 0) {
@@ -208,18 +234,14 @@ fun AcademicTab(
             }
         } else if (subTab == 1) {
             val category = BoardCategory.entries[boardCategoryIndex]
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    BoardCategory.entries.forEachIndexed { index, item ->
-                        OneUiChip(
-                            selected = index == boardCategoryIndex,
-                            onClick = { onBoardCategoryChange(index) },
-                            label = item.label,
-                        )
-                    }
+            item(key = "board-picker") {
+                BoardSegmentBar(boardCategoryIndex, boardUnreadCounts, onBoardCategoryChange, Modifier.padding(top = 2.dp))
+                // 안 읽은 글이 있으면 그 아래 오른쪽에 '모두 읽음' — 삼성 이메일 목록 머리와 같은 자리.
+                val totalUnread = boardUnreadCounts.values.sum()
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(1f))
+                    if (totalUnread > 0) OneUiTextButton(text = "모두 읽음", onClick = onMarkAllBoardsRead, color = LocalContentColor.current)
+                    else Spacer(Modifier.height(8.dp))
                 }
             }
 
@@ -233,7 +255,7 @@ fun AcademicTab(
                 }
                 if (boardPosts.isNotEmpty()) {
                     item(key = "board-group") {
-                        GroupedContainer(boardPosts) { post -> BoardRow(post, onOpenPost) }
+                        GroupedContainer(boardPosts) { post -> BoardRow(post, onOpenPost, selected = post.url == selectedPostUrl) }
                     }
                 }
             }
@@ -298,7 +320,7 @@ private fun ScheduleRow(entry: HanaScheduleEntry, times: List<String> = listOfNo
                 Text(
                     meta.joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                 )
             }
         }
@@ -327,10 +349,11 @@ internal fun scheduleTitle(entry: HanaScheduleEntry): String {
 }
 
 @Composable
-private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
+private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit, selected: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
             .clickable { onOpenPost(post) }
             .padding(horizontal = OneUi.RowPadding, vertical = 14.dp),
     ) {
@@ -343,7 +366,10 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (post.isNew) {
+            // 'N' 은 포털의 새 글 표시가 아니라 "내가 아직 안 연 글" — revision 을 읽어 읽음 처리 즉시 사라집니다.
+            val context = LocalContext.current
+            val unread = remember(post, BoardReadStore.revision) { !BoardReadStore.isRead(context, post) }
+            if (unread) {
                 Spacer(Modifier.width(6.dp))
                 Text("N", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
             }
@@ -363,12 +389,25 @@ private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit) {
                 Spacer(Modifier.width(8.dp))
             }
             Text(
-                listOfNotNull(post.writer, post.date).joinToString(" · "),
+                listOfNotNull(post.writer, prettyPortalDate(post.date)).joinToString(" · "),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
             )
         }
     }
+}
+
+/**
+ * 포털이 주는 시각 문자열("2026-10-19 10:57:44.0", "2026-10-19")을 읽기 쉬운 꼴로 — 올해면 "10.19 10:57", 지난해면 "2025.10.19".
+ * 못 읽는 꼴은 그대로 돌려줍니다.
+ */
+internal fun prettyPortalDate(raw: String?): String? {
+    if (raw.isNullOrBlank()) return raw
+    val m = Regex("^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2}))?").find(raw.trim()) ?: return raw
+    val (y, mo, d, h, mi) = m.destructured
+    val thisYear = y.toInt() == PlanStore.today().year
+    val date = if (thisYear) "${mo.toInt()}.${d.toInt()}" else "$y.${mo.toInt()}.${d.toInt()}"
+    return if (h.isNotEmpty() && thisYear) "$date ${h.toInt()}:$mi" else date
 }
 
 /** 앱 내 웹뷰로 열 페이지 — 게시글·신청·내역 페이지가 공유합니다. */
@@ -391,7 +430,7 @@ private fun AcademicErrorBlock(error: String, onRetry: () -> Unit, onOpenAccount
         Text(
             if (error == ACADEMIC_NEEDS_LOGIN) "하이하나 계정을 등록하면 학사일정과 게시판을 볼 수 있습니다." else error,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         Spacer(Modifier.height(14.dp))
         if (error == ACADEMIC_NEEDS_LOGIN) {
@@ -414,7 +453,7 @@ private fun EmptyBlock(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = Modifier.padding(vertical = 32.dp),
     )
 }
@@ -426,13 +465,13 @@ private fun ScheduleEmptyBlock(onRetry: () -> Unit) {
         Text(
             "예정된 학사일정이 없습니다",
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         Spacer(Modifier.height(6.dp))
         Text(
             "학사일정이 계속 비어 있으면 다시 시도해 주세요.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         Spacer(Modifier.height(12.dp))
         OneUiButton(text = "다시 시도", onClick = onRetry, style = OneUiButtonStyle.Neutral)
@@ -450,9 +489,19 @@ fun AlimScreen(
     onMarkAllRead: () -> Unit,
     onOpenAccount: () -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * 큰 화면 두 칸 — 목록 | 원문. 항목을 누르면 [onOpenAlim] 대신 [onReadInPane](읽음 처리)만 부르고 원문은 오른쪽 칸에
+     * [detailUrl] 로 엽니다. null 이면 폰처럼 목록만.
+     */
+    detailUrl: ((HanaAlim) -> String)? = null,
+    onReadInPane: (HanaAlim) -> Unit = {},
+    /** 오른쪽 칸의 '하이하나에서 보기' — 앱 안 웹 화면으로 포털 알리미를 엽니다. */
+    onOpenBrowser: (String) -> Unit = {},
 ) {
     val hasUnread = alims.any { !it.read }
     val unreadCount = alims.count { !it.read }
+    val wide = detailUrl != null
+    var selected by remember { mutableStateOf<HanaAlim?>(null) }
     OneUiFullScreen(
         title = "알리미",
         subtitle = if (unreadCount > 0) "안 읽음 $unreadCount" else null,
@@ -460,7 +509,47 @@ fun AlimScreen(
         actions = {
             IconButton(onClick = onRetry) { Icon(Icons.Default.Refresh, contentDescription = "새로고침") }
         },
+        maxContentWidth = if (wide) 1400.dp else com.yhjang.timetable.ui.Adaptive.ReadingWidth,
     ) { toolbar ->
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.width(460.dp).fillMaxHeight()) {
+                    AlimListBody(alims, isLoading, error, onRetry, onOpenAccount, onMarkAllRead, hasUnread, toolbar, selectedId = selected?.id, compact = true) { alim ->
+                        selected = alim
+                        onReadInPane(alim)
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight().padding(top = toolbar.calculateTopPadding(), bottom = toolbar.calculateBottomPadding())) {
+                    val open = selected
+                    if (open == null) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("왼쪽에서 알림을 고르세요", style = MaterialTheme.typography.bodyLarge, color = onPageVariantColor())
+                        }
+                    } else key(open.id) {
+                        AlimDetailPane(open, onOpenPortal = { onOpenBrowser(detailUrl!!(open)) })
+                    }
+                }
+            }
+        } else {
+            AlimListBody(alims, isLoading, error, onRetry, onOpenAccount, onMarkAllRead, hasUnread, toolbar, selectedId = null, onOpenAlim = onOpenAlim)
+        }
+    }
+}
+
+@Composable
+private fun AlimListBody(
+    alims: List<HanaAlim>,
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onOpenAccount: () -> Unit,
+    onMarkAllRead: () -> Unit,
+    hasUnread: Boolean,
+    toolbar: PaddingValues,
+    selectedId: String?,
+    compact: Boolean = false,
+    onOpenAlim: (HanaAlim) -> Unit,
+) {
         val top = toolbar.calculateTopPadding()
         when {
             error != null -> Box(Modifier.padding(start = OneUi.PagePadding, end = OneUi.PagePadding, top = top)) {
@@ -484,19 +573,22 @@ fun AlimScreen(
                     }
                 }
                 item(key = "alim-group") {
-                    OneUiGroup(items = alims) { alim -> AlimRow(alim) { onOpenAlim(alim) } }
+                    OneUiGroup(items = alims) { alim ->
+                        // 두 칸이면 오른쪽에 전문이 있으니 목록은 세 줄까지만.
+                        AlimRow(alim, selected = alim.id == selectedId, maxLines = if (selectedId != null || compact) 3 else Int.MAX_VALUE) { onOpenAlim(alim) }
+                    }
                 }
             }
         }
-    }
 }
 
 @Composable
-private fun AlimRow(alim: HanaAlim, onClick: () -> Unit) {
+private fun AlimRow(alim: HanaAlim, selected: Boolean = false, maxLines: Int = Int.MAX_VALUE, onClick: () -> Unit) {
     val unread = !alim.read
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = OneUi.RowPadding, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -509,16 +601,18 @@ private fun AlimRow(alim: HanaAlim, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(
                 alim.content.ifEmpty { "(내용 없음)" },
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (unread) MaterialTheme.colorScheme.onSurface else onPageVariantColor(),
             )
-            val meta = listOfNotNull(alim.writer, alim.date).joinToString(" · ")
+            val meta = listOfNotNull(alim.writer, prettyPortalDate(alim.date)).joinToString(" · ")
             if (meta.isNotEmpty()) {
                 Text(
                     meta,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
@@ -537,6 +631,8 @@ fun BoardDetailScreen(
     onDismiss: () -> Unit,
     onOpenBrowser: () -> Unit,
     title: String = "게시글",
+    /** 큰 화면 두 칸의 오른쪽 칸에 그릴 때 — 전체 화면·뒤로 가기 없이 칸 안에. */
+    embedded: Boolean = false,
 ) {
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
@@ -556,9 +652,10 @@ fun BoardDetailScreen(
     // onPageFinished 의 url 파라미터와 이름이 겹치므로 원래 열려던 주소를 따로 잡아 둡니다.
     val targetUrl = url
 
-    BackHandler(onBack = onDismiss)
+    BackHandler(enabled = !embedded, onBack = onDismiss)
 
-    OneUiFullScreen(
+    PaneOrFullScreen(
+        embedded = embedded,
         title = title,
         onDismiss = onDismiss,
         actions = {
@@ -573,7 +670,7 @@ fun BoardDetailScreen(
                     Text(
                         "포털 로그인 세션이 만료됐거나 페이지가 웹뷰를 막고 있을 수 있습니다.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                     )
                     Spacer(Modifier.height(14.dp))
                     OneUiButton(text = "브라우저로 열기", onClick = onOpenBrowser)
@@ -660,6 +757,25 @@ fun BoardDetailScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+
+/** 큰 화면 알리미 오른쪽 칸 — 알림 전문과 보낸 사람·시각. 목록에 이미 전문이 있어 포털 페이지 대신 앱 화면으로 보여 줍니다. */
+@Composable
+private fun AlimDetailPane(alim: HanaAlim, onOpenPortal: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+        PaneTitle(
+            title = "알리미",
+            subtitle = listOfNotNull(alim.writer, prettyPortalDate(alim.date)).joinToString(" · ").ifEmpty { null },
+            actions = { OneUiTextButton(text = "하이하나에서 보기", onClick = onOpenPortal, color = MaterialTheme.colorScheme.primary) },
+        )
+        OneUiCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Text(
+                alim.content.ifEmpty { "(내용 없음)" },
+                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 26.sp),
+            )
         }
     }
 }

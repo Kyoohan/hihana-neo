@@ -1,5 +1,11 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -280,7 +286,7 @@ private fun HistoryStatus(loading: Boolean, error: String?, empty: Boolean, empt
         error != null -> OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
             Text("불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(error, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
         }
         loading && empty -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
             OneUiLoading(size = 18.dp, stroke = 2.dp)
@@ -290,7 +296,7 @@ private fun HistoryStatus(loading: Boolean, error: String?, empty: Boolean, empt
         empty -> Text(
             emptyText,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
             modifier = Modifier.padding(horizontal = OneUi.PagePadding, vertical = 8.dp),
         )
     }
@@ -324,7 +330,7 @@ private enum class HistoryRange(val label: String, val days: Long) { WEEK("1주"
  * 앞으로의 신청(내일 타임 등)도 보이도록 끝 날짜는 오늘 + 7일입니다.
  */
 @Composable
-fun SeatHistoryScreen(place: SeatHistoryPlace, onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
+fun SeatHistoryScreen(place: SeatHistoryPlace, onDismiss: () -> Unit, onOpenPortal: () -> Unit, embedded: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val today = remember { PlanStore.today() }
@@ -356,42 +362,51 @@ fun SeatHistoryScreen(place: SeatHistoryPlace, onDismiss: () -> Unit, onOpenPort
         load(range, 1)
     }
 
-    OneUiFullScreen(
+    PaneOrFullScreen(
+        embedded = embedded,
         title = "${place.label} 내역",
         // 기간은 칩, 건수는 요약 줄("출석 확인 N건 · 전체 M건")에 있어 부제는 두지 않습니다.
         subtitle = null,
         onDismiss = onDismiss,
         actions = { OpenInPortalButton(onOpenPortal) },
     ) { toolbar ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
+        // 3개월이면 300건 — 한 Column 에 다 그리면 스크롤이 끊겨, 날짜 묶음마다 item 으로 두어 보이는 날만 그립니다.
+        val days = remember(rows) {
+            rows.groupBy { it.date }.toSortedMap(compareByDescending<LocalDate?> { it ?: LocalDate.MIN }).toList()
+        }
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
-            HistoryChipRow {
-                HistoryRange.entries.forEach { r -> OneUiChip(selected = r == range, onClick = { range = r }, label = r.label) }
+            item(key = "chips") {
+                Column {
+                    OneUiFormCard {
+                        HistoryChipRow {
+                            HistoryRange.entries.forEach { r -> OneUiChip(selected = r == range, onClick = { range = r }, label = r.label) }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    HistoryStatus(loading, error, rows.isEmpty(), "이 기간에 ${place.label} 신청이 없습니다")
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            HistoryStatus(loading, error, rows.isEmpty(), "이 기간에 ${place.label} 신청이 없습니다")
             if (rows.isNotEmpty()) {
-                // 한 번에 300건까지 받아 3개월도 보통 한 번에 다 옵니다 — 그래서 전체 건수와 맞습니다.
-                val checked = rows.count { it.checkedAt != null }
-                Text(
-                    "출석 확인 ${checked}건 · 전체 ${total}건",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = OneUi.PagePadding),
-                )
-                Spacer(Modifier.height(10.dp))
-                rows.groupBy { it.date }
-                    .toSortedMap(compareByDescending<LocalDate?> { it ?: LocalDate.MIN })
-                    .forEach { (date, dayRows) ->
+                item(key = "summary") {
+                    // 한 번에 300건까지 받아 3개월도 보통 한 번에 다 옵니다 — 그래서 전체 건수와 맞습니다.
+                    val checked = rows.count { it.checkedAt != null }
+                    Text(
+                        "출석 확인 ${checked}건 · 전체 ${total}건",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = onPageVariantColor(),
+                        modifier = Modifier.padding(horizontal = OneUi.PagePadding).padding(bottom = 10.dp),
+                    )
+                }
+                items(days, key = { it.first?.toString() ?: "none" }) { (date, dayRows) ->
+                    Column(Modifier.padding(bottom = 14.dp)) {
                         Text(
                             date?.dayLabel(today) ?: "날짜 없음",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (date == today) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (date == today) MaterialTheme.colorScheme.primary else onPageVariantColor(),
                             modifier = Modifier.padding(start = OneUi.PagePadding + 4.dp, end = OneUi.PagePadding, bottom = 6.dp),
                         )
                         OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
@@ -400,9 +415,9 @@ fun SeatHistoryScreen(place: SeatHistoryPlace, onDismiss: () -> Unit, onOpenPort
                                 SeatHistoryRowView(row)
                             }
                         }
-                        Spacer(Modifier.height(14.dp))
                     }
-                if (rows.size < total) MoreButton(loading, total - rows.size) { scope.launch { load(range, page + 1) } }
+                }
+                if (rows.size < total) item(key = "more") { MoreButton(loading, total - rows.size) { scope.launch { load(range, page + 1) } } }
             }
         }
     }
@@ -414,7 +429,7 @@ private fun SeatHistoryRowView(row: SeatHistoryRow) {
         Column(Modifier.weight(1f)) {
             Text(row.slot, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             row.area?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
             }
         }
         Column(horizontalAlignment = Alignment.End) {
@@ -438,7 +453,7 @@ private fun SeatHistoryRowView(row: SeatHistoryRow) {
  * 수정·취소는 확인 창에서 한 번 더 눌러야 보냅니다.
  */
 @Composable
-fun OutingHistoryScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
+fun OutingHistoryScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit, embedded: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var filter by remember { mutableStateOf(OutingFilter.ALL) }
@@ -479,25 +494,30 @@ fun OutingHistoryScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
         load(filter, 1)
     }
 
-    OneUiFullScreen(
+    PaneOrFullScreen(
+        embedded = embedded,
         title = "외출·외박 내역",
         // 상태는 칩이 보여 줘 건수만.
         subtitle = if (error == null && (rows.isNotEmpty() || !loading)) "${total}건" else null,
         onDismiss = onDismiss,
         actions = { OpenInPortalButton(onOpenPortal) },
     ) { toolbar ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
-            HistoryChipRow {
-                OutingFilter.entries.forEach { f -> OneUiChip(selected = f == filter, onClick = { filter = f }, label = f.label) }
+            item(key = "chips") {
+                Column {
+                    OneUiFormCard {
+                        HistoryChipRow {
+                            OutingFilter.entries.forEach { f -> OneUiChip(selected = f == filter, onClick = { filter = f }, label = f.label) }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    HistoryStatus(loading, error, rows.isEmpty(), if (filter == OutingFilter.ALL) "외출·외박 신청이 없습니다" else "${filter.label} 상태인 신청이 없습니다")
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            HistoryStatus(loading, error, rows.isEmpty(), if (filter == OutingFilter.ALL) "외출·외박 신청이 없습니다" else "${filter.label} 상태인 신청이 없습니다")
-            rows.forEach { row ->
+            items(rows, key = { it.osmNo }) { row ->
                 val open = expanded == row.osmNo
                 OutingCard(
                     row = row,
@@ -527,7 +547,7 @@ fun OutingHistoryScreen(onDismiss: () -> Unit, onOpenPortal: () -> Unit) {
                 )
                 Spacer(Modifier.height(12.dp))
             }
-            if (rows.isNotEmpty() && rows.size < total) MoreButton(loading, total - rows.size) { scope.launch { load(filter, page + 1) } }
+            if (rows.isNotEmpty() && rows.size < total) item(key = "more") { MoreButton(loading, total - rows.size) { scope.launch { load(filter, page + 1) } } }
         }
     }
 
@@ -621,7 +641,7 @@ internal fun OutingQrDialog(row: OutingRow, onDismiss: () -> Unit) {
             Text(
                 listOfNotNull(row.plannedOut?.shortLabel(), row.plannedBack?.shortLabel()).joinToString("  →  "),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
             )
         }
     }
@@ -648,7 +668,7 @@ private fun OutingCard(
     onCancel: () -> Unit,
     onClick: () -> Unit,
 ) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val muted = onPageVariantColor()
     OneUiCard(
         Modifier
             .padding(horizontal = OneUi.PagePadding)
@@ -732,7 +752,7 @@ private fun OutingCard(
 @Composable
 private fun DetailLine(label: String, value: String?) {
     Row {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(72.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor(), modifier = Modifier.width(72.dp))
         Text(value ?: "-", style = MaterialTheme.typography.bodySmall)
     }
 }

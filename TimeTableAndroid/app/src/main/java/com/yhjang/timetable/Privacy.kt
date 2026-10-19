@@ -128,7 +128,7 @@ private val AES_USERS = listOf(
 @Composable
 internal fun PrivacyScreen(onDismiss: () -> Unit) {
     BackHandler(onBack = onDismiss)
-    OneUiFullScreen(title = "개인정보 보호", onDismiss = onDismiss) { toolbar ->
+    OneUiFullScreen(title = "개인정보 보호", onDismiss = onDismiss, frosted = true) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

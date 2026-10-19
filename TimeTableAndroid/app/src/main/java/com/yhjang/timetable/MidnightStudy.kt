@@ -1,5 +1,6 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -441,7 +442,7 @@ internal fun MidnightStudyCard() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OneUiLoading(size = 16.dp, stroke = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text("불러오는 중", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("불러오는 중", style = MaterialTheme.typography.bodyMedium, color = onPageVariantColor())
                 }
             }
             is MidnightHistoryState.Loaded -> {
@@ -603,7 +604,7 @@ fun MidnightStudyScreen(onDismiss: () -> Unit) {
                 error != null && d == null -> OneUiCard(Modifier.fillMaxWidth()) {
                     Text("불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(error!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(error!!, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                 }
                 d == null -> Row(verticalAlignment = Alignment.CenterVertically) {
                     OneUiLoading(size = 18.dp, stroke = 2.dp)
@@ -613,7 +614,7 @@ fun MidnightStudyScreen(onDismiss: () -> Unit) {
                 d.roomUpdateRequired -> OneUiCard(Modifier.fillMaxWidth()) {
                     Text("호실 정보를 새로 입력해야 합니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text("새 학기 기숙사 호실은 웹 사이트에서 입력해 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("새 학기 기숙사 호실은 웹 사이트에서 입력해 주세요.", style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                     Spacer(Modifier.height(12.dp))
                     OneUiButton(text = "웹 사이트 열기", onClick = { openInBrowser(context) }, style = OneUiButtonStyle.Neutral)
                 }
@@ -658,7 +659,7 @@ private fun MidnightLoginForm(onLoggedIn: () -> Unit) {
         Text(
             "심야면학 사이트에 가입한 이름과 비밀번호로 로그인합니다. 비밀번호는 저장하지 않고, 로그인 상태(토큰)만 이 기기에 암호화해 둡니다.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         Spacer(Modifier.height(12.dp))
         OneUiTextField(value = name, onValueChange = { name = it }, label = "이름", modifier = Modifier.fillMaxWidth())
@@ -772,7 +773,7 @@ private fun MidnightDashboardBody(
 
     Text("${d.floor ?: floor ?: ""}층 좌석", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(4.dp))
-    Text(d.helpText, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+    Text(d.helpText, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
     Spacer(Modifier.height(10.dp))
     MidnightSeatLayout(d.seats, onSeat)
     Spacer(Modifier.height(12.dp))
@@ -805,7 +806,7 @@ private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
         Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = onPageVariantColor())
     }
 }
 
@@ -828,7 +829,7 @@ private fun MidnightSeatLayout(seats: List<MidnightSeat>, onSeat: (MidnightSeat)
     fun group(content: @Composable () -> Unit) {
         Box(
             Modifier
-                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)), RoundedCornerShape(10.dp))
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(10.dp))
                 .padding(8.dp),
         ) { content() }
     }

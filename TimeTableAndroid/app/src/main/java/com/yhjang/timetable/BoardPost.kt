@@ -1,5 +1,6 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
@@ -32,6 +33,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -121,8 +124,73 @@ data class HanaPostDetail(
     val files: List<HanaPostFile>,
 )
 
+/** 게시글 댓글 한 건 — [replies] 는 그 댓글에 달린 답글(한 단계). */
+data class HanaComment(
+    val id: Long,
+    val writer: String,
+    val date: String?,
+    val content: String,
+    val deleted: Boolean,
+    val replies: List<HanaComment> = emptyList(),
+    /** 선생님 답변(포털의 'A' 표시 목록) — 댓글과 따로 옵니다. */
+    val answer: Boolean = false,
+)
+
 object HanaPostApi {
     private const val BASE = "https://hh.hana.hs.kr"
+
+    /**
+     * 댓글 목록 — 포털 글 화면이 열릴 때 스스로 부르는 조회(board_re_list.json, brtGubun=C)와 같은 요청입니다.
+     * 읽기만 합니다: 댓글 쓰기·수정·삭제 요청은 앱에 없습니다. 답글(bd_rep_depth 1)은 bd_ord 가 가리키는 댓글 아래로 묶습니다.
+     */
+    suspend fun comments(context: Context, url: String): List<HanaComment> {
+        val (bmt, bd) = postIds(url) ?: return emptyList()
+        // 답변(R) 목록은 답변 기능이 있는 게시판에만 있어, 실패하면 조용히 비웁니다.
+        val answers = runCatching { reList(context, url, bmt, bd, "R") }.getOrDefault(emptyList())
+            .map { it.copy(answer = true, replies = emptyList()) }
+        return answers + reList(context, url, bmt, bd, "C")
+    }
+
+    /** board_re_list.json — brtGubun C(댓글)·R(답변). 포털 글 화면이 열릴 때 부르는 조회와 같습니다. */
+    private suspend fun reList(context: Context, url: String, bmt: Long, bd: Long, gubun: String): List<HanaComment> {
+        val raw = HanaPortalClient.get().authenticatedText(
+            context,
+            "/main/board/$bmt/$bd/board_re_list.json",
+            params = listOf("brtGubun" to gubun),
+            method = "POST",
+            referer = url,
+        )
+        val root = JSONObject(raw)
+        if (root.optString("result") != "success") return emptyList()
+        val list = root.optJSONObject("paging")?.optJSONArray("result") ?: return emptyList()
+        data class Row(val c: HanaComment, val depth: Int, val parent: Long)
+        val rows = (0 until list.length()).mapNotNull { i ->
+            val o = list.optJSONObject(i) ?: return@mapNotNull null
+            fun str(k: String) = o.optString(k).takeIf { !o.isNull(k) && it.isNotBlank() && it != "null" }
+            Row(
+                HanaComment(
+                    id = o.optLong("brt_idx"),
+                    writer = str("brt_writer").orEmpty(),
+                    date = str("inputdate")?.take(16),
+                    // 포털이 &lt; 같은 엔티티로 저장해 둡니다 — 글자로 되돌립니다(줄바꿈은 그대로).
+                    content = str("brt_content")?.let { Html.fromHtml(it.replace("\n", "<br>"), Html.FROM_HTML_MODE_LEGACY).toString().trim() }.orEmpty(),
+                    deleted = str("brt_del_yn") == "Y",
+                ),
+                depth = o.optInt("bd_rep_depth"),
+                parent = o.optLong("bd_ord"),
+            )
+        }
+        val replies = rows.filter { it.depth > 0 }.groupBy({ it.parent }, { it.c })
+        return rows.filter { it.depth == 0 }.map { it.c.copy(replies = replies[it.c.id].orEmpty()) }
+    }
+
+    /** 글 주소에서 (게시판 번호, 글 번호) — /main/board/7/3814/board_view.do 또는 ?bmtIdx=7&bdIdx=3814. */
+    fun postIds(url: String): Pair<Long, Long>? {
+        Regex("""/board/(\d+)/(\d+)/""").find(url)?.let { return it.groupValues[1].toLong() to it.groupValues[2].toLong() }
+        val bmt = Regex("""bmtIdx=(\d+)""").find(url)?.groupValues?.get(1)?.toLongOrNull()
+        val bd = Regex("""bdIdx=(\d+)""").find(url)?.groupValues?.get(1)?.toLongOrNull()
+        return if (bmt != null && bd != null) bmt to bd else null
+    }
 
     /** board_view.do 는 인증된 요청에 JSON(boardVo)으로 답합니다 — 본문·첨부를 그대로 꺼냅니다. */
     suspend fun detail(context: Context, url: String): HanaPostDetail =
@@ -380,6 +448,30 @@ fun BoardPostScreen(
     onOpenBrowser: () -> Unit,
     onFallbackWeb: () -> Unit,
 ) {
+    BackHandler(onBack = onDismiss)
+
+    OneUiFullScreen(
+        title = "게시글",
+        onDismiss = onDismiss,
+        actions = {
+            OneUiTextButton(text = "브라우저로 열기", onClick = onOpenBrowser, color = MaterialTheme.colorScheme.primary)
+        },
+    ) { toolbar ->
+        BoardPostPane(url, fallbackTitle, onFallbackWeb, toolbar)
+    }
+}
+
+/**
+ * 글 본문 — 제목·AI 요약·본문·첨부. 폰은 [BoardPostScreen] 이 전체 화면에 담고, 큰 화면은 게시판 탭의 오른쪽 칸에
+ * 바로 그립니다(Gmail·삼성 메시지처럼 목록 | 본문). [padding] 은 위·아래 여백(전체 화면의 툴바·내비게이션 바).
+ */
+@Composable
+fun BoardPostPane(
+    url: String,
+    fallbackTitle: String?,
+    onFallbackWeb: () -> Unit,
+    padding: PaddingValues,
+) {
     val context = LocalContext.current
     var detail by remember(url) { mutableStateOf<HanaPostDetail?>(null) }
     var error by remember(url) { mutableStateOf<String?>(null) }
@@ -402,46 +494,50 @@ fun BoardPostScreen(
         val d = detail ?: return@LaunchedEffect
         PostSummarizer.summarize(context, key, d.title, d.text, d.images) { summary = it }
     }
+    // 댓글은 본문을 받은 뒤 따로 — 실패해도 글은 그대로 두고 댓글 칸만 숨깁니다.
+    var comments by remember(url) { mutableStateOf<List<HanaComment>?>(null) }
+    LaunchedEffect(detail != null) {
+        if (detail == null) return@LaunchedEffect
+        comments = try {
+            HanaPostApi.comments(context, url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("BoardPost", "comments failed", e)
+            emptyList()
+        }
+    }
 
-    BackHandler(onBack = onDismiss)
-
-    OneUiFullScreen(
-        title = "게시글",
-        onDismiss = onDismiss,
-        actions = {
-            OneUiTextButton(text = "브라우저로 열기", onClick = onOpenBrowser, color = MaterialTheme.colorScheme.primary)
-        },
-    ) { toolbar ->
-        val d = detail
-        when {
-            error != null -> Column(Modifier.padding(toolbar).padding(OneUi.PagePadding)) {
-                OneUiCard(modifier = Modifier.fillMaxWidth()) {
-                    Text("게시글을 불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "포털 페이지로 열어 볼 수 있습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    OneUiButton(text = "웹으로 보기", onClick = onFallbackWeb)
-                }
+    val d = detail
+    when {
+        error != null -> Column(Modifier.padding(padding).padding(OneUi.PagePadding)) {
+            OneUiCard(modifier = Modifier.fillMaxWidth()) {
+                Text("게시글을 불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "포털 페이지로 열어 볼 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onPageVariantColor(),
+                )
+                Spacer(Modifier.height(14.dp))
+                OneUiButton(text = "웹으로 보기", onClick = onFallbackWeb)
             }
-            d == null -> Box(Modifier.fillMaxSize().padding(toolbar), contentAlignment = Alignment.TopCenter) {
-                if (fallbackTitle != null) PostHeader(fallbackTitle, null)
-                OneUiLoading(Modifier.padding(top = 96.dp), size = 28.dp, stroke = 3.dp)
-            }
-            else -> Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = toolbar.calculateTopPadding(), bottom = toolbar.calculateBottomPadding() + 32.dp),
-            ) {
-                PostHeader(d.title, listOfNotNull(d.writer, d.date, d.views?.let { "조회 $it" }).joinToString(" · "))
-                SummaryCard(summary, onRetry = { summaryRun++ })
-                PostBody(d.html, onImage = { zoomImage = it })
-                if (d.files.isNotEmpty()) Attachments(d.files)
-            }
+        }
+        d == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            if (fallbackTitle != null) PostHeader(fallbackTitle, null)
+            OneUiLoading(Modifier.padding(top = 96.dp), size = 28.dp, stroke = 3.dp)
+        }
+        else -> Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 32.dp),
+        ) {
+            PostHeader(d.title, listOfNotNull(d.writer, prettyPortalDate(d.date), d.views?.let { "조회 $it" }).joinToString(" · "))
+            SummaryCard(summary, onRetry = { summaryRun++ })
+            PostBody(d.html, onImage = { zoomImage = it })
+            if (d.files.isNotEmpty()) Attachments(d.files)
+            comments?.takeIf { it.isNotEmpty() }?.let { CommentsSection(it, postWriter = d.writer) }
         }
     }
 
@@ -454,7 +550,7 @@ private fun PostHeader(title: String, meta: String?) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         if (!meta.isNullOrEmpty()) {
             Spacer(Modifier.height(6.dp))
-            Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(meta, style = MaterialTheme.typography.labelMedium, color = onPageVariantColor())
         }
     }
 }
@@ -525,30 +621,34 @@ internal fun SummaryCard(
         enter = fadeIn(tween(220)) + expandVertically(spring(stiffness = 500f, dampingRatio = 0.9f)),
     ) {
         val shape = RoundedCornerShape(OneUi.CornerLarge)
-        Column(
-            Modifier
+        // 다른 카드와 같은 서리 카드(OneUiCard) — 예전엔 직접 만든 판이라 사진 위 글자색(흰색)을 그대로 물려받아
+        // 라이트 테마에서 요약 글자가 안 보였습니다. 그라데이션 테두리와 모서리 빛은 카드 위에 얹습니다.
+        OneUiCard(
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = horizontalPadding, vertical = 8.dp)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surface)
-                .drawBehind {
+                .drawWithContent {
+                    drawContent()
                     val r = size.maxDimension
-                    drawRect(Brush.radialGradient(listOf(AiBlue.copy(alpha = 0.22f), Color.Transparent), Offset.Zero, r * 0.75f))
-                    drawRect(Brush.radialGradient(listOf(AiViolet.copy(alpha = 0.18f), Color.Transparent), Offset(size.width, size.height * 0.1f), r * 0.65f))
-                    drawRect(Brush.radialGradient(listOf(AiPink.copy(alpha = 0.14f), Color.Transparent), Offset(size.width * 0.8f, size.height * 1.1f), r * 0.7f))
+                    drawRect(Brush.radialGradient(listOf(AiBlue.copy(alpha = 0.16f), Color.Transparent), Offset.Zero, r * 0.75f))
+                    drawRect(Brush.radialGradient(listOf(AiViolet.copy(alpha = 0.12f), Color.Transparent), Offset(size.width, size.height * 0.1f), r * 0.65f))
+                    drawRect(Brush.radialGradient(listOf(AiPink.copy(alpha = 0.10f), Color.Transparent), Offset(size.width * 0.8f, size.height * 1.1f), r * 0.7f))
                 }
                 .border(1.dp, AiGradient, shape)
-                .animateContentSize(spring(stiffness = 400f, dampingRatio = 0.9f))
-                .padding(OneUi.CardPadding),
+                .animateContentSize(spring(stiffness = 400f, dampingRatio = 0.9f)),
+            shape = shape,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AiSparkleIcon(17.dp)
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    "AI 요약",
-                    style = MaterialTheme.typography.labelLarge.copy(brush = AiGradient),
-                    fontWeight = FontWeight.Bold,
-                )
+            // 'AI 요약' 은 그라데이션 알약 위 흰 글자 — 그라데이션 글자는 분홍 판·어두운 판 어디서든 묻혔습니다.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(AiGradient)
+                    .padding(start = 9.dp, end = 11.dp, top = 4.dp, bottom = 4.dp),
+            ) {
+                Icon(AiSparkle, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("AI 요약", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(Modifier.height(12.dp))
             when (state) {
@@ -566,14 +666,14 @@ internal fun SummaryCard(
                         Icon(
                             Icons.Outlined.Info,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = onPageVariantColor(),
                             modifier = Modifier.padding(top = 2.dp).size(13.dp),
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "생성형 AI가 만든 요약으로, 부정확하거나 원문과 다를 수 있습니다. 중요한 내용은 원문을 확인하세요.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onPageVariantColor(),
                         )
                     }
                 }
@@ -582,7 +682,7 @@ internal fun SummaryCard(
                     Text(
                         state.message,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                         modifier = Modifier.weight(1f),
                     )
                     OneUiTextButton(text = "다시 시도", onClick = onRetry, color = MaterialTheme.colorScheme.primary)
@@ -773,7 +873,7 @@ private fun Attachments(files: List<HanaPostFile>) {
         "첨부파일 ${files.size}",
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = Modifier.padding(start = OneUi.PagePadding + 4.dp, top = 16.dp, bottom = 8.dp),
     )
     OneUiGroupColumn(Modifier.padding(horizontal = OneUi.PagePadding)) {
@@ -804,7 +904,7 @@ private fun Attachments(files: List<HanaPostFile>) {
                 Column(Modifier.weight(1f)) {
                     Text(file.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (file.sizeLabel != null) {
-                        Text(file.sizeLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(file.sizeLabel, style = MaterialTheme.typography.labelMedium, color = onPageVariantColor())
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -897,6 +997,56 @@ private fun ImageViewer(src: String, onDismiss: () -> Unit) {
             ) {
                 Icon(Icons.Default.Close, contentDescription = "닫기", tint = Color.White)
             }
+        }
+    }
+}
+
+
+/** 댓글 — 포털 글 화면처럼 댓글 아래에 답글을 들여 쓰고, 글쓴이가 단 댓글엔 [작성자] 표시. 읽기 전용입니다. */
+@Composable
+private fun CommentsSection(comments: List<HanaComment>, postWriter: String?) {
+    val total = comments.sumOf { 1 + it.replies.size }
+    Column(Modifier.fillMaxWidth().padding(horizontal = OneUi.PagePadding).padding(top = 20.dp)) {
+        Text(
+            if (comments.all { it.answer }) "답변 $total" else "댓글 $total",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        )
+        OneUiGroupColumn {
+            comments.forEachIndexed { index, comment ->
+                if (index > 0) OneUiDivider()
+                CommentRow(comment, postWriter, indent = false)
+                comment.replies.forEach { reply -> CommentRow(reply, postWriter, indent = true) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(comment: HanaComment, postWriter: String?, indent: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(start = if (indent) 36.dp else 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
+        if (indent) {
+            Text("ㄴ", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (comment.answer) Text("답변 ", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = scheme.primary)
+                Text(comment.writer.ifBlank { "익명" }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                if (postWriter != null && comment.writer == postWriter) {
+                    Text(" 작성자", style = MaterialTheme.typography.labelMedium, color = scheme.primary)
+                }
+                comment.date?.let {
+                    Text("  $it", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (comment.deleted) "삭제된 댓글입니다." else comment.content,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (comment.deleted) scheme.onSurfaceVariant else scheme.onSurface,
+            )
         }
     }
 }

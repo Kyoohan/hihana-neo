@@ -1,10 +1,12 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -42,12 +44,15 @@ fun DevTab(
     onOpenAccount: () -> Unit,
     onRefreshLive: () -> Unit,
     onStartTour: (TourKind) -> Unit,
+    /** 설정 화면의 목록 항목 안에 들어갈 때 — 자기 스크롤 없이 내용 높이만큼. */
+    embedded: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var sampleDialog by remember { mutableStateOf(false) }
     Column(
-        Modifier
+        if (embedded) Modifier.fillMaxWidth()
+        else Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             // contentPadding 에 이미 좌우 페이지 여백이 들어 있어 더하지 않습니다 — 두 번 받아 다른 탭보다 좁았습니다.
@@ -56,7 +61,7 @@ fun DevTab(
         Text(
             "디버그 빌드 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         Spacer(Modifier.height(8.dp))
 
@@ -87,7 +92,7 @@ fun DevTab(
         Text(
             "${previewDate.monthValue}/${previewDate.dayOfMonth} 15:05 기준",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
             modifier = Modifier.padding(start = OneUi.RowPadding, bottom = 6.dp),
         )
         UpcomingPreview(previewDate, previewDate.atTime(15, 5))
@@ -152,7 +157,7 @@ fun DevTab(
             homeStayPreview?.let { (title, extras) ->
                 OneUiDivider()
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(title, style = MaterialTheme.typography.labelLarge, color = onPageVariantColor())
                     if (extras == null) Text("보여 줄 줄이 없습니다", style = MaterialTheme.typography.bodySmall)
                     else HomeStayExtraRows(extras, onOpenWeather = { devWeatherUntil = extras.backAt })
                 }

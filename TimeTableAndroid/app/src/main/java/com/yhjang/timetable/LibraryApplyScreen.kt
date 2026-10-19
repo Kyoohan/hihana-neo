@@ -1,5 +1,9 @@
 package com.yhjang.timetable
 
+import androidx.compose.foundation.layout.PaddingValues
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import com.yhjang.timetable.ui.onPageVariantColor
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +22,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.unit.Dp
+import com.yhjang.timetable.ui.Adaptive
+import com.yhjang.timetable.ui.isExpandedWindow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -240,7 +249,11 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
         }
     }
 
+
+    // 큰 화면(가로 태블릿)은 구역을 여러 개 나란히 — 좌석 칸은 폰과 비슷한 크기로 고정하고 화면을 넓게 씁니다.
+    val wideSeats = isExpandedWindow()
     OneUiFullScreen(
+        maxContentWidth = if (wideSeats) 1400.dp else Adaptive.ReadingWidth,
         title = "${service.label} 신청",
         subtitle = slots.firstOrNull { it.id == slotId }?.label,
         onDismiss = onDismiss,
@@ -271,7 +284,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            // 유리 알약은 사진이 비치므로 테마색이 아니라 사진 밝기에 맞춘 색(LocalContentColor).
+                            color = LocalContentColor.current,
                         )
                         Spacer(Modifier.width(10.dp))
                     }
@@ -279,7 +293,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         pendingText ?: noticeShown,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = LocalContentColor.current,
                     )
                 }
             }
@@ -292,6 +306,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 .verticalScroll(rememberScrollState())
                 .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
+            // 빠른 예약·타임·기기 같은 조작부는 사진 위에 바로 두지 않고 서리 카드 안에.
+            OneUiFormCard {
             // 빠른 예약 — 저장해 둔 자리를 누르면 지금 고른 타임에 바로 신청(내 자리면 취소).
             QuickReserveSection(
                 seats = quickSeats,
@@ -323,7 +339,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                 thickness = 0.8.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
             Spacer(Modifier.height(12.dp))
             // 타임 선택.
@@ -350,7 +366,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                         null -> "신청 기기: 확인 중"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (deviceRegistered == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (deviceRegistered == false) MaterialTheme.colorScheme.error else onPageVariantColor(),
                     modifier = Modifier.weight(1f),
                 )
                 if (deviceRegistered != true) {
@@ -379,7 +395,8 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
             val current = map
             when {
                 loading && current == null -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
@@ -390,34 +407,40 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                 error != null -> OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
                     Text("불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(error!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(error!!, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                 }
                 current?.closedMessage != null -> OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
                     Text("휴관", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
-                    Text(current.closedMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(current.closedMessage, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                 }
                 current != null -> {
                     val mine = current.seats.firstOrNull { it.mine }
                     val free = current.seats.count { it.available }
+                    OneUiFormCard {
                     Text(
                         buildString {
                             append("빈 자리 $free")
                             if (mine != null) append(" · 내 자리 ${mine.cont}").also { if (mine.assigned) append(" (지정석)") }
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                     )
                     Spacer(Modifier.height(8.dp))
                     SeatLegend(Modifier.padding(horizontal = OneUi.PagePadding))
+                    }
                     Spacer(Modifier.height(12.dp))
                     // 즐겨찾기한 구역이 맨 위로 — 별을 누르면 그 구역이 즐겨찾기가 되고(하나만), 다시 누르면 해제.
                     val ordered = current.areas.sortedByDescending { it.label == favoriteArea }
-                    ordered.forEachIndexed { index, area ->
-                        if (index > 0) Spacer(Modifier.height(18.dp))
+                    val areaBlock: @Composable (LibraryArea) -> Unit = { area ->
+                        // 구역 이름·배치도도 카드 안에 — 좌석 칸 색은 테마 면 위에서 맞춘 색이라 사진 위에선 구분이 안 됐습니다.
+                        OneUiCard(
+                            modifier = if (wideSeats) Modifier else Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = OneUi.PagePadding),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(area.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -434,7 +457,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                                     Icons.Filled.Star,
                                     contentDescription = if (starred) "즐겨찾기 해제" else "즐겨찾기",
                                     tint = if (starred) Color(0xFFFACC15)
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    else onPageVariantColor().copy(alpha = 0.35f),
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
@@ -455,16 +478,32 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
                                         }
                                     }
                                     !busy && mapSlotId == slotId -> act(seat)
+                                    else -> Unit
                                 }
                             },
-                            modifier = Modifier.padding(horizontal = OneUi.PagePadding),
+                            fixedCell = if (wideSeats) 46.dp else null,
                         )
+                        }
+                    }
+                    if (wideSeats) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = OneUi.PagePadding),
+                            horizontalArrangement = Arrangement.spacedBy(40.dp),
+                            verticalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
+                            ordered.forEach { area -> Column { areaBlock(area) } }
+                        }
+                    } else {
+                        ordered.forEachIndexed { index, area ->
+                            if (index > 0) Spacer(Modifier.height(18.dp))
+                            areaBlock(area)
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "빈 자리를 누르면 바로 신청되고, 내 자리를 누르면 취소됩니다.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
                     )
                 }
@@ -536,7 +575,7 @@ private fun QuickReserveSection(
                     cont,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (mine) scheme.onPrimary else scheme.onSurface,
+                    color = if (mine) scheme.onPrimary else LocalContentColor.current,
                     maxLines = 1,
                 )
             }
@@ -553,7 +592,7 @@ private fun QuickReserveSection(
                 Icon(
                     Icons.Filled.Add,
                     contentDescription = "빠른 예약 자리 추가",
-                    tint = if (picking) scheme.onPrimary else scheme.onSurface,
+                    tint = if (picking) scheme.onPrimary else LocalContentColor.current,
                     modifier = Modifier.size(26.dp),
                 )
             }
@@ -608,7 +647,7 @@ private fun SeatLegend(modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(color))
                 Spacer(Modifier.width(5.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = onPageVariantColor())
             }
         }
     }
@@ -619,7 +658,7 @@ private fun SeatLegend(modifier: Modifier = Modifier) {
  * 그보다 넓어지면 가로로 스크롤합니다. 표지·블록(srt_type 2·3)은 연한 칸에 이름만 적습니다.
  */
 @Composable
-private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier) {
+private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifier: Modifier = Modifier, fixedCell: Dp? = null) {
     // 격자 구조(통로·간격)는 포털 그대로 두고, 바깥쪽의 빈 행·열만 잘라냅니다 — 제목·안내 글과 좌석 사이가
     // 비어 보이던 원인. 안쪽 빈 칸은 실제 도서관 배치(통로)라 그대로 둡니다.
     val map = remember(area) {
@@ -640,11 +679,11 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
     }
     val palette = seatPalette()
     val density = LocalDensity.current
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    BoxWithConstraints(if (fixedCell != null) modifier else modifier.fillMaxWidth()) {
         // 칸 크기는 원래 격자 폭(10칸)을 화면에 맞춘 것보다 살짝(10%) 크게 — 잘라낸 뒤 남은 칸 수로 맞추면 너무 커집니다.
         val minCell = 34.dp
         val fit = maxWidth / area.gridX.coerceAtLeast(1) * 1.1f
-        val cell = if (fit < minCell) minCell else fit
+        val cell = fixedCell ?: if (fit < minCell) minCell else fit
         val cellPx = with(density) { cell.toPx() }
         // 칸 높이는 두 줄(번호 + 이름)이 들어가도록 폭의 1.3배.
         val rowPx = cellPx * 1.3f
@@ -658,7 +697,7 @@ private fun SeatGrid(area: LibraryArea, onSeatTap: (LibrarySeat) -> Unit, modifi
                 textAlign = android.graphics.Paint.Align.CENTER
             }
         }
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+        Box(if (fixedCell != null) Modifier else Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
             Canvas(
                 Modifier
                     .width(cell * map.gridX)

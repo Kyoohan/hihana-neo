@@ -59,7 +59,7 @@ import com.yhjang.timetable.ui.OneUiLoading
 import com.yhjang.timetable.ui.OneUiSectionTitle
 import com.yhjang.timetable.ui.floatingPill
 import com.yhjang.timetable.ui.isDark
-import com.yhjang.timetable.ui.oneUiPageBackground
+import com.yhjang.timetable.ui.OneUiFrostedPageBackdrop
 import androidx.compose.ui.graphics.Color
 
 /** 정보 화면에서 보여줄 업데이트 상태 — [MainActivity] 가 들고 있고 정보 화면은 그리기만 합니다. */
@@ -97,7 +97,13 @@ internal fun AppInfoScreen(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(com.yhjang.timetable.ui.LocalMaterialHazeState provides null) {
+        // 불투명 서리 페이지 — 사진 위에서도 버전·상태 같은 회색 글자가 읽히게 (삼성 홈 위젯의 불투명 단계).
+        // 글자색은 사진 밝기 색(LocalOnPageColor)이 아니라 테마색 — 라이트 테마에서 제목이 흰색으로 남아 안 보였습니다.
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.yhjang.timetable.ui.LocalMaterialHazeState provides null,
+            com.yhjang.timetable.ui.LocalOnPageColor provides null,
+            androidx.compose.material3.LocalContentColor provides scheme.onSurface,
+        ) {
         val view = LocalView.current
         val dark = scheme.isDark
         SideEffect {
@@ -112,7 +118,9 @@ internal fun AppInfoScreen(
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
         Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
-            Box(Modifier.fillMaxSize().oneUiPageBackground().padding(top = statusTop, bottom = navBottom)) {
+            Box(Modifier.fillMaxSize()) {
+            OneUiFrostedPageBackdrop()
+            Box(Modifier.fillMaxSize().padding(top = statusTop, bottom = navBottom)) {
                 // 상단: 뒤로가기 + 시스템 앱 정보
                 Row(
                     modifier = Modifier
@@ -171,6 +179,7 @@ internal fun AppInfoScreen(
                     BottomPillButton("오픈소스 라이선스") { showLicenses = true }
                     BottomPillButton("법적 고지") { showLegal = true }
                 }
+            }
             }
         }
         }
@@ -242,20 +251,16 @@ private fun UpdateActionButton(state: UpdateState, onCheck: () -> Unit, onInstal
     }
 }
 
-/** 갤러리 정보 화면 아래의 넓은 알약 버튼 — 앱의 다른 보조 버튼·칩과 같은 액체 유리(색 판 위의 렌즈). */
+/** 갤러리 정보 화면 아래의 넓은 알약 버튼 — 앱의 카드와 같은 재질의 평평한 알약(렌즈·테두리 없음). */
 @Composable
 private fun BottomPillButton(text: String, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    com.yhjang.timetable.ui.OneUiLiquidGlassBox(
-        modifier = Modifier
-            .width(260.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        cornerRadius = 27.dp,
-        strength = 0.6f,
-        fill = scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
+    OneUiCard(
+        modifier = Modifier.width(260.dp),
+        shape = CircleShape,
+        contentPadding = PaddingValues(vertical = 17.dp),
+        onClick = onClick,
     ) {
-        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 17.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
     }
 }
 
@@ -263,7 +268,7 @@ private fun BottomPillButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun ChangelogScreen(pending: UpdateInfo?, onDismiss: () -> Unit) {
     BackHandler(onBack = onDismiss)
-    OneUiFullScreen(title = "변경 사항", onDismiss = onDismiss) { toolbar ->
+    OneUiFullScreen(title = "변경 사항", onDismiss = onDismiss, frosted = true) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -327,7 +332,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.changelogEntryItem(en
 private fun LicensesScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
     BackHandler(onBack = onDismiss)
-    OneUiFullScreen(title = "오픈소스 라이선스", onDismiss = onDismiss) { toolbar ->
+    OneUiFullScreen(title = "오픈소스 라이선스", onDismiss = onDismiss, frosted = true) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -431,7 +436,7 @@ private fun splitLegalMarker(line: String): Pair<String, String>? {
 @Composable
 private fun LegalNoticeScreen(onDismiss: () -> Unit) {
     BackHandler(onBack = onDismiss)
-    OneUiFullScreen(title = "법적 고지", onDismiss = onDismiss) { toolbar ->
+    OneUiFullScreen(title = "법적 고지", onDismiss = onDismiss, frosted = true) { toolbar ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

@@ -156,64 +156,13 @@ class LiquidLight(x: Float, y: Float) {
 }
 
 /**
- * 중력 센서로 광원 방향을 실시간으로 정합니다: 폰을 왼쪽으로 기울이면 빛이 왼쪽 위에서 오는 것처럼 하이라이트가
- * 옮겨 갑니다. 화면이 보일 때만(RESUMED) 센서를 켭니다. 값은 저역 통과로 부드럽게 따라갑니다.
+ * 광원은 왼쪽 위에 고정합니다. 예전엔 기울기 센서로 반사광이 따라 움직이고 광택 띠가 매 프레임 흘렀는데, 그 때문에
+ * 가만히 있어도 앱의 모든 창이 초당 120번씩 다시 그려져(폰을 손에 들면 센서 값이 늘 흔들림) 스크롤이 버벅이고 배터리를
+ * 먹었습니다. 사용자도 버튼의 움직이는 유리는 원하지 않았습니다 — 유리 모양은 남기고 움직임만 뺐습니다.
  */
 @Composable
-fun rememberLiquidLight(enabled: Boolean): LiquidLight {
-    val light = remember { LiquidLight(-0.55f, -0.83f) }
-    if (!enabled) return light
-    val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-
-    // 광택 띠가 흐르도록 프레임마다 시간을 올립니다 — 대화상자가 떠 있는 동안엔 멈췄다가 이어서 흐릅니다.
-    LaunchedEffect(Unit) {
-        var last = withFrameNanos { it }
-        while (true) {
-            if (LiquidMotion.paused) {
-                androidx.compose.runtime.snapshotFlow { LiquidMotion.paused }.first { !it }
-                last = withFrameNanos { it }
-            }
-            withFrameNanos { now ->
-                light.time += (now - last) / 1_000_000_000f
-                last = now
-            }
-        }
-    }
-
-    DisposableEffect(lifecycleOwner, context) {
-        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? android.hardware.SensorManager
-        val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY)
-            ?: manager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
-        val listener = object : android.hardware.SensorEventListener {
-            override fun onSensorChanged(event: android.hardware.SensorEvent) {
-                if (LiquidMotion.paused) return
-                // 기기 x: 오른쪽이 +, y: 위가 +. 화면 y 는 아래가 + 라 뒤집습니다. 기본(똑바로 세움)은 왼쪽 위 광원.
-                val gx = event.values[0] / 9.81f
-                val gy = event.values[1] / 9.81f
-                val targetX = (-0.55f - gx * 0.9f).coerceIn(-1f, 1f)
-                val targetY = (-0.83f + (gy - 0.6f) * 0.6f).coerceIn(-1f, 0.2f)
-                light.x += (targetX - light.x) * 0.12f
-                light.y += (targetY - light.y) * 0.12f
-            }
-            override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
-        }
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME ->
-                    if (sensor != null) manager?.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME)
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> manager?.unregisterListener(listener)
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            manager?.unregisterListener(listener)
-        }
-    }
-    return light
-}
+@Suppress("UNUSED_PARAMETER")
+fun rememberLiquidLight(enabled: Boolean): LiquidLight = remember { LiquidLight(-0.55f, -0.83f) }
 
 /** 앱 전체가 함께 쓰는 광원 — 루트에서 한 번만 센서를 켜고, 하단 바·헤더 섬이 같은 빛을 받습니다. */
 val LocalLiquidLight = compositionLocalOf { LiquidLight(-0.55f, -0.83f) }
@@ -258,7 +207,9 @@ fun OneUiLiquidGlassBox(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hazeState = LocalHazeState.current
-    val shader = remember { LiquidLens.create() }
+    val lens = remember { LiquidLens.create() }
+    // 성능 모드는 렌즈 없이 — 색 판이나 단색 유리 면(oneUiGlassSurface 가 성능 모드에서 흐림을 끔)으로만.
+    val shader = if (PerformanceMode.enabled) null else lens
     val light = LocalLiquidLight.current
     val isDark = MaterialTheme.colorScheme.isDark
     val density = LocalDensity.current
@@ -304,7 +255,7 @@ fun OneUiLiquidGlassBox(
                             shader.setFloatUniform("rainbow", 0f)
                             renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
                         }
-                        .hazeEffect(hazeState, liquidLensStyle(isDark)) { inputScale = HazeInputScale.None },
+                        .hazeEffect(hazeState, liquidLensStyle(isDark)) { inputScale = HazeInputScale.Auto },
                 )
             } else {
                 Box(

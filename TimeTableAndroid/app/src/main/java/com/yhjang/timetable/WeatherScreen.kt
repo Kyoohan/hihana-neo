@@ -1,5 +1,6 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -134,7 +135,7 @@ fun SeoulWeatherScreen(until: LocalDateTime?, onDismiss: () -> Unit) {
                 f == null -> Text(
                     "날씨를 불러오지 못했습니다",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                     modifier = Modifier.padding(horizontal = SideInset, vertical = 24.dp),
                 )
                 else -> {
@@ -149,7 +150,7 @@ fun SeoulWeatherScreen(until: LocalDateTime?, onDismiss: () -> Unit) {
                                     Text(
                                         "그 뒤는 아직 시간별 예보가 없어 아래 요일별 예보를 봐 주세요",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = onPageVariantColor(),
                                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
                                     )
                                 } else {
@@ -178,7 +179,7 @@ fun SeoulWeatherScreen(until: LocalDateTime?, onDismiss: () -> Unit) {
                             f.updated?.atZone(ZoneId.of("Asia/Seoul"))?.let { "%02d:%02d 기준".format(it.hour, it.minute) },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -194,7 +195,7 @@ private fun SectionLabel(text: String, start: androidx.compose.ui.unit.Dp) {
         text,
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = Modifier.padding(start = start, top = 14.dp, end = 20.dp, bottom = 4.dp),
     )
 }
@@ -240,7 +241,7 @@ private fun TopInfo(f: SeoulWeather.Forecast, today: LocalDate, now: LocalDateTi
                     TempArrow(up = true, color = accent)
                     Spacer(Modifier.width(2.dp))
                     Text(deg(day.max), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(" / ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurfaceVariant)
+                    Text(" / ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = onPageVariantColor())
                     TempArrow(up = false, color = Rain)
                     Spacer(Modifier.width(2.dp))
                     Text(deg(day.min), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -265,7 +266,7 @@ private fun TopInfo(f: SeoulWeather.Forecast, today: LocalDate, now: LocalDateTi
                     ?: "${now.monthValue}월 ${now.dayOfMonth}일 ${now.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN)}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = scheme.onSurfaceVariant,
+                color = onPageVariantColor(),
                 modifier = Modifier.padding(top = 2.dp),
             )
         }

@@ -1,5 +1,10 @@
 package com.yhjang.timetable
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import com.yhjang.timetable.ui.onPageVariantColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -110,9 +115,21 @@ internal fun TodayDashboard(
     modifier: Modifier = Modifier,
     /** 카드 순서 편집 중 (헤더의 연필) — 그리드 대신 위·아래 버튼 목록. '지금' 카드는 늘 맨 위라 빠집니다. */
     editingOrder: Boolean = false,
+    /**
+     * 카드 열 수 — 폰은 1(카드마다 전체 폭), 큰 화면은 2·3. 3열이면 첫 줄은 '지금'이 두 칸, 순서상 첫 카드가 한 칸
+     * (삼성 날씨 태블릿처럼 큰 카드 옆에 작은 카드), 그다음부터는 한 칸씩 짧은 열에 쌓입니다.
+     */
+    lanes: Int = 1,
+    /** 바뀌면 맨 위로 — 탭에 다시 들어올 때. */
+    resetTick: Int = 0,
 ) {
     val context = LocalContext.current
     val gridState = rememberLazyStaggeredGridState()
+    val listState = rememberLazyListState()
+    LaunchedEffect(resetTick) {
+        listState.scrollToItem(0)
+        gridState.scrollToItem(0)
+    }
     val scope = rememberCoroutineScope()
 
     // 귀가 기간 날씨 칸을 누르면 귀교 시각까지 시간별 서울 날씨 (MAX = 귀교 시각을 모를 때 받은 예보 끝까지).
@@ -139,66 +156,98 @@ internal fun TodayDashboard(
         }
         return
     }
+    val homeStayIdle = homeStayNotice != null
+    val nowCard: @Composable (Modifier) -> Unit = { cardModifier ->
+        NowHeroCard(
+            hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress, homeStayNotice, homeStayExtras,
+            onOpenWeather = { weatherUntil = homeStayExtras?.backAt ?: java.time.LocalDateTime.MAX },
+            modifier = cardModifier,
+        ) {
+            if (needsAccount) onConnectAccount() else scope.launch { if (lanes == 1) listState.animateScrollToItem(0) else gridState.animateScrollToItem(0) }
+        }
+    }
+    // 나머지 카드는 사용자가 정한 순서대로(헤더의 연필 → 위·아래). '지금' 카드는 늘 맨 위.
+    val cards: List<Pair<String, @Composable (Modifier) -> Unit>> = buildList {
+        homeOrder.forEach { key ->
+            when (key) {
+                // 귀가 기간엔 '지금' 카드가 이미 귀가를 알리므로, 비어 있는 남은 일정 카드는 빼서 같은 말을 되풀이하지 않습니다.
+                HomeOrderStore.UPCOMING -> if (!(homeStayIdle && upcomingGroups.isEmpty())) add("upcoming" to { m ->
+                    UpcomingCard(upcomingGroups, supervisor, kindColors, emptyText = "남은 일정이 없습니다", modifier = m)
+                })
+                // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 한 장으로 둡니다.
+                HomeOrderStore.MEAL -> if (!(homeStayIdle && !isLoadingMeals && meals?.items.orEmpty().values.all { it.isEmpty() })) add("meal" to { m ->
+                    MealMiniCard(
+                        meals, allergyCodes, isLoadingMeals,
+                        onClick = { onNavigateToTab(TabIndex.MEAL) },
+                        modifier = m.fillMaxWidth(),
+                    )
+                })
+                HomeOrderStore.BOARD -> add("board" to { m ->
+                    BoardMiniCard(boardPosts, boardCategoryLabel, isLoadingBoard, onOpenPost, onOpenBoardList, modifier = m)
+                })
+                // 폰은 학사일정과 알리미(최근 2건)를 반 폭씩 한 줄에, 큰 화면은 각자 한 칸.
+                HomeOrderStore.SCHEDULE_ALIM -> if (lanes > 1) {
+                    add("schedule" to { m ->
+                        ScheduleMiniCard(schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule, modifier = m.fillMaxWidth(), showExam = homeStayExtras?.exam == null)
+                    })
+                    add("alim" to { m ->
+                        AlimMiniCard(alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList, limit = 3, modifier = m.fillMaxWidth())
+                    })
+                } else add("schedule_alim" to { m ->
+                    Row(
+                        modifier = m.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ScheduleMiniCard(
+                            schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            showExam = homeStayExtras?.exam == null,
+                        )
+                        AlimMiniCard(
+                            alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList,
+                            limit = 2,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
+                })
+            }
+        }
+    }
+    val gap = if (lanes > 1) 16.dp else 12.dp
+    if (lanes == 1) {
+        // 폰은 카드가 모두 전체 폭이라 지그재그 격자가 필요 없습니다 — 보통 목록이 측정이 가볍습니다.
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            item(key = "now") { nowCard(Modifier) }
+            items(cards, key = { it.first }) { (_, card) -> card(Modifier) }
+        }
+        return
+    }
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+        columns = StaggeredGridCells.Fixed(if (lanes > 1) lanes else 2),
         state = gridState,
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalItemSpacing = 12.dp,
+        horizontalArrangement = Arrangement.spacedBy(gap),
+        verticalItemSpacing = gap,
     ) {
-        item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-            NowHeroCard(
-                hasTimetable, needsAccount, currentBlock, remainingMinutes, nextTitle, nextRoom, blockProgress, homeStayNotice, homeStayExtras,
-                onOpenWeather = { weatherUntil = homeStayExtras?.backAt ?: java.time.LocalDateTime.MAX },
-            ) {
-                if (needsAccount) onConnectAccount() else scope.launch { gridState.animateScrollToItem(0) }
-            }
-        }
-        val homeStayIdle = homeStayNotice != null
-        // 나머지 카드는 사용자가 정한 순서대로(헤더의 연필 → 위·아래). '지금' 카드는 늘 맨 위.
-        homeOrder.forEach { key ->
-            when (key) {
-                HomeOrderStore.UPCOMING -> if (!(homeStayIdle && upcomingGroups.isEmpty())) {
-                    // 귀가 기간엔 '지금' 카드가 이미 귀가를 알리므로, 비어 있는 남은 일정 카드는 빼서 같은 말을 되풀이하지 않습니다.
-                    item(span = StaggeredGridItemSpan.FullLine, key = "upcoming") {
-                        UpcomingCard(upcomingGroups, supervisor, kindColors, emptyText = "남은 일정이 없습니다")
-                    }
-                }
-                // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 전체 폭 한 장으로 둡니다.
-                HomeOrderStore.MEAL -> if (!(homeStayIdle && !isLoadingMeals && meals?.items.orEmpty().values.all { it.isEmpty() })) {
-                    item(span = StaggeredGridItemSpan.FullLine, key = "meal") {
-                        MealMiniCard(
-                            meals, allergyCodes, isLoadingMeals,
-                            onClick = { onNavigateToTab(TabIndex.MEAL) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                // 게시판은 자주 보는 정보라 전체 폭, 알리미는 최근 2건만 학사일정 옆 반 폭에 둡니다.
-                HomeOrderStore.BOARD -> item(span = StaggeredGridItemSpan.FullLine, key = "board") {
-                    BoardMiniCard(boardPosts, boardCategoryLabel, isLoadingBoard, onOpenPost, onOpenBoardList)
-                }
-                HomeOrderStore.SCHEDULE_ALIM -> {
-                    item(span = StaggeredGridItemSpan.FullLine, key = "schedule_alim") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            ScheduleMiniCard(
-                                schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
-                                showExam = homeStayExtras?.exam == null,
-                            )
-                            AlimMiniCard(
-                                alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList,
-                                limit = 2,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
-                            )
-                        }
-                    }
+        if (lanes >= 3 && cards.isNotEmpty()) {
+            // 첫 줄: '지금'(두 칸) + 순서상 첫 카드(한 칸), 높이는 둘 중 큰 쪽에 맞춥니다.
+            item(span = StaggeredGridItemSpan.FullLine, key = "now") {
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    Box(Modifier.weight(2f).fillMaxHeight()) { nowCard(Modifier.fillMaxHeight()) }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { cards[0].second(Modifier.fillMaxHeight()) }
                 }
             }
+            cards.drop(1).forEach { (key, card) -> item(key = key) { card(Modifier) } }
+        } else {
+            item(span = StaggeredGridItemSpan.FullLine, key = "now") { nowCard(Modifier) }
+            val span = if (lanes > 1) StaggeredGridItemSpan.SingleLane else StaggeredGridItemSpan.FullLine
+            cards.forEach { (key, card) -> item(span = span, key = key) { card(Modifier) } }
         }
     }
 }
@@ -243,7 +292,7 @@ private fun DashboardCard(
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -267,9 +316,10 @@ private fun NowHeroCard(
     homeStayNotice: HomeStayNotice?,
     homeStayExtras: HomeStayExtras?,
     onOpenWeather: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    DashboardCard(title = "지금", icon = painterResource(R.drawable.ic_place), onCardClick = onClick) {
+    DashboardCard(title = "지금", icon = painterResource(R.drawable.ic_place), onCardClick = onClick, modifier = modifier) {
         // 시간표가 아직 한 번도 설치되지 않은 "로딩 중" 상태를 "오늘 일정이 모두 끝났습니다"
         // (블랭크 상태)와 구분합니다 — 안 그러면 로딩 중에도 이 문구가 떠서 앱이 멈춘 것처럼
         // 보였습니다.
@@ -341,7 +391,7 @@ private fun NowHeroCard(
             Text(
                 block.timeRangeText,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
             )
             remainingMinutes?.let {
                 Spacer(Modifier.width(10.dp))
@@ -363,7 +413,7 @@ private fun NowHeroCard(
                     nextRoom?.let { append(" · ").append(it) }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -402,8 +452,8 @@ private fun remainingText(minutes: Long): String =
 
 /** 오늘 남은 일정 — 기존에 합쳐 보여주던 시간대·제목·장소/감독 줄을 전체 폭 카드로. */
 @Composable
-private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?, kindColors: Map<Accent, Int>, emptyText: String) {
-    DashboardCard(title = "오늘 남은 일정", icon = painterResource(R.drawable.ic_next)) {
+private fun UpcomingCard(groups: List<UpcomingGroup>, supervisor: String?, kindColors: Map<Accent, Int>, emptyText: String, modifier: Modifier = Modifier) {
+    DashboardCard(title = "오늘 남은 일정", icon = painterResource(R.drawable.ic_next), modifier = modifier) {
         if (groups.isEmpty()) {
             DashboardEmpty(emptyText)
         } else {
@@ -531,7 +581,7 @@ private fun AlimMiniCard(
                             alim.content.ifEmpty { "(내용 없음)" },
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isUnread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isUnread) MaterialTheme.colorScheme.onSurface else onPageVariantColor(),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -541,7 +591,7 @@ private fun AlimMiniCard(
                         Text(
                             meta,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onPageVariantColor(),
                             modifier = Modifier.padding(top = 2.dp, start = if (isUnread) 13.dp else 0.dp),
                         )
                     }
@@ -563,8 +613,17 @@ private fun ScheduleMiniCard(
     /** '지금' 카드(귀가 기간)가 이미 다가오는 시험을 보여 주면 여기선 D-day 를 빼 같은 시험을 두 번 적지 않습니다. */
     showExam: Boolean = true,
 ) {
+    // 시험 D-day 와 앞 3건은 일정·날짜·학년이 바뀔 때만 — 재구성마다 전체 일정을 거르고 정렬하면 이 카드 하나에 10ms 가 들었습니다.
+    val exam = remember(schedule, today) { examDday(schedule, today) }
+    val visible = remember(schedule, today, studentGrade) {
+        filterSupervisionByGrade(schedule, studentGrade)
+            .filter { it.code != "SG02020000" }
+            .filter { !it.date.isBefore(today) }
+            .sortedWith(compareBy({ it.date }, { it.name }))
+            .take(3)
+    }
     DashboardCard(title = "학사일정", icon = painterResource(R.drawable.ic_academic), onCardClick = onClick, modifier = modifier) {
-        examDday(schedule, today)?.takeIf { showExam }?.let { exam ->
+        exam?.takeIf { showExam }?.let { exam ->
             Row(
                 modifier = Modifier.padding(bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -583,12 +642,6 @@ private fun ScheduleMiniCard(
                 )
             }
         }
-
-        val visible = filterSupervisionByGrade(schedule, studentGrade)
-            .filter { it.code != "SG02020000" }
-            .filter { !it.date.isBefore(today) }
-            .sortedWith(compareBy({ it.date }, { it.name }))
-            .take(3)
 
         when {
             visible.isEmpty() && isLoading -> DashboardEmpty("불러오는 중")
@@ -610,7 +663,7 @@ private fun ScheduleMiniCard(
                         Text(
                             shortDate(entry.date),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onPageVariantColor(),
                         )
                     }
                 }
@@ -627,8 +680,10 @@ private fun BoardMiniCard(
     isLoading: Boolean,
     onOpenPost: (HanaBoardPost) -> Unit,
     onOpenList: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     DashboardCard(
+        modifier = modifier,
         title = "게시판",
         icon = rememberVectorPainter(Icons.AutoMirrored.Filled.List),
         subtitle = categoryLabel,
@@ -654,12 +709,12 @@ private fun BoardMiniCard(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    val meta = listOfNotNull(post.writer, post.date).joinToString(" · ")
+                    val meta = listOfNotNull(post.writer, prettyPortalDate(post.date)).joinToString(" · ")
                     if (meta.isNotEmpty()) {
                         Text(
                             meta,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onPageVariantColor(),
                             modifier = Modifier.padding(top = 2.dp),
                         )
                     }
@@ -675,8 +730,8 @@ private fun BoardMiniCard(
  */
 @Composable
 internal fun HomeStayExtraRows(extras: HomeStayExtras, onOpenWeather: (() -> Unit)? = null) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val muted = onPageVariantColor()
+    val divider = MaterialTheme.colorScheme.outlineVariant
     val tiles = listOfNotNull(extras.weatherNow, extras.weatherBack)
     if (tiles.isNotEmpty()) {
         Spacer(Modifier.height(14.dp))
@@ -758,7 +813,7 @@ private fun DashboardEmpty(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
     )
 }
 

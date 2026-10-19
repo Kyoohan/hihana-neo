@@ -1,5 +1,14 @@
+@file:OptIn(dev.chrisbanes.haze.ExperimentalHazeApi::class)
 package com.yhjang.timetable
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.flow.collect
+import androidx.compose.runtime.derivedStateOf
+import kotlinx.coroutines.Job
+import androidx.compose.animation.core.Animatable
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.Manifest
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -68,6 +77,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -213,6 +223,26 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.HazeStyle
 import com.yhjang.timetable.ui.OneUi
+import com.yhjang.timetable.ui.LocalBlurredPageBackground
+import com.yhjang.timetable.ui.blurredBackdrop
+import com.yhjang.timetable.ui.LocalOnPageColor
+import com.yhjang.timetable.ui.onPageColorFor
+import com.yhjang.timetable.ui.PerformanceMode
+import com.yhjang.timetable.ui.NavBarLabels
+import com.yhjang.timetable.ui.FrostOpacity
+import com.yhjang.timetable.ui.WhatsNew
+import com.yhjang.timetable.ui.OneUiPageBackdrop
+import com.yhjang.timetable.ui.hazeSourceUnlessPerf
+import com.yhjang.timetable.ui.AutoPerformance
+import com.yhjang.timetable.ui.PageBackgroundAdjust
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.animation.core.animateDpAsState
+import com.yhjang.timetable.ui.Adaptive
+import com.yhjang.timetable.ui.centeredSidePadding
+import com.yhjang.timetable.ui.isWideWindow
+import com.yhjang.timetable.ui.isExpandedWindow
+import androidx.compose.ui.platform.LocalConfiguration
+import com.yhjang.timetable.ui.sidePaddingIn
 import com.yhjang.timetable.ui.OneUiAlertDialog
 import com.yhjang.timetable.ui.OneUiButton
 import com.yhjang.timetable.ui.OneUiCard
@@ -275,6 +305,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PerformanceMode.load(this)
+        NavBarLabels.load(this)
+        FrostOpacity.load(this)
+        WhatsNew.load(this, BuildConfig.VERSION_NAME)
+        PageBackgroundAdjust.load(this)
+        // 느린 기기면 프레임 시간을 재서 성능 모드를 자동으로 켭니다(기기당 한 번).
+        AutoPerformance.watch(this)
         enableEdgeToEdge()
         openAlimRequest.value = intent?.getBooleanExtra(AlimNotifier.EXTRA_OPEN_ALIM, false) ?: false
         openTabRequest.value = intent?.getStringExtra(EXTRA_OPEN_TAB)
@@ -367,7 +404,17 @@ fun TimeTableApp(
     val pageBackground = rememberPageBackground(backgroundVersion)
 
     TimeTableTheme(accentArgb = accentArgb, darkTheme = darkTheme) {
-        CompositionLocalProvider(LocalPageBackground provides pageBackground) {
+        val blurredPage = remember(pageBackground) { pageBackground?.let(::blurredBackdrop) }
+        val screenAspect = LocalConfiguration.current.let { it.screenHeightDp.toFloat() / it.screenWidthDp.coerceAtLeast(1) }
+        CompositionLocalProvider(
+            LocalPageBackground provides pageBackground,
+            // 카드 서리 유리가 비출, 미리 흐린 배경 사진 — 사진이 바뀔 때만 다시 만듭니다.
+            LocalBlurredPageBackground provides blurredPage,
+            // 사진 위에 바로 놓이는 헤더 글자·버튼 색 — 사진 위쪽 밝기에 따라 흰색/검정.
+            LocalOnPageColor provides remember(blurredPage, screenAspect, PageBackgroundAdjust.brightness) {
+                blurredPage?.let { onPageColorFor(it, 1f, screenAspect, PageBackgroundAdjust.brightness) }
+            },
+        ) {
         TimeTableAppContent(
             accentArgb = accentArgb,
             onAccentChange = { accentArgb = it },
@@ -431,6 +478,15 @@ private fun TimeTableAppContent(
     var offline by remember { mutableStateOf(false) }
     var lastSyncAt by remember { mutableStateOf(0L) }
     var showingSettings by remember { mutableStateOf(false) }
+    // 설정을 열면 새 버전 알림(톱니의 N)은 본 것으로 — 안의 '화면' 줄 점은 설정을 닫을 때까지 남겨 둡니다.
+    var whatsNewInSettings by remember { mutableStateOf(false) }
+    LaunchedEffect(showingSettings) {
+        if (showingSettings && WhatsNew.pending) {
+            whatsNewInSettings = true
+            WhatsNew.markSeen(context, BuildConfig.VERSION_NAME)
+        }
+        if (!showingSettings) whatsNewInSettings = false
+    }
     // 헤더 탭 버튼들이 쓰는 상태 — 설정을 특정 페이지로 열기, 홈 카드 순서 편집, 서울 날씨, 게시판 검색, 외출 QR.
     var settingsStartPage by remember { mutableStateOf<SettingsPage?>(null) }
     var editingHomeOrder by remember { mutableStateOf(false) }
@@ -471,7 +527,8 @@ private fun TimeTableAppContent(
 
     // 설정을 상단 아이콘으로 옮겨 하단 탭은 홈/시간표/급식/학사 네 개입니다.
     // 디버그 빌드에는 새 기능을 바로 눌러 볼 수 있는 Dev 탭이 하나 더 있습니다.
-    val tabTitles = if (BuildConfig.DEBUG) TabIndex.titles + "Dev" else TabIndex.titles
+    // Dev 는 하단 바 대신 설정 → 개발자로 (디버그 빌드).
+    val tabTitles = TabIndex.titles
     // 이전 버전 저장 상태(설정=3, 학사=4)가 복원돼도 범위를 벗어나지 않게 보정합니다.
     if (tab !in tabTitles.indices) tab = 0
 
@@ -484,6 +541,8 @@ private fun TimeTableAppContent(
     var scheduleError by remember { mutableStateOf<String?>(null) }
     var boardCategoryIndex by rememberSaveable { mutableStateOf(0) }
     var boardPosts by remember { mutableStateOf<List<HanaBoardPost>>(emptyList()) }
+    // 세그먼트 배지에 보일 게시판별 안 읽은 글 수 — 캐시된 목록을 BoardReadStore 와 대조해 셉니다.
+    var boardUnreadCounts by remember { mutableStateOf<Map<BoardCategory, Int>>(emptyMap()) }
     var boardLoading by remember { mutableStateOf(false) }
     // 홈 게시판 카드는 게시판 탭에서 마지막으로 연 게시판과 상관없이 늘 학생공지 — 따로 받아 둡니다.
     var homeBoardPosts by remember { mutableStateOf<List<HanaBoardPost>>(emptyList()) }
@@ -563,6 +622,30 @@ private fun TimeTableAppContent(
         }
     }
 
+    /** 게시판별 안 읽은 글 수 — [fetchAll] 이면 아직 안 받았거나 오래된 게시판 목록도 받아 옵니다(조회만). */
+    suspend fun refreshBoardCounts(fetchAll: Boolean) {
+        val counts = withContext(Dispatchers.IO) {
+            if (fetchAll) BoardCategory.entries.forEach { c -> runCatching { HanaAcademicRepository.board(context, c) } }
+            BoardCategory.entries.mapNotNull { c ->
+                HanaAcademicRepository.cachedBoard(context, c)?.let { list ->
+                    BoardReadStore.seedIfNeeded(context, c, list)
+                    c to BoardReadStore.unreadCount(context, list)
+                }
+            }.toMap()
+        }
+        boardUnreadCounts = counts
+    }
+
+    /** '모두 읽음' — 받아 둔 모든 게시판의 글을 읽은 것으로. */
+    fun markAllBoardsRead() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                BoardCategory.entries.forEach { c -> HanaAcademicRepository.cachedBoard(context, c)?.let { BoardReadStore.markRead(context, it) } }
+            }
+            refreshBoardCounts(false)
+        }
+    }
+
     suspend fun loadBoard(force: Boolean) {
         boardLoading = true
         boardError = null
@@ -600,7 +683,10 @@ private fun TimeTableAppContent(
     }
 
     // 게시판 목록이 바뀌면 각 글의 AI 한 줄 요약을 한 건씩 채웁니다(이미 받은 글은 건너뜀).
-    LaunchedEffect(boardPosts) {
+    // 게시판 탭에 처음 들어오면 다른 게시판 목록도 한 번 받아 배지 수를 채웁니다(캐시가 살아 있으면 네트워크 없음).
+    LaunchedEffect(tab == TabIndex.BOARD) { if (tab == TabIndex.BOARD && hasCredentials) refreshBoardCounts(true) }
+    LaunchedEffect(boardPosts, BoardReadStore.revision) {
+        refreshBoardCounts(false)
         if (boardPosts.isNotEmpty()) PostSummarizer.prefetch(context, boardPosts)
     }
     LaunchedEffect(homeBoardPosts) {
@@ -644,18 +730,26 @@ private fun TimeTableAppContent(
     }
 
     /** 알리미 한 건 열기 — 읽음 처리 후 기존 포털 웹으로 이동합니다. */
+    fun markAlimRead(alim: HanaAlim) {
+        AlimReadStore.markRead(context, listOf(alim.id))
+        alimList = alimList.map { if (it.id == alim.id) it.copy(read = true) else it }
+        alimUnread = alimList.count { !it.read }
+        if (!alim.read) scope.launch { HanaAcademicApi.markAlimRead(context, listOf(alim.portalIdx)) }
+    }
+
     fun openAlim(alim: HanaAlim) {
         AlimReadStore.markRead(context, listOf(alim.id))
         alimList = alimList.map { if (it.id == alim.id) it.copy(read = true) else it }
         alimUnread = alimList.count { !it.read }
         // 포털에도 읽음으로 — 예전엔 앱 안에서만 읽음이라 하이하나에선 계속 안 읽음이었습니다.
-        if (!alim.read) scope.launch { HanaAcademicApi.markAlimRead(context, listOf(alim.id)) }
+        if (!alim.read) scope.launch { HanaAcademicApi.markAlimRead(context, listOf(alim.portalIdx)) }
         // 외부 브라우저는 하이하나에 로그인돼 있지 않아 로그인 화면이 떴습니다 — 세션을 쓰는 앱 안 웹뷰로.
-        webPage = HanaWebPage(alimUrl(alim.id), "알리미")
+        webPage = HanaWebPage(alimUrl(alim.portalIdx), "알리미")
     }
 
     /** 게시글 열기 — 화면은 즉시 뜨고, 세션 확인·로그인은 웹뷰가 페이지를 읽기 직전에 화면 안에서 합니다. */
     fun openBoardPost(post: HanaBoardPost) {
+        BoardReadStore.markRead(context, listOf(post))
         boardPost = post.url to post.title
     }
 
@@ -982,7 +1076,7 @@ private fun TimeTableAppContent(
         Timetable.blocks(today) { places[it] }
     }
     // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 밤 9시 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
-    val homeStayNotice = HomeStaySchedule.revision.let { homeStayNotice(today, now) }
+    val homeStayNotice = remember(today, now, HomeStaySchedule.revision) { homeStayNotice(today, now) }
     // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시), 안내 아래 줄(날씨·귀교 후 첫 일정·시험)을 계산합니다.
     var weatherRevision by remember { mutableIntStateOf(0) }
     // '지금 서울' 칸이 낡지 않게 30분마다 다시 확인합니다(서버·기기 모두 30분 캐시라 대부분 네트워크 없이 끝남).
@@ -992,21 +1086,64 @@ private fun TimeTableAppContent(
     val homeStayExtras by produceState<HomeStayExtras?>(
         null, homeStayNotice, now.hour, weatherRevision, HomeStaySchedule.revision, scheduleEntries,
     ) { value = homeStayExtras(context, today, now) }
-    val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
-    // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
-    val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
-    val upcomingGroups = coalesceUpcoming(todayBlocks.filter { it.start.isAfter(now) && !it.isBlank })
-    val remainingMinutes = currentBlock
-        ?.takeUnless { it.isBlank }
-        ?.let { Duration.between(now, it.end).toMinutes().coerceAtLeast(0) }
-    // '지금' 카드 아래 진행바 — 현재 블록 안에서 얼마나 지났는지 (20초 틱마다 갱신).
-    val blockProgress = currentBlock?.takeUnless { it.isBlank }?.let { block ->
-        val total = Duration.between(block.start, block.end).toMillis()
-        if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
+    // 지금 블록·다음 일정·남은 시간은 블록 목록이나 시각(20초 틱)이 바뀔 때만 계산합니다 — 재구성마다 다시 훑으면
+    // 중급 기기에서 이 화면 한 번 구성에 7ms 가까이 들었습니다.
+    val derived = remember(todayBlocks, now) {
+        val currentBlock = todayBlocks.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: todayBlocks.lastOrNull()
+        // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다 (위젯과 같은 규칙).
+        val nextBlock = Timetable.nextEvent(todayBlocks, currentBlock, now)
+        val upcomingGroups = coalesceUpcoming(todayBlocks.filter { it.start.isAfter(now) && !it.isBlank })
+        val remainingMinutes = currentBlock
+            ?.takeUnless { it.isBlank }
+            ?.let { Duration.between(now, it.end).toMinutes().coerceAtLeast(0) }
+        // '지금' 카드 아래 진행바 — 현재 블록 안에서 얼마나 지났는지 (20초 틱마다 갱신).
+        val blockProgress = currentBlock?.takeUnless { it.isBlank }?.let { block ->
+            val total = Duration.between(block.start, block.end).toMillis()
+            if (total <= 0) null else (Duration.between(block.start, now).toMillis().toFloat() / total).coerceIn(0f, 1f)
+        }
+        NowDerived(currentBlock, nextBlock, upcomingGroups, remainingMinutes, blockProgress)
     }
+    val currentBlock = derived.currentBlock
+    val nextBlock = derived.nextBlock
+    val upcomingGroups = derived.upcomingGroups
+    val remainingMinutes = derived.remainingMinutes
+    val blockProgress = derived.blockProgress
 
     // 스크롤 시 가운데 큰 제목이 접히는 One UI 확장 헤더 동작 — 탭을 바꾸면 펼친 상태에서 시작합니다.
     val headerState = rememberOneUiHeaderState()
+    // 접힌 만큼(dp)을 람다로 넘깁니다 — 여기서 값을 읽으면 스크롤 프레임마다 이 거대한 화면 전체가 다시 구성됐습니다.
+    val headerDensity = LocalDensity.current
+    val headerCollapsedBy: () -> Dp = remember(headerState, headerDensity) { { with(headerDensity) { (-headerState.offsetPx).toDp() } } }
+    // 큰 화면(태블릿, 840dp~) — 왼쪽 패널 + 접히지 않는 헤더, 하단 바·버튼 섬 없음.
+    // 가로처럼 아주 넓은 창(1200dp~)은 패널을 펼쳐 콘텐츠 옆에 두고 ≡ 로 바꾼 상태를 기억합니다. 세로 태블릿처럼 그보다 좁으면
+    // 늘 아이콘 레일이고, ≡ 로 펼친 패널은 콘텐츠를 밀지 않고 위에 겹쳐 떴다가 항목을 고르거나 바깥을 누르면 접힙니다
+    // (펼친 채 밀면 콘텐츠가 700dp 남짓으로 좁아졌습니다 — 삼성 기본 앱의 세로 화면과 같은 동작).
+    val large = isExpandedWindow()
+    val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+    val overlayPanel = large && windowWidth < 1200.dp
+    var panelOpen by remember(overlayPanel) { mutableStateOf(!overlayPanel && SidePanel.isOpen(context, default = true)) }
+    val panelSpace = if (!large) 0.dp else sidePanelSpace(panelOpen && !overlayPanel)
+    // 큰 화면에서 콘텐츠가 쓰는 폭 — 패널 오른쪽부터 화면 끝까지.
+    val contentArea = windowWidth - panelSpace
+    // 큰 화면 게시판의 오른쪽 칸에 열린 글 (주소 → 제목). 폰은 전체 화면 글(boardPost)을 그대로 씁니다.
+    var boardPane by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    // 목록 칸 폭 — Gmail(480dp)과 삼성 메시지(583dp) 사이, 콘텐츠 영역의 38%.
+    val boardListWidth = (contentArea * 0.38f).coerceIn(420.dp, 560.dp)
+    // 목록 | 본문 두 칸은 오른쪽 칸이 420dp 이상 남을 때만 — 그보다 좁으면 폰처럼 목록 하나에 글은 전체 화면.
+    val twoPane = large && contentArea >= 900.dp
+    // 큰 화면 신청·내역의 오른쪽 칸 — 처음엔 블록 순서상 첫 번째로 내역이 있는 서비스(교과교실은 카드 안에 내역이 있어 제외).
+    var applyPane by remember {
+        mutableStateOf(
+            ApplyOrderStore.get(context).firstNotNullOfOrNull { key ->
+                ApplyService.entries.firstOrNull { it.name == key && it != ApplyService.CLASSROOM }
+            } ?: ApplyService.STUDY_ROOM,
+        )
+    }
+    // 태블릿에서는 헤더 제목·오른쪽 아이콘도 가운데 놓인 콘텐츠의 가장자리에 맞춥니다 (폰은 0).
+    val headerInset by animateDpAsState(
+        if (large) 0.dp else (if (tab == TabIndex.HOME || (tab == TabIndex.SCHEDULE && scheduleSubTab == 0)) centeredSidePadding(Adaptive.GridWidth) else centeredSidePadding(Adaptive.ReadingWidth)) - OneUi.PagePadding,
+        label = "headerInset",
+    )
     // 탭을 바꾸면 그 탭은 항상 맨 위에서 다시 시작합니다 — 헤더를 펼치고, 페이지 내용의 스크롤도 초기화합니다
     // (탭마다 접힘을 기억하는 방식은 스와이프 중 옆 페이지가 먼저 그려지며 꼬여 제목과 목록이 겹쳐 보였습니다).
     // 페이지 스크롤 초기화는 방문 횟수를 key 로 써서 그 페이지의 저장 상태(LazyListState 등)를 새로 만드는 식입니다.
@@ -1041,7 +1178,10 @@ private fun TimeTableAppContent(
         }
     }
     LaunchedEffect(tab) {
-        if (pagerState.currentPage != tab && !pagerState.isScrollInProgress) pagerState.animateScrollToPage(tab)
+        if (pagerState.currentPage != tab && !pagerState.isScrollInProgress) {
+            // 큰 화면은 패널로만 탭을 바꾸므로 미끄러지지 않고 바로 — 미끄러지면 사이 탭들까지 그려 프레임이 떨어졌습니다.
+            if (large) pagerState.scrollToPage(tab) else pagerState.animateScrollToPage(tab)
+        }
     }
 
     // 아래로 당겨 새로고침 상태 — 인디케이터는 따로 그리지 않고, 오른쪽 위 새로고침 아이콘이 당긴 만큼
@@ -1062,17 +1202,117 @@ private fun TimeTableAppContent(
     val dialogHazeState = remember { HazeState() }
     // 하단 바·헤더 섬의 반사광 — 기울기 센서를 여기서 한 번만 켭니다.
     val liquidLight = rememberLiquidLight(enabled = remember { LiquidLens.create() != null })
-    CompositionLocalProvider(LocalHazeState provides hazeState, LocalDialogHazeState provides dialogHazeState, LocalLiquidLight provides liquidLight) {
-    Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(dialogHazeState).onSizeChanged { rootSize = it }) {
+    // 탭마다 다른 버튼 둘 — 폰은 오른쪽 위 버튼 섬, 큰 화면은 헤더 오른쪽에 같은 버튼을 둡니다.
+    val tabActions: @Composable (Dp) -> Unit = { buttonSize ->
+        @Composable
+        fun TabButton(desc: String, onClick: () -> Unit, dim: Boolean = false, icon: @Composable () -> Unit) {
+            OneUiActionButton(onClick = onClick, modifier = Modifier.alpha(if (dim) 0.4f else 1f), size = buttonSize) { icon() }
+        }
+        val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
+        when (tab) {
+            TabIndex.HOME -> TabButton("카드 순서", { editingHomeOrder = !editingHomeOrder }) {
+                if (editingHomeOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
+                else Icon(Icons.Default.Edit, contentDescription = "홈 카드 순서 편집")
+            }
+            TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
+                if (editingApplyOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
+                else Icon(Icons.Default.Edit, contentDescription = "블록 순서 편집")
+            }
+            TabIndex.MEAL -> TabButton("일간·주간", { toggleMealWeek() }) {
+                Icon(
+                    Icons.Default.DateRange,
+                    contentDescription = if (mealWeekMode) "일간 보기로" else "주간 보기로",
+                    tint = if (mealWeekMode) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                )
+            }
+            // 하이하나 통합검색 — 모든 게시판·모든 기간 (예전엔 불러온 10건 안에서만 찾았습니다).
+            TabIndex.BOARD -> TabButton("검색", { showingPortalSearch = true }) {
+                Icon(Icons.Default.Search, contentDescription = "하이하나 검색")
+            }
+            TabIndex.SCHEDULE -> TabButton("전환", { scheduleSubTab = if (scheduleSubTab == 0) 1 else 0 }) {
+                if (scheduleSubTab == 0) Icon(Icons.AutoMirrored.Filled.List, contentDescription = "학사일정 보기")
+                else Icon(Icons.Default.DateRange, contentDescription = "시간표 보기")
+            }
+            else -> Unit
+        }
+        when (tab) {
+            TabIndex.HOME -> TabButton("서울 날씨", { showingWeather = true }) {
+                Icon(painterResource(R.drawable.ic_weather_outline), contentDescription = "서울 날씨")
+            }
+            TabIndex.APPLY -> TabButton("외출 QR", {
+                val row = approvedOuting
+                if (row != null) outingQr = row else toast(if (approvedOutingChecked) "승인된 외출·외박이 없습니다" else "외출·외박을 확인하는 중입니다")
+            }, dim = approvedOutingChecked && approvedOuting == null) {
+                Icon(painterResource(R.drawable.ic_qr_code), contentDescription = "외출·외박 출입 QR")
+            }
+            TabIndex.MEAL -> TabButton("알레르기", { settingsStartPage = SettingsPage.MEAL; showingSettings = true }) {
+                Icon(Icons.Default.Warning, contentDescription = "알레르기 설정")
+            }
+            TabIndex.BOARD -> TabButton("새 글 알림", { settingsStartPage = SettingsPage.NOTIFY; showingSettings = true }) {
+                Icon(painterResource(R.drawable.ic_notify_settings), contentDescription = "새 글 알림 설정")
+            }
+            TabIndex.SCHEDULE -> TabButton("캘린더로", {
+                scope.launch {
+                    if (scheduleEntries.isEmpty()) loadSchedule(false)
+                    if (!ScheduleExport.share(context, scheduleEntries)) toast("내보낼 학사일정이 없습니다")
+                }
+            }) {
+                Icon(Icons.Default.Share, contentDescription = "학사일정을 캘린더로 내보내기")
+            }
+            else -> Unit
+        }
+    }
+    CompositionLocalProvider(
+        LocalHazeState provides hazeState,
+        LocalDialogHazeState provides dialogHazeState,
+        LocalLiquidLight provides liquidLight,
+        // 사진 배경이면 카드 밖 글자·아이콘은 사진 밝기에 맞춘 색 — 카드 안에서 테마색으로 돌아갑니다.
+        LocalContentColor provides (LocalOnPageColor.current ?: MaterialTheme.colorScheme.onSurface),
+    ) {
+    Box(Modifier.fillMaxSize().hazeSourceUnlessPerf(dialogHazeState).onSizeChanged { rootSize = it }) {
+    // 성능 모드는 배경을 여기서 한 번만(텍스처 재사용). 아니면 본문 상자 안의 배경(카드가 비출 흐림 소스)이 화면을 덮습니다.
+    if (PerformanceMode.enabled) OneUiPageBackdrop()
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            OneUiCollapsingHeader(
+            if (large) {
+                // 제목은 카드 왼쪽 끝에, 버튼은 카드 오른쪽 끝에 맞춥니다.
+                val side = if (twoPane && (tab == TabIndex.BOARD || tab == TabIndex.APPLY)) LargeSideMin
+                else sidePaddingIn(contentArea, if (tab == TabIndex.HOME || tab == TabIndex.SCHEDULE || tab == TabIndex.MEAL) LargeGridWidth else LargeReadingWidth, LargeSideMin)
+                LargeScreenHeader(
+                    title = tabTitles[tab],
+                    subtitle = buildString {
+                        append(dateText(today))
+                        if (offline) {
+                            append(" · 오프라인")
+                            if (lastSyncAt > 0L) append(" · ").append(syncTimeText(lastSyncAt)).append(" 동기화")
+                        }
+                    },
+                    modifier = Modifier.padding(start = panelSpace + side, end = side - 8.dp),
+                ) {
+                    tabActions(40.dp)
+                    OneUiActionButton(
+                        onClick = { if (hasCredentials) scope.launch { refreshAll() } else showingAccountSheet = true },
+                        enabled = !isSyncing && !isRefreshingAll,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            val pos = coords.positionInRoot()
+                            refreshIconOrigin = Offset(pos.x + coords.size.width / 2f, pos.y + coords.size.height / 2f)
+                        },
+                    ) {
+                        when {
+                            isRefreshingAll || refreshTravel > 0.01f -> Spacer(Modifier.size(24.dp))
+                            isSyncing -> OneUiLoading(size = 20.dp, stroke = 2.dp)
+                            else -> Icon(Icons.Default.Refresh, contentDescription = "동기화")
+                        }
+                    }
+                }
+            } else OneUiCollapsingHeader(
+                modifier = Modifier.padding(horizontal = headerInset),
                 state = headerState,
                 title = tabTitles[tab],
                 endReserve = with(LocalDensity.current) {
                     if (pillLeftPx.isNaN() || rootSize.width == 0) 200.dp
-                    else (rootSize.width - pillLeftPx).toDp() + 16.dp
+                    else (rootSize.width - pillLeftPx).toDp() - headerInset + 16.dp
                 },
                 subtitle = buildString {
                     append(dateText(today))
@@ -1085,14 +1325,29 @@ private fun TimeTableAppContent(
         },
     ) { innerPadding ->
         // bottomBar 슬롯이 비어 있으므로 innerPadding 의 아래 값은 시스템 내비게이션 인셋입니다 — 그 위에 바 높이를 더합니다.
-        val navBarSpace = innerPadding.calculateBottomPadding() + AppNavBarHeight + AppNavBarMargin * 2 + 8.dp
+        val navBarSpace = if (large) innerPadding.calculateBottomPadding() + 24.dp
+        else innerPadding.calculateBottomPadding() + AppNavBarHeight + AppNavBarMargin * 2 + 8.dp
         // 위쪽은 헤더 높이만큼 — 콘텐츠 상자 자체엔 위 여백을 주지 않아, 스크롤하면 목록이 글래스 툴바 아래로 지나갑니다.
+        // 태블릿처럼 넓은 창에서는 목록·글 탭을 읽기 좋은 폭으로 가운데 두고, 홈·시간표는 더 넓게 씁니다 (폰은 그대로).
+        // 큰 화면은 패널 오른쪽 영역 안에서 가운데 — 목록·글은 읽기 폭, 홈·시간표는 넓게. 헤더가 접히지 않으므로
+        // 내용은 헤더 아래에서 잘려 시작합니다(페이저에 위 여백) — 글자가 헤더 뒤로 지나가며 겹치지 않게.
+        val readingSide = if (large) sidePaddingIn(contentArea, LargeReadingWidth, LargeSideMin) else centeredSidePadding(Adaptive.ReadingWidth)
+        val gridSide = if (large) sidePaddingIn(contentArea, LargeGridWidth, LargeSideMin) else centeredSidePadding(Adaptive.GridWidth)
+        val contentTop = if (large) 8.dp else innerPadding.calculateTopPadding() + 8.dp
         val tabContentPadding = PaddingValues(
-            start = OneUi.PagePadding,
-            end = OneUi.PagePadding,
-            top = innerPadding.calculateTopPadding() + 8.dp,
+            start = readingSide,
+            end = readingSide,
+            top = contentTop,
             bottom = navBarSpace,
         )
+        val gridContentPadding = PaddingValues(
+            start = gridSide,
+            end = gridSide,
+            top = contentTop,
+            bottom = navBarSpace,
+        )
+        // 홈 카드 열 수 — 폰 1, 큰 화면은 카드 폭이 340dp 아래로 내려가지 않는 만큼 (최대 3).
+        val homeLanes = if (!large) 1 else (((contentArea - gridSide * 2) + 16.dp) / (340.dp + 16.dp)).toInt().coerceIn(2, 3)
         // 아래로 당겨 새로고침 — 헤더의 nestedScroll 보다 바깥에 둬서, 접힌 헤더가 먼저 다 펼쳐진 뒤에야
         // 남은 당김이 새로고침 인디케이터로 갑니다 (안 그러면 당길 때 헤더가 안 펼쳐지고 인디케이터만 내려옵니다).
         PullToRefreshBox(
@@ -1105,22 +1360,33 @@ private fun TimeTableAppContent(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .nestedScroll(headerState.connection),
+                .then(if (large) Modifier else Modifier.nestedScroll(headerState.connection)),
         ) {
             // 글래스 요소(하단 바·알약)는 소스 바깥에 둬야 자기 자신을 다시 흐리지 않습니다.
             // 배경(사진·그레인)도 이 소스 안에 그려야 하단 바·섬 유리가 배경 이미지를 비춥니다 — 루트에만 그리면
             // 유리 뒤가 비어 검은 바탕색으로 채워졌습니다.
-            Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
-            Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(materialHazeState))
+            Box(Modifier.fillMaxSize().hazeSourceUnlessPerf(hazeState)) {
+            // 카드 재질이 비출 배경 — 카드가 들어 있는 콘텐츠 소스(zIndex 0)보다 아래(-1)여야 Haze 가 그려 줍니다. 같은 0 이면
+                // "자기를 품은 소스보다 아래 층만" 규칙에 걸려 배경이 빠지고 카드가 단색 판(배경 사진이 안 비침)으로 보였습니다.
+                // 성능 모드는 배경을 루트에서 한 번만 그립니다(카드가 비출 흐림 소스가 필요 없음).
+                if (!PerformanceMode.enabled) OneUiPageBackdrop(Modifier.hazeSource(materialHazeState, zIndex = -1f))
             CompositionLocalProvider(LocalMaterialHazeState provides materialHazeState) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                beyondViewportPageCount = 0,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (large) Modifier.padding(start = panelSpace, top = innerPadding.calculateTopPadding()) else Modifier),
+                // 탭 페이지를 모두 살려 둡니다 — 탭을 바꿀 때마다 페이지를 새로 만들면 첫 프레임이 100ms 넘게 걸려(중급 기기) 끊겼습니다.
+                // 쉴 때 그리는 프레임이 0 이라(움직이는 효과를 다 뺐으므로) 살려 두는 비용은 메모리뿐입니다.
+                // 탭에 다시 들어갈 때 맨 위로 가는 건 재생성 대신 아래 resetTick 신호로 합니다.
+                beyondViewportPageCount = tabTitles.size - 1,
+                // 큰 화면은 패널로만 탭을 바꿉니다 (삼성 기본 앱들도 옆으로 밀어 탭을 바꾸지 않습니다).
+                userScrollEnabled = !large,
             ) { page ->
             // 이 페이지가 실제로 보이는 탭일 때만 헤더를 건드립니다 — 옆 페이지가 미리 그려질 때 펼치면 안 됩니다.
             val isActivePage = page == tab && !pagerState.isScrollInProgress
-            key(pageVisits[page] ?: 0) {
+            // 이 탭에 들른 횟수 — 바뀌면 각 탭이 스크롤을 맨 위로 되돌립니다(페이지를 새로 만들지 않고).
+            val resetTick = pageVisits[page] ?: 0
             when (page) {
                 TabIndex.MEAL -> MealTab(
                     dayMeals = mealDays[if (mealWeekMode) selectedMealDay else PlanStore.dayKey(today)],
@@ -1133,7 +1399,10 @@ private fun TimeTableAppContent(
                     selectedDate = selectedMealDate,
                     availableDays = availableMealDays,
                     onSelectDate = { selectedMealDay = PlanStore.dayKey(it) },
-                    contentPadding = tabContentPadding,
+                    // 큰 화면은 메뉴|영양·원산지를 나란히 두므로 홈처럼 넓게.
+                    contentPadding = if (large) gridContentPadding else tabContentPadding,
+                    sideBySideMeals = large && contentArea >= 780.dp,
+                    resetTick = resetTick,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -1146,7 +1415,8 @@ private fun TimeTableAppContent(
                     onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
                     onStartTour = { tourKind = it },
                 )
-                TabIndex.APPLY -> AcademicTab(
+                TabIndex.APPLY -> Row(Modifier.fillMaxSize()) {
+                AcademicTab(
                     subTab = 2,
                     applyEditing = editingApplyOrder,
                     schedule = scheduleEntries,
@@ -1168,12 +1438,35 @@ private fun TimeTableAppContent(
                     onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
                     onOpenSeats = { seatService = it },
                     onOpenAccount = { showingAccountSheet = true },
-                    contentPadding = tabContentPadding,
-                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
+                    contentPadding = if (twoPane) PaddingValues(start = LargeSideMin, top = 8.dp, bottom = navBarSpace) else tabContentPadding,
+                    // 큰 화면은 내역을 오른쪽 칸에 (서비스 카드 | 내역).
+                    onShowHistory = if (twoPane) ({ applyPane = it }) else null,
+                    historyShown = if (twoPane) applyPane else null,
+                    resetTick = resetTick,
+                    headerCollapsedBy = headerCollapsedBy,
                     onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = if (twoPane) Modifier.width(ApplyListWidth).fillMaxHeight() else Modifier.fillMaxSize(),
                 )
-                TabIndex.BOARD -> AcademicTab(
+                if (twoPane) {
+                    Box(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, end = LargeSideMin - 16.dp, top = 8.dp)) {
+                        val shown = applyPane
+                        key(shown) {
+                            val portal = { webPage = HanaWebPage("$PORTAL_BASE${shown.historyPath}", "${shown.label} 내역", resyncOnClose = true) }
+                            when (shown) {
+                                ApplyService.OUTING -> OutingHistoryScreen(onDismiss = {}, onOpenPortal = portal, embedded = true)
+                                else -> SeatHistoryScreen(
+                                    place = if (shown == ApplyService.LIBRARY) SeatHistoryPlace.LIBRARY else SeatHistoryPlace.STUDY_ROOM,
+                                    onDismiss = {},
+                                    onOpenPortal = portal,
+                                    embedded = true,
+                                )
+                            }
+                        }
+                    }
+                }
+                }
+                TabIndex.BOARD -> Row(Modifier.fillMaxSize()) {
+                AcademicTab(
                     subTab = 1,
                     schedule = scheduleEntries,
                     scheduleLoading = scheduleLoading,
@@ -1190,15 +1483,51 @@ private fun TimeTableAppContent(
                     boardLoading = boardLoading,
                     boardError = boardError,
                     onRetryBoard = { scope.launch { loadBoard(true) } },
-                    onOpenPost = { openBoardPost(it) },
+                    boardUnreadCounts = boardUnreadCounts,
+                    onMarkAllBoardsRead = { markAllBoardsRead() },
+                    // 큰 화면은 글을 오른쪽 칸에 (목록 | 본문), 폰은 전체 화면으로.
+                    onOpenPost = { if (twoPane) { BoardReadStore.markRead(context, listOf(it)); boardPane = it.url to it.title } else openBoardPost(it) },
+                    selectedPostUrl = if (twoPane) boardPane?.first else null,
                     onOpenWeb = { url, title -> webPage = HanaWebPage(url, title, resyncOnClose = true) },
                     onOpenSeats = { seatService = it },
                     onOpenAccount = { showingAccountSheet = true },
-                    contentPadding = tabContentPadding,
-                    headerCollapsedBy = with(LocalDensity.current) { (-headerState.offsetPx).toDp() },
+                    contentPadding = if (twoPane) PaddingValues(start = LargeSideMin, top = 8.dp, bottom = navBarSpace) else tabContentPadding,
+                    resetTick = resetTick,
+                    headerCollapsedBy = headerCollapsedBy,
                     onFitsWithoutScroll = { if (isActivePage) headerState.expand() },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = if (twoPane) Modifier.width(boardListWidth).fillMaxHeight() else Modifier.fillMaxSize(),
                 )
+                if (twoPane) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(start = 16.dp, end = LargeSideMin, top = 8.dp, bottom = navBarSpace - 8.dp),
+                    ) {
+                        OneUiCard(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp)) {
+                            val open = boardPane
+                            if (open == null) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "왼쪽에서 글을 고르세요",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = onPageVariantColor(),
+                                    )
+                                }
+                            } else key(open.first) {
+                                Box(Modifier.fillMaxSize()) {
+                                    BoardPostPane(
+                                        url = open.first,
+                                        fallbackTitle = open.second,
+                                        onFallbackWeb = { webPage = HanaWebPage(open.first, "게시글") },
+                                        padding = PaddingValues(top = 16.dp, bottom = 8.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                }
                 // 주간 시간표는 표준 카드 안에 담습니다. 포털에서 받은 표가 없으면 빈 격자 대신 안내를 띄웁니다.
                 TabIndex.SCHEDULE -> if (scheduleSubTab == 1) {
                     AcademicTab(
@@ -1219,9 +1548,12 @@ private fun TimeTableAppContent(
                         onOpenSeats = { seatService = it },
                         onOpenAccount = { showingAccountSheet = true },
                         contentPadding = tabContentPadding,
+                        resetTick = resetTick,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val scheduleScroll = rememberScrollState()
+                    LaunchedEffect(resetTick) { scheduleScroll.scrollTo(0) }
                     val timetableInstalled = remember(timetableRevision) { Timetable.fetchedWeek() != null }
                     // 표가 화면에 다 들어가면 스크롤(그리고 그에 딸린 헤더 접힘)을 아예 두지 않습니다 — 행 높이를
                     // 남는 높이에 맞춰 56~78dp 사이로 정하고, 그래도 넘칠 때만 스크롤을 붙입니다.
@@ -1234,22 +1566,25 @@ private fun TimeTableAppContent(
                     val available = maxHeight - collapsedBy - tabContentPadding.calculateTopPadding() - tabContentPadding.calculateBottomPadding() - cardChrome
                     // 줄 사이 구분선(0.8dp × 줄 수)도 높이를 차지합니다 — 빼지 않으면 마지막 교시 칸이 카드 끝에 잘렸습니다.
                     val gridLines = 1.dp * periodRows
-                    val rowHeight = ((available - gridLines) / periodRows).coerceIn(56.dp, 78.dp)
-                    val fits = !timetableInstalled || rowHeight * periodRows + gridLines <= available
+                    // 큰 화면은 요일 머리줄을 56dp 로 두고 수업 줄이 남는 높이를 나눠 가집니다(세로 태블릿에서 아래가 비지 않게).
+                    val headerRow = if (large) 56.dp else null
+                    val rowHeight = (if (headerRow != null) (available - gridLines - headerRow) / (periodRows - 1) else (available - gridLines) / periodRows)
+                        .coerceIn(56.dp, if (large) 160.dp else 78.dp)
+                    val fits = !timetableInstalled || rowHeight * (periodRows - 1) + (headerRow ?: rowHeight) + gridLines <= available
                     // 스크롤할 게 없는데 헤더가 접혀 있으면(다른 탭에서 넘어온 경우) 펼쳐 둡니다.
                     LaunchedEffect(fits, isActivePage) { if (fits && isActivePage) headerState.expand() }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .then(if (fits) Modifier else Modifier.verticalScroll(rememberScrollState()))
-                            .padding(tabContentPadding),
+                            .then(if (fits) Modifier else Modifier.verticalScroll(scheduleScroll))
+                            .padding(gridContentPadding),
                     ) {
                         OneUiCard(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(if (timetableInstalled) 8.dp else 24.dp),
                         ) {
                             if (timetableInstalled) {
-                                WeekTimetable(today, timetableRevision, rowHeight = rowHeight)
+                                WeekTimetable(today, timetableRevision, rowHeight = rowHeight, headerHeight = headerRow ?: rowHeight)
                             } else {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1264,7 +1599,7 @@ private fun TimeTableAppContent(
                                     Text(
                                         "학사시스템 연동이 필요합니다",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = onPageVariantColor(),
                                     )
                                     Spacer(Modifier.height(16.dp))
                                     OneUiButton(
@@ -1337,16 +1672,17 @@ private fun TimeTableAppContent(
                     },
                     onNavigateToTab = { tab = it },
                     editingOrder = editingHomeOrder,
-                    contentPadding = tabContentPadding,
+                    lanes = homeLanes,
+                    resetTick = resetTick,
+                    contentPadding = gridContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
-            }
             }
             }
             // 스크롤 가장자리 효과 — 하단 바 뒤로 지나가는 내용이 바 아래에서 배경색으로 잦아들어, 유리 밑의 글자가 바 테두리에
             // 걸려 끊겨 보이지 않습니다 (iOS 26 의 scroll edge effect). 탭 내용의 아래 여백(navBarSpace)과 같은 높이라
             // 끝까지 내린 마지막 카드는 가리지 않습니다.
-            Box(
+            if (!large) Box(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -1363,23 +1699,53 @@ private fun TimeTableAppContent(
             HanaTimetableWebViewHost()
             }
             }
-            AppNavBar(
+            if (!large) AppNavBar(
                 selected = tab,
                 onSelect = {
                     if (it != tab) navDriven = true
                     tab = it
                 },
                 // 스와이프 중엔 캡슐이 페이지 위치를 그대로 따라갑니다.
-                pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction,
-                following = pagerState.isScrollInProgress && !navDriven,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                pagePosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+                following = { pagerState.isScrollInProgress && !navDriven },
+                // 태블릿에서는 바가 화면 끝까지 늘어나 아이콘 사이가 휑했습니다 — 손에 쥐는 폭으로 가운데에.
+                modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = Adaptive.ControlWidth),
             )
         }
         }
     }
+    // 큰 화면 왼쪽 패널 — 헤더보다 위 층에 둬야 세로 화면에서 겹쳐 뜬 패널 위로 제목이 비치지 않습니다.
+    if (large) {
+        // 겹쳐 뜬 패널 바깥 — 옅게 가리고, 누르면 접힙니다.
+        if (overlayPanel) SidePanelScrim(open = panelOpen, onClose = { panelOpen = false })
+        AppSidePanel(
+            selected = tab,
+            onSelect = {
+                tab = it
+                // 새 탭을 먼저 한 번 그린 뒤에 접습니다 — 무거운 첫 프레임이 접히는 애니메이션 한가운데 끼면 끊겨 보였습니다.
+                if (overlayPanel) scope.launch {
+                    withFrameNanos { }
+                    withFrameNanos { }
+                    panelOpen = false
+                }
+            },
+            open = panelOpen,
+            onToggle = {
+                panelOpen = !panelOpen
+                if (!overlayPanel) SidePanel.setOpen(context, panelOpen)
+            },
+            alimUnread = alimUnread,
+            onOpenAlim = { if (overlayPanel) panelOpen = false; openAlimScreen() },
+            onOpenSettings = { if (overlayPanel) panelOpen = false; settingsStartPage = null; showingSettings = true },
+            showDev = false,
+            // 콘텐츠 위에 겹쳐 뜰 땐 뒤 글자가 비치지 않게 불투명하게.
+            opaque = overlayPanel,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+    }
     // 오른쪽 위 버튼 섬 하나 — [알리미 · 새로고침 · 설정], 새로고침이 가운데. 헤더가 펼쳐져 있을 땐 배경 없이,
     // 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다. 학사시스템 연동(계정)은 설정 → 계정·학년으로 옮겼습니다.
-    OneUiActionPill(
+    if (!large) OneUiActionPill(
         pillAlpha = ((headerState.fraction - 0.3f) / 0.7f).coerceIn(0f, 1f),
         // 새로고침 버튼이 화면 가로 정중앙에 오도록 섬을 놓습니다 — 당겨서 새로고침하면 그 자리에서 곧게 내려옵니다.
         // 섬 오른쪽이 화면 끝(여백 6dp)을 넘으면 그만큼만 왼쪽으로 물러납니다 (좁은 폰). 버튼을 38dp, 구분선 여백을 3dp 로
@@ -1395,8 +1761,10 @@ private fun TimeTableAppContent(
                 val measured = refreshIconOrigin.x - pillLeftPx
                 val refreshCenter = if (!pillLeftPx.isNaN() && measured > 0f && measured < island.width) measured
                 else (IslandPadding + IslandButton / 2).toPx()
-                val maxX = constraints.maxWidth - 6.dp.toPx() - island.width
-                val x = (constraints.maxWidth / 2f - refreshCenter).coerceAtMost(maxX).coerceAtLeast(0f)
+                val maxX = constraints.maxWidth - (6.dp + headerInset).toPx() - island.width
+                // Dev 탭은 버튼이 셋뿐이라 가운데 맞춤이면 오른쪽에 빈자리가 남습니다 — 그냥 오른쪽 끝에 붙입니다.
+                val x = if (tab == TabIndex.DEV) maxX.coerceAtLeast(0f)
+                else (constraints.maxWidth / 2f - refreshCenter).coerceAtMost(maxX).coerceAtLeast(0f)
                 layout(constraints.maxWidth, island.height) { island.place(x.roundToInt(), 0) }
             }
             .onGloballyPositioned { pillLeftPx = it.positionInRoot().x },
@@ -1421,63 +1789,7 @@ private fun TimeTableAppContent(
             }
         }
         OneUiActionDivider(gap = IslandDividerGap)
-        @Composable
-        fun TabButton(desc: String, onClick: () -> Unit, dim: Boolean = false, icon: @Composable () -> Unit) {
-            OneUiActionButton(onClick = onClick, modifier = Modifier.alpha(if (dim) 0.4f else 1f), size = IslandButton) { icon() }
-        }
-        val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
-        when (tab) {
-            TabIndex.HOME -> TabButton("카드 순서", { editingHomeOrder = !editingHomeOrder }) {
-                if (editingHomeOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
-                else Icon(Icons.Default.Edit, contentDescription = "홈 카드 순서 편집")
-            }
-            TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
-                if (editingApplyOrder) Icon(Icons.Default.Check, contentDescription = "순서 편집 끝내기")
-                else Icon(Icons.Default.Edit, contentDescription = "블록 순서 편집")
-            }
-            TabIndex.MEAL -> TabButton("일간·주간", { toggleMealWeek() }) {
-                Icon(
-                    Icons.Default.DateRange,
-                    contentDescription = if (mealWeekMode) "일간 보기로" else "주간 보기로",
-                    tint = if (mealWeekMode) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                )
-            }
-            // 하이하나 통합검색 — 모든 게시판·모든 기간 (예전엔 불러온 10건 안에서만 찾았습니다).
-            TabIndex.BOARD -> TabButton("검색", { showingPortalSearch = true }) {
-                Icon(Icons.Default.Search, contentDescription = "하이하나 검색")
-            }
-            TabIndex.SCHEDULE -> TabButton("전환", { scheduleSubTab = if (scheduleSubTab == 0) 1 else 0 }) {
-                if (scheduleSubTab == 0) Icon(Icons.AutoMirrored.Filled.List, contentDescription = "학사일정 보기")
-                else Icon(Icons.Default.DateRange, contentDescription = "시간표 보기")
-            }
-            else -> Unit
-        }
-        when (tab) {
-            TabIndex.HOME -> TabButton("서울 날씨", { showingWeather = true }) {
-                Icon(painterResource(R.drawable.ic_weather_outline), contentDescription = "서울 날씨")
-            }
-            TabIndex.APPLY -> TabButton("외출 QR", {
-                val row = approvedOuting
-                if (row != null) outingQr = row else toast(if (approvedOutingChecked) "승인된 외출·외박이 없습니다" else "외출·외박을 확인하는 중입니다")
-            }, dim = approvedOutingChecked && approvedOuting == null) {
-                Icon(painterResource(R.drawable.ic_qr_code), contentDescription = "외출·외박 출입 QR")
-            }
-            TabIndex.MEAL -> TabButton("알레르기", { settingsStartPage = SettingsPage.MEAL; showingSettings = true }) {
-                Icon(Icons.Default.Warning, contentDescription = "알레르기 설정")
-            }
-            TabIndex.BOARD -> TabButton("새 글 알림", { settingsStartPage = SettingsPage.NOTIFY; showingSettings = true }) {
-                Icon(painterResource(R.drawable.ic_notify_settings), contentDescription = "새 글 알림 설정")
-            }
-            TabIndex.SCHEDULE -> TabButton("캘린더로", {
-                scope.launch {
-                    if (scheduleEntries.isEmpty()) loadSchedule(false)
-                    if (!ScheduleExport.share(context, scheduleEntries)) toast("내보낼 학사일정이 없습니다")
-                }
-            }) {
-                Icon(Icons.Default.Share, contentDescription = "학사일정을 캘린더로 내보내기")
-            }
-            else -> Unit
-        }
+        tabActions(IslandButton)
         // 탭 버튼이 있는 탭만 두 번째 구분선 — Dev 탭은 새로고침 바로 뒤에 알리미·설정이 옵니다.
         if (tab != TabIndex.DEV) OneUiActionDivider(gap = IslandDividerGap)
         OneUiActionButton(onClick = { openAlimScreen() }, size = IslandButton) {
@@ -1489,53 +1801,28 @@ private fun TimeTableAppContent(
                     ) { Text(if (alimUnread > 99) "99+" else "$alimUnread") }
                 }
             }) {
-                Icon(Icons.Default.Notifications, contentDescription = "알리미")
+                Icon(painterResource(R.drawable.ic_inbox), contentDescription = "알리미")
             }
         }
         // 설정은 늘 맨 오른쪽.
         OneUiActionButton(onClick = { settingsStartPage = null; showingSettings = true }, size = IslandButton) {
-            Icon(Icons.Default.Settings, contentDescription = "설정")
+            // 업데이트 뒤 설정에 처음 들어갈 때까지 'N' — 바뀐 점이 설정(화면)에 있다는 표시.
+            BadgedBox(badge = {
+                if (WhatsNew.pending) {
+                    Badge(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White) { Text("N") }
+                }
+            }) {
+                Icon(Icons.Default.Settings, contentDescription = "설정")
+            }
         }
     }
     // 섬의 새로고침 아이콘 — 당긴 만큼 섬 맨 왼쪽 자리에서 화면 정중앙으로 내려오고,
     // 새로고침 중에는 거기서 돌다가 끝나면 다시 섬으로 올라갑니다.
-    if (refreshTravel > 0.005f) {
-        val density = LocalDensity.current
-        val statusTop = WindowInsets.statusBars.getTop(density)
-        // 섬이 새로고침을 화면 가운데에 두므로 제자리에서 곧게 — 좁은 폰에서 섬이 물러났어도 비스듬히 내려오지 않게 같은 x.
-        val targetX = refreshIconOrigin.x
-        val targetY = statusTop + with(density) { (OneUiCompactBarHeight + OneUiHeaderExpandedExtra + 28.dp).toPx() }
-        val cx = refreshIconOrigin.x + (targetX - refreshIconOrigin.x) * refreshTravel
-        val cy = refreshIconOrigin.y + (targetY - refreshIconOrigin.y) * refreshTravel
-        val spin by rememberInfiniteTransition(label = "refreshSpin").animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-            label = "refreshSpinAngle",
-        )
-        val halfPx = with(density) { 20.dp.toPx() }
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    translationX = cx - halfPx
-                    translationY = cy - halfPx
-                    // 섬 자리에선 투명 배경, 내려올수록 글래스 원이 드러납니다.
-                    alpha = 1f
-                }
-                .size(40.dp)
-                .oneUiGlassSurface(CircleShape, alpha = refreshTravel, container = MaterialTheme.colorScheme.floatingPill),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.graphicsLayer {
-                    rotationZ = if (isRefreshingAll) spin else refreshTravel * 300f
-                },
-            )
-        }
-    }
+    RefreshTravelIcon(
+        travel = { refreshTravel },
+        origin = refreshIconOrigin,
+        isRefreshing = isRefreshingAll,
+    )
     }
 
     editingSlot?.let { slot ->
@@ -1634,6 +1921,11 @@ private fun TimeTableAppContent(
                 showingAccountSheet = true
             },
             onDismiss = { showingAlim = false },
+            // 큰 화면은 목록 | 원문 두 칸 — 원문은 앱 안 웹 화면을 오른쪽 칸에.
+            detailUrl = if (isExpandedWindow()) ({ alimUrl(it.portalIdx) }) else null,
+            onReadInPane = { markAlimRead(it) },
+            // 외부 브라우저는 하이하나에 로그인돼 있지 않아 앱 안 웹 화면으로.
+            onOpenBrowser = { webPage = HanaWebPage(it, "알리미") },
         )
     }
 
@@ -1788,6 +2080,19 @@ private fun TimeTableAppContent(
             },
             updateAvailable = updateAvailable,
             onOpenAppInfo = { showingAppInfo = true },
+            highlightDisplay = whatsNewInSettings,
+            devContent = if (BuildConfig.DEBUG) ({
+                DevTab(
+                    contentPadding = PaddingValues(0.dp),
+                    embedded = true,
+                    onShowExactAlarmPrompt = { showingExactAlarmPrompt = true },
+                    onOpenSeats = { seatService = it },
+                    onOpenSettings = {},
+                    onOpenAccount = { showingAccountSheet = true },
+                    onRefreshLive = { scope.launch { runCatching { LiveActivity.update(context) } } },
+                    onStartTour = { tourKind = it },
+                )
+            }) else null,
             onDismiss = { showingSettings = false; settingsStartPage = null },
             initialPage = settingsStartPage,
         )
@@ -1874,6 +2179,10 @@ private fun SettingsScreen(
     onDismiss: () -> Unit,
     /** 헤더 버튼에서 바로 열 세부 페이지(급식 알레르기·알림 등) — null 이면 분류 목록부터. */
     initialPage: SettingsPage? = null,
+    /** 디버그 빌드의 개발자 페이지 내용 — null 이면 분류에 안 보입니다. */
+    devContent: (@Composable () -> Unit)? = null,
+    /** 새 버전의 바뀐 점이 '화면'에 있을 때 그 줄에 점. */
+    highlightDisplay: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1887,9 +2196,12 @@ private fun SettingsScreen(
     val boardNotifyCount = BoardNotifier.enabledCategories(context).size
     val aiSummaryOn = PostSummarizer.isEnabled(context)
 
-    OneUiFullScreen(title = "설정", onDismiss = onDismiss) { toolbar ->
+    // 큰 화면은 왼쪽 분류 | 오른쪽 세부 (갤럭시 탭 설정 앱과 같은 두 칸) — 처음엔 계정 페이지를 펼쳐 둡니다.
+    val wide = isExpandedWindow()
+    val widePage = page ?: SettingsPage.ACCOUNT
+    val rootList: @Composable (PaddingValues, Modifier) -> Unit = { toolbar, listModifier ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = listModifier,
             contentPadding = PaddingValues(
                 start = OneUi.PagePadding,
                 end = OneUi.PagePadding,
@@ -1912,6 +2224,7 @@ private fun SettingsScreen(
                     SettingsCategoryRow(
                         page = SettingsPage.DISPLAY,
                         summary = "${PlanStore.themeLabel(appTheme)} · 배경 ${if (hasBackgroundPhoto) "사진" else "기본"}",
+                        badgeDot = highlightDisplay,
                         onClick = { page = SettingsPage.DISPLAY },
                     )
                     OneUiDivider(startIndent = SettingsCategoryIndent)
@@ -1959,239 +2272,314 @@ private fun SettingsScreen(
                     )
                 }
             }
+            if (devContent != null) {
+                item {
+                    OneUiGroupColumn(Modifier.padding(top = 12.dp)) {
+                        SettingsCategoryRow(page = SettingsPage.DEV, summary = "디버그 빌드 전용", onClick = { page = SettingsPage.DEV })
+                    }
+                }
+            }
         }
     }
-
-    page?.let { current ->
-        // 헤더 버튼으로 이 페이지를 바로 열었으면 닫을 때 설정 목록이 아니라 원래 탭으로 돌아갑니다.
-        OneUiFullScreen(title = current.title, onDismiss = { if (current == initialPage) onDismiss() else page = null }) { toolbar ->
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = OneUi.PagePadding,
-                    end = OneUi.PagePadding,
-                    top = toolbar.calculateTopPadding() + 4.dp,
-                    bottom = toolbar.calculateBottomPadding() + 32.dp,
-                ),
-            ) {
-                when (current) {
-                    SettingsPage.ACCOUNT -> item {
-                OneUiSectionTitle("학사")
-                OneUiGroupColumn {
+    val pageList: @Composable (SettingsPage, PaddingValues, Modifier, Boolean) -> Unit = { current, toolbar, listModifier, showTitle ->
+        LazyColumn(
+            modifier = listModifier,
+            contentPadding = PaddingValues(
+                start = OneUi.PagePadding,
+                end = OneUi.PagePadding,
+                top = toolbar.calculateTopPadding() + 4.dp,
+                bottom = toolbar.calculateBottomPadding() + 32.dp,
+            ),
+        ) {
+            // 두 칸 오른쪽에서는 툴바가 없으니 맨 위에 이 페이지 제목을.
+            if (showTitle) item {
+                Text(
+                    current.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp),
+                )
+            }
+            when (current) {
+                SettingsPage.ACCOUNT -> item {
+            OneUiSectionTitle("학사")
+            OneUiGroupColumn {
+                OneUiListItem(
+                    title = "학사시스템 연동",
+                    subtitle = if (connected) "하이하나 계정으로 로그인됨" else "로그인이 필요합니다",
+                    leading = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = onPageVariantColor(),
+                        )
+                    },
+                    onClick = onOpenAccount,
+                )
+                OneUiDivider()
+                Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
+                    Text("학년", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (1..3).forEach { grade ->
+                            OneUiChip(
+                                selected = studentGrade == grade,
+                                onClick = { onStudentGradeChange(grade) },
+                                label = "$grade 학년",
+                            )
+                        }
+                    }
+                }
+            }
+                }
+                SettingsPage.DISPLAY -> item {
+            OneUiSectionTitle("테마·색")
+            OneUiGroupColumn {
+                AccentPickerRow(selectedArgb = accentArgb, onSelect = onAccentChange)
+                OneUiDivider()
+                PlanStore.themes.forEach { option ->
+                    OneUiRadioRow(
+                        selected = appTheme == option,
+                        label = PlanStore.themeLabel(option),
+                        onClick = { onAppThemeChange(option) },
+                    )
+                }
+                OneUiDivider()
+                BackgroundPhotoRows(hasBackgroundPhoto, onBackgroundChanged)
+            }
+            OneUiSectionTitle("하단 바")
+            OneUiGroupColumn {
+                OneUiListItem(
+                    title = "탭 이름 표시",
+                    subtitle = "끄면 아이콘만 보이고 바가 조금 낮아집니다.",
+                    trailing = { OneUiSwitch(checked = NavBarLabels.shown, onCheckedChange = { NavBarLabels.set(context, it) }) },
+                    onClick = { NavBarLabels.set(context, !NavBarLabels.shown) },
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            OneUiSectionTitle("성능")
+            OneUiGroupColumn {
+                OneUiListItem(
+                    title = "성능 모드",
+                    subtitle = "카드·바의 흐림과 유리 효과를 끄고 단색으로 그립니다. 스크롤이 버벅이거나 배터리가 빨리 닳는 폰에 권장합니다.",
+                    trailing = { OneUiSwitch(checked = PerformanceMode.enabled, onCheckedChange = { PerformanceMode.set(context, it) }) },
+                    onClick = { PerformanceMode.set(context, !PerformanceMode.enabled) },
+                )
+                if (!PerformanceMode.enabled) {
+                    OneUiDivider()
+                    // 서리 유리 불투명도 — 카드·칩·버튼이 뒤 배경을 얼마나 비칠지.
+                    Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("유리 불투명도", style = MaterialTheme.typography.bodyLarge)
+                                Text("카드·칩·버튼이 뒤 배경을 비치는 정도", style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
+                            }
+                            Text("${(FrostOpacity.alpha * 100).roundToInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        OneUiSlider(value = FrostOpacity.alpha, onValueChange = { FrostOpacity.set(context, it) }, valueRange = FrostOpacity.RANGE)
+                        if (FrostOpacity.alpha != FrostOpacity.DEFAULT) {
+                            OneUiTextButton(text = "기본값으로", onClick = { FrostOpacity.set(context, FrostOpacity.DEFAULT) }, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+                }
+                SettingsPage.WIDGET -> item {
+            OneUiSectionTitle("위젯")
+            OneUiGroupColumn {
+                WidgetSettingsSection(
+                    theme = widgetTheme,
+                    accent = widgetAccent,
+                    kindColors = widgetKindColors,
+                    onKindColorChange = onWidgetKindColorChange,
+                    onKindColorsReset = onWidgetKindColorsReset,
+                    opacity = widgetOpacity,
+                    onThemeChange = onWidgetThemeChange,
+                    onAccentChange = onWidgetAccentChange,
+                    onOpacityChange = onWidgetOpacityChange,
+                )
+                if (!exactAlarmGranted) {
+                    OneUiDivider()
                     OneUiListItem(
-                        title = "학사시스템 연동",
-                        subtitle = if (connected) "하이하나 계정으로 로그인됨" else "로그인이 필요합니다",
-                        leading = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                        title = "정확한 시각에 갱신",
+                        subtitle = "수업·면학이 바뀌는 순간 위젯을 바로 갱신하려면 '알람 및 리마인더' 권한이 필요합니다. 탭해서 허용하세요.",
                         trailing = {
                             Icon(
                                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = onPageVariantColor(),
                             )
                         },
-                        onClick = onOpenAccount,
+                        badgeDot = true,
+                        onClick = { ExactAlarmPermission.openSettings(context) },
                     )
+                }
+            }
+                }
+                SettingsPage.NOTIFY -> {
+                    item {
+            OneUiSectionTitle("실시간 일정")
+            // Now Bar(Android 16 실시간 업데이트) — 평일 아침시간~2타임, 주말 1~4타임 동안 지금 구간과 남은 시간.
+            var liveOn by remember { mutableStateOf(LiveActivity.isEnabled(context)) }
+            val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                LiveActivity.setEnabled(context, granted)
+                liveOn = granted
+                // 알림 권한을 전에 두 번 거절했으면 시스템이 창을 띄우지 않고 바로 거절을 돌려줍니다 — 스위치가 소리 없이
+                // 되돌아가 "안 켜지는" 것처럼 보였습니다. 그럴 땐 앱 알림 설정을 열어 직접 허용하게 합니다.
+                if (!granted) {
+                    android.widget.Toast.makeText(context, "알림을 허용해야 Now Bar를 켤 수 있습니다", android.widget.Toast.LENGTH_LONG).show()
+                    LiveActivity.openNotificationSettings(context)
+                }
+            }
+            fun setLive(on: Boolean) {
+                if (on && Build.VERSION.SDK_INT >= 33 &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    return
+                }
+                LiveActivity.setEnabled(context, on)
+                liveOn = on
+            }
+            // 켜져 있는데 시스템이 실시간 알림을 막고 있으면(알림 꺼짐 / Android 16 실시간 정보 거부) 안내 줄을 보여주고,
+            // 누르면 이 앱의 알림 설정으로 보냅니다. 설정에서 돌아올 때(ON_RESUME) 다시 확인합니다.
+            var liveBlocked by remember { mutableStateOf(LiveActivity.blockedReason(context)) }
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner, liveOn) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) liveBlocked = LiveActivity.blockedReason(context)
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+            OneUiGroupColumn {
+                OneUiListItem(
+                    title = "Now Bar에 지금 일정 표시",
+                    subtitle = "평일은 아침시간부터 2타임까지, 주말은 1타임부터 4타임까지 남은 시간을 실시간으로",
+                    trailing = { OneUiSwitch(checked = liveOn, onCheckedChange = { setLive(it) }) },
+                    onClick = { setLive(!liveOn) },
+                )
+                val reason = liveBlocked
+                if (liveOn && reason != null) {
                     OneUiDivider()
-                    Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
-                        Text("학년", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            (1..3).forEach { grade ->
-                                OneUiChip(
-                                    selected = studentGrade == grade,
-                                    onClick = { onStudentGradeChange(grade) },
-                                    label = "$grade 학년",
-                                )
-                            }
-                        }
-                    }
-                }
-                    }
-                    SettingsPage.DISPLAY -> item {
-                OneUiSectionTitle("테마·색")
-                OneUiGroupColumn {
-                    AccentPickerRow(selectedArgb = accentArgb, onSelect = onAccentChange)
-                    OneUiDivider()
-                    PlanStore.themes.forEach { option ->
-                        OneUiRadioRow(
-                            selected = appTheme == option,
-                            label = PlanStore.themeLabel(option),
-                            onClick = { onAppThemeChange(option) },
-                        )
-                    }
-                    OneUiDivider()
-                    BackgroundPhotoRows(hasBackgroundPhoto, onBackgroundChanged)
-                }
-                    }
-                    SettingsPage.WIDGET -> item {
-                OneUiSectionTitle("위젯")
-                OneUiGroupColumn {
-                    WidgetSettingsSection(
-                        theme = widgetTheme,
-                        accent = widgetAccent,
-                        kindColors = widgetKindColors,
-                        onKindColorChange = onWidgetKindColorChange,
-                        onKindColorsReset = onWidgetKindColorsReset,
-                        opacity = widgetOpacity,
-                        onThemeChange = onWidgetThemeChange,
-                        onAccentChange = onWidgetAccentChange,
-                        onOpacityChange = onWidgetOpacityChange,
-                    )
-                    if (!exactAlarmGranted) {
-                        OneUiDivider()
-                        OneUiListItem(
-                            title = "정확한 시각에 갱신",
-                            subtitle = "수업·면학이 바뀌는 순간 위젯을 바로 갱신하려면 '알람 및 리마인더' 권한이 필요합니다. 탭해서 허용하세요.",
-                            trailing = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            badgeDot = true,
-                            onClick = { ExactAlarmPermission.openSettings(context) },
-                        )
-                    }
-                }
-                    }
-                    SettingsPage.NOTIFY -> {
-                        item {
-                OneUiSectionTitle("실시간 일정")
-                // Now Bar(Android 16 실시간 업데이트) — 평일 아침시간~2타임, 주말 1~4타임 동안 지금 구간과 남은 시간.
-                var liveOn by remember { mutableStateOf(LiveActivity.isEnabled(context)) }
-                val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                    LiveActivity.setEnabled(context, granted)
-                    liveOn = granted
-                }
-                fun setLive(on: Boolean) {
-                    if (on && Build.VERSION.SDK_INT >= 33 &&
-                        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                        return
-                    }
-                    LiveActivity.setEnabled(context, on)
-                    liveOn = on
-                }
-                // 켜져 있는데 시스템이 실시간 알림을 막고 있으면(알림 꺼짐 / Android 16 실시간 정보 거부) 안내 줄을 보여주고,
-                // 누르면 이 앱의 알림 설정으로 보냅니다. 설정에서 돌아올 때(ON_RESUME) 다시 확인합니다.
-                var liveBlocked by remember { mutableStateOf(LiveActivity.blockedReason(context)) }
-                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-                DisposableEffect(lifecycleOwner, liveOn) {
-                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) liveBlocked = LiveActivity.blockedReason(context)
-                    }
-                    lifecycleOwner.lifecycle.addObserver(observer)
-                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-                }
-                OneUiGroupColumn {
                     OneUiListItem(
-                        title = "Now Bar에 지금 일정 표시",
-                        subtitle = "평일은 아침시간부터 2타임까지, 주말은 1타임부터 4타임까지 남은 시간을 실시간으로",
-                        trailing = { OneUiSwitch(checked = liveOn, onCheckedChange = { setLive(it) }) },
-                        onClick = { setLive(!liveOn) },
+                        title = reason.title,
+                        subtitle = reason.steps,
+                        titleColor = MaterialTheme.colorScheme.error,
+                        trailing = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = onPageVariantColor(),
+                            )
+                        },
+                        onClick = { LiveActivity.openNotificationSettings(context) },
                     )
-                    val reason = liveBlocked
-                    if (liveOn && reason != null) {
-                        OneUiDivider()
-                        OneUiListItem(
-                            title = reason.title,
-                            subtitle = reason.steps,
-                            titleColor = MaterialTheme.colorScheme.error,
-                            trailing = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = { LiveActivity.openNotificationSettings(context) },
-                        )
+                }
+            }
+                    }
+                    item {
+            OneUiSectionTitle("게시판 새 글")
+            // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
+            var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
+            OneUiGroupColumn {
+                BoardCategory.entries.forEachIndexed { index, category ->
+                    OneUiListItem(
+                        title = category.label,
+                        trailing = {
+                            OneUiSwitch(
+                                checked = category in boardNotify,
+                                onCheckedChange = { on ->
+                                    BoardNotifier.setEnabled(context, category, on)
+                                    boardNotify = BoardNotifier.enabledCategories(context)
+                                },
+                            )
+                        },
+                        onClick = {
+                            val on = category !in boardNotify
+                            BoardNotifier.setEnabled(context, category, on)
+                            boardNotify = BoardNotifier.enabledCategories(context)
+                        },
+                    )
+                    if (index != BoardCategory.entries.lastIndex) OneUiDivider()
+                }
+            }
                     }
                 }
-                        }
-                        item {
-                OneUiSectionTitle("게시판 새 글")
-                // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
-                var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
-                OneUiGroupColumn {
-                    BoardCategory.entries.forEachIndexed { index, category ->
+                SettingsPage.BOARD -> item {
+                    OneUiSectionTitle("AI 요약")
+                    var aiOn by remember { mutableStateOf(PostSummarizer.isEnabled(context)) }
+                    OneUiGroupColumn {
                         OneUiListItem(
-                            title = category.label,
+                            title = "AI 요약 사용",
+                            subtitle = "게시판 목록, 게시글, 새 글 알림에 생성형 AI가 만든 요약을 표시합니다. 끄면 게시글을 요약 서버로 보내지 않습니다.",
                             trailing = {
                                 OneUiSwitch(
-                                    checked = category in boardNotify,
+                                    checked = aiOn,
                                     onCheckedChange = { on ->
-                                        BoardNotifier.setEnabled(context, category, on)
-                                        boardNotify = BoardNotifier.enabledCategories(context)
+                                        PostSummarizer.setEnabled(context, on)
+                                        aiOn = on
                                     },
                                 )
                             },
                             onClick = {
-                                val on = category !in boardNotify
-                                BoardNotifier.setEnabled(context, category, on)
-                                boardNotify = BoardNotifier.enabledCategories(context)
+                                PostSummarizer.setEnabled(context, !aiOn)
+                                aiOn = !aiOn
                             },
                         )
-                        if (index != BoardCategory.entries.lastIndex) OneUiDivider()
                     }
                 }
-                        }
-                    }
-                    SettingsPage.BOARD -> item {
-                        OneUiSectionTitle("AI 요약")
-                        var aiOn by remember { mutableStateOf(PostSummarizer.isEnabled(context)) }
-                        OneUiGroupColumn {
-                            OneUiListItem(
-                                title = "AI 요약 사용",
-                                subtitle = "게시판 목록, 게시글, 새 글 알림에 생성형 AI가 만든 요약을 표시합니다. 끄면 게시글을 요약 서버로 보내지 않습니다.",
-                                trailing = {
-                                    OneUiSwitch(
-                                        checked = aiOn,
-                                        onCheckedChange = { on ->
-                                            PostSummarizer.setEnabled(context, on)
-                                            aiOn = on
-                                        },
+                SettingsPage.MEAL -> item {
+            OneUiSectionTitle("급식")
+            OneUiGroupColumn {
+                Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
+                    Text("알레르기", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(12.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ALLERGY_LEGEND.forEach { (code, name) ->
+                            OneUiChip(
+                                selected = code in allergyCodes,
+                                onClick = {
+                                    onAllergyCodesChange(
+                                        if (code in allergyCodes) allergyCodes - code
+                                        else allergyCodes + code,
                                     )
                                 },
-                                onClick = {
-                                    PostSummarizer.setEnabled(context, !aiOn)
-                                    aiOn = !aiOn
-                                },
+                                label = name,
                             )
                         }
                     }
-                    SettingsPage.MEAL -> item {
-                OneUiSectionTitle("급식")
-                OneUiGroupColumn {
-                    Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 14.dp)) {
-                        Text("알레르기", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.height(12.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ALLERGY_LEGEND.forEach { (code, name) ->
-                                OneUiChip(
-                                    selected = code in allergyCodes,
-                                    onClick = {
-                                        onAllergyCodesChange(
-                                            if (code in allergyCodes) allergyCodes - code
-                                            else allergyCodes + code,
-                                        )
-                                    },
-                                    label = name,
-                                )
-                            }
-                        }
-                    }
-                }
-                    }
-                    SettingsPage.ABOUT -> Unit
                 }
             }
+                }
+                SettingsPage.DEV -> item { devContent?.invoke() }
+                SettingsPage.ABOUT -> Unit
+            }
+        }
+    }
+    OneUiFullScreen(title = "설정", onDismiss = onDismiss, maxContentWidth = if (wide) 1400.dp else Adaptive.ReadingWidth) { toolbar ->
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                CompositionLocalProvider(LocalSettingsSelection provides widePage) {
+                    rootList(toolbar, Modifier.width(420.dp).fillMaxHeight())
+                }
+                key(widePage) { pageList(widePage, toolbar, Modifier.weight(1f).fillMaxHeight(), true) }
+            }
+        } else {
+            rootList(toolbar, Modifier.fillMaxSize())
+        }
+    }
+
+    if (!wide) page?.let { current ->
+        // 헤더 버튼으로 이 페이지를 바로 열었으면 닫을 때 설정 목록이 아니라 원래 탭으로 돌아갑니다.
+        OneUiFullScreen(title = current.title, onDismiss = { if (current == initialPage) onDismiss() else page = null }) { toolbar ->
+            pageList(current, toolbar, Modifier.fillMaxSize(), false)
         }
     }
 }
@@ -2230,7 +2618,7 @@ internal fun BackgroundPhotoRows(hasBackgroundPhoto: Boolean, onBackgroundChange
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = onPageVariantColor(),
             )
         },
         onClick = {
@@ -2238,6 +2626,32 @@ internal fun BackgroundPhotoRows(hasBackgroundPhoto: Boolean, onBackgroundChange
         },
     )
     if (hasBackgroundPhoto) {
+        // 사진 밝기·채도 — 움직이는 대로 바로 화면에 반영되고 저장됩니다(사진 파일은 그대로).
+        @Composable
+        fun AdjustRow(label: String, valueText: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+            Column(Modifier.padding(horizontal = OneUi.RowPadding, vertical = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.weight(1f))
+                    Text(valueText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.height(4.dp))
+                OneUiSlider(value = value, onValueChange = onChange, valueRange = range)
+            }
+        }
+        fun signedPercent(v: Float): String = (v * 100).roundToInt().let { if (it > 0) "+$it%" else "$it%" }
+        OneUiDivider()
+        AdjustRow("밝기", signedPercent(PageBackgroundAdjust.brightness), PageBackgroundAdjust.brightness, -0.4f..0.4f) {
+            PageBackgroundAdjust.set(context, brightness = (it * 50).roundToInt() / 50f)
+        }
+        // 채도도 밝기처럼 원래 색 대비 ±% 로 (100% → 0%, 90% → -10%).
+        AdjustRow("채도", signedPercent(PageBackgroundAdjust.saturation - 1f), PageBackgroundAdjust.saturation, 0f..1.6f) {
+            PageBackgroundAdjust.set(context, saturation = (it * 50).roundToInt() / 50f)
+        }
+        if (!PageBackgroundAdjust.isDefault) {
+            OneUiDivider()
+            OneUiListItem(title = "밝기·채도 기본값으로", onClick = { PageBackgroundAdjust.reset(context) })
+        }
         OneUiDivider()
         OneUiListItem(
             title = "기본 배경으로 되돌리기",
@@ -2262,6 +2676,8 @@ private enum class SettingsPage(val title: String, val icon: Int?, val tint: Col
     BOARD("게시판", R.drawable.ic_settings_book, Color(0xFF715AFF)),
     MEAL("급식", R.drawable.ic_settings_meal, Color(0xFFFDBE4E)),
     ABOUT("정보", R.drawable.ic_settings_info, Color(0xFF6868A3)),
+    /** 디버그 빌드 전용 — 예전 하단 바의 Dev 탭. */
+    DEV("개발자", null, Color(0xFF5F6B7A)),
 }
 
 /** One UI 설정처럼 색 원 안에 지름의 절반보다 조금 큰 흰 아이콘. */
@@ -2280,6 +2696,9 @@ private fun SettingsCategoryRow(
     title: String = page.title,
     badgeDot: Boolean = false,
 ) {
+    // 큰 화면 두 칸에서 오른쪽에 열린 분류는 옅은 강조색 바탕.
+    val selected = LocalSettingsSelection.current == page
+    Box(Modifier.background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)) {
     OneUiListItem(
         title = title,
         subtitle = summary,
@@ -2296,6 +2715,8 @@ private fun SettingsCategoryRow(
                 val iconModifier = Modifier.size(SettingsIconGlyph)
                 if (page.icon != null) {
                     Icon(painterResource(page.icon), contentDescription = null, tint = Color.White, modifier = iconModifier)
+                } else if (page == SettingsPage.DEV) {
+                    Icon(Icons.Outlined.Build, contentDescription = null, tint = Color.White, modifier = iconModifier)
                 } else {
                     Icon(Icons.Default.Notifications, contentDescription = null, tint = Color.White, modifier = Modifier.size(SettingsIconGlyph + 2.dp))
                 }
@@ -2305,12 +2726,15 @@ private fun SettingsCategoryRow(
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = onPageVariantColor(),
             )
         },
         onClick = onClick,
     )
+    }
 }
+
+private val LocalSettingsSelection = androidx.compose.runtime.compositionLocalOf<SettingsPage?> { null }
 
 /** "알레르기 새우 외 2개" / "알레르기 표시 안 함" */
 private fun allergySummary(codes: Set<Int>): String {
@@ -2326,13 +2750,77 @@ private fun allergySummary(codes: Set<Int>): String {
  * 하단 내비게이션 — 화면 가장자리와 여백을 두고 뜬 알약 모양 바. 선택된 탭의 아이콘만
  * 바 위로 살짝 올라온 동그란 배지로 떠오르고, 나머지는 옅은 색 아이콘+라벨로 가라앉습니다.
  */
+/** 큰 화면 콘텐츠 폭 — 목록·글은 읽기 폭(갤럭시 탭 설정 오른쪽 칸 정도), 홈·시간표는 넓게, 가장자리 여백은 최소 24dp. */
+private val LargeReadingWidth = 760.dp
+private val LargeGridWidth = 1320.dp
+private val LargeSideMin = 24.dp
+/** 큰 화면 신청·내역 왼쪽 칸(서비스 카드) 폭. */
+private val ApplyListWidth = 440.dp
+
 /** 헤더 버튼 섬의 버튼 크기와 섬 안쪽 여백(OneUiActionPill 의 Row 패딩) — 새로고침을 화면 정중앙에 놓는 계산에 씁니다. */
 private val IslandButton = 38.dp
 private val IslandPadding = 4.dp
 private val IslandDividerGap = 3.dp
 
+/**
+ * 섬의 새로고침 아이콘 — 당긴 만큼 섬 맨 왼쪽 자리에서 화면 정중앙으로 내려오고, 새로고침 중에는 거기서 돌다가 끝나면 섬으로
+ * 올라갑니다. [travel] 은 람다: 당기는 동안 프레임마다 바뀌는 값을 이 작은 컴포저블과 그리기 람다 안에서만 읽습니다
+ * (예전엔 메인 화면 최상위에서 읽어 당길 때마다 화면 전체가 다시 구성됐습니다).
+ */
+@Composable
+private fun RefreshTravelIcon(travel: () -> Float, origin: Offset, isRefreshing: Boolean) {
+    val visible by remember { derivedStateOf { travel() > 0.005f } }
+    if (!visible) return
+    val density = LocalDensity.current
+    val statusTop = WindowInsets.statusBars.getTop(density)
+    // 섬이 새로고침을 화면 가운데에 두므로 제자리에서 곧게 — 좁은 폰에서 섬이 물러났어도 비스듬히 내려오지 않게 같은 x.
+    val targetY = statusTop + with(density) { (OneUiCompactBarHeight + OneUiHeaderExpandedExtra + 28.dp).toPx() }
+    val spin by rememberInfiniteTransition(label = "refreshSpin").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "refreshSpinAngle",
+    )
+    val halfPx = with(density) { 20.dp.toPx() }
+    val pill = MaterialTheme.colorScheme.floatingPill
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    // 유리판이 아직 없을 땐(막 당기기 시작) 사진 위에 바로 놓이므로 사진 밝기 색, 유리가 차오르면 테마색으로.
+    val onPage = LocalOnPageColor.current ?: onSurface
+    val glassAlpha by remember { derivedStateOf { travel() } }
+    val iconTint by remember { derivedStateOf { lerp(onPage, onSurface, travel().coerceIn(0f, 1f)) } }
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                val t = travel()
+                translationX = origin.x - halfPx
+                translationY = origin.y + (targetY - origin.y) * t - halfPx
+            }
+            .size(40.dp)
+            .oneUiGlassSurface(CircleShape, alpha = glassAlpha, container = pill),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Default.Refresh,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.graphicsLayer { rotationZ = if (isRefreshing) spin else travel() * 300f },
+        )
+    }
+}
+
+/** '지금' 카드가 쓰는 파생값 묶음 — [TimeTableAppContent] 가 블록 목록·시각이 바뀔 때만 다시 계산합니다. */
+private data class NowDerived(
+    val currentBlock: Block?,
+    val nextBlock: Block?,
+    val upcomingGroups: List<UpcomingGroup>,
+    val remainingMinutes: Long?,
+    val blockProgress: Float?,
+)
+
 /** 하단 바 자체 높이와 화면 가장자리 여백 — 콘텐츠 하단 여백 계산에 씁니다. 시각 값은 바꾸지 않습니다. */
-private val AppNavBarHeight = 64.dp
+/** 하단 바 높이 — 탭 이름을 보이면 64dp, 아이콘만이면 56dp. */
+private val AppNavBarHeight: Dp
+    @Composable get() = if (NavBarLabels.shown) 64.dp else 56.dp
 private val AppNavBarMargin = 10.dp
 
 @Composable
@@ -2340,10 +2828,11 @@ internal fun AppNavBar(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    pagePosition: Float = selected.toFloat(),
-    following: Boolean = false,
+    /** 페이저의 현재 위치(칸 단위)와 손가락으로 넘기는 중인지 — 람다인 이유: 프레임마다 바뀌는 값을 구성에서 읽지 않으려고. */
+    pagePosition: () -> Float = { selected.toFloat() },
+    following: () -> Boolean = { false },
     /** Dev 칸 표시 — 디버그 빌드에서만. 투어 그림은 정식 버전과 같게 끕니다. */
-    showDev: Boolean = BuildConfig.DEBUG,
+    showDev: Boolean = false,
     /** 놓여 있을 때도 캡슐 렌즈 굴절을 켤지 — 앱에서는 끌 때만, 투어의 리퀴드 글래스 시연에서만 켭니다. */
     lensAtRest: Boolean = false,
 ) {
@@ -2372,11 +2861,31 @@ internal fun AppNavBar(
     // pointerInput 람다는 처음 시작할 때의 값을 붙잡고 있어서, 최신 selected/onSelect 를 여기로 받아 씁니다.
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
-    val capsuleIndex by animateFloatAsState(
-        targetValue = dragIndex ?: if (following) pagePosition else selected.toFloat(),
-        animationSpec = if (dragging || following) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f),
-        label = "navCapsuleIndex",
-    )
+    // 캡슐 위치는 Animatable — 목표(끌기 위치·페이저 위치·고른 탭)는 snapshotFlow 로 구성 밖에서 지켜봅니다. 예전엔 페이저
+    // 위치를 구성에서 읽어 넘기는 동안 프레임마다 바(와 그 부모 화면 전체)가 다시 구성됐습니다.
+    val capsule = remember { Animatable(selected.toFloat()) }
+    LaunchedEffect(Unit) {
+        var job: Job? = null
+        snapshotFlow {
+            val drag = dragIndex
+            val follow = following()
+            val target = drag ?: if (follow) pagePosition() else currentSelected.toFloat()
+            // 손가락이 값 자체인 동안(바 위에서 끌기·페이저 넘기기)은 바로 그 자리로, 놓은 뒤(칸으로 스냅·탭)만 스프링.
+            Triple(target, (drag != null && pendingIndex == null) || follow, drag != null)
+        }
+            .collect { (target, direct, released) ->
+                job?.cancel()
+                if (direct) {
+                    // 프레임마다 새 스프링을 시작하면 애니메이션의 첫 프레임은 시작 시각만 잡고 움직이지 않아, 손을 뗄 때까지
+                    // 캡슐이 제자리였습니다(스프링이 매 프레임 다시 시작). 손가락을 따라갈 땐 애니메이션 없이 값만 옮깁니다.
+                    capsule.snapTo(target)
+                } else {
+                    job = launch {
+                        capsule.animateTo(target, if (released) spring(dampingRatio = 1f, stiffness = 1600f) else spring(dampingRatio = 0.78f, stiffness = 260f))
+                    }
+                }
+            }
+    }
     // 끄는 동안 액체 유리 방울처럼 살짝 늘어나고, 굴절·림 하이라이트가 세집니다. 시작/끝 모두 부드러운 스프링.
     val liquid by animateFloatAsState(
         targetValue = if (dragging) 1f else 0f,
@@ -2390,7 +2899,8 @@ internal fun AppNavBar(
     // (liquidGL 의 refraction/bevel/frost/specular). 뒤 화면은 Haze 가 가져오고, 그 위에 렌즈 셰이더를 얹습니다.
     val hazeState = LocalHazeState.current
     val lensShader = remember { LiquidLens.create() }
-    val liquidEnabled = lensShader != null && hazeState != null
+    // 성능 모드는 캡슐 렌즈·바 흐림을 끄고 반투명 단색 바로.
+    val liquidEnabled = lensShader != null && hazeState != null && !PerformanceMode.enabled
     val light = LocalLiquidLight.current
     val density = LocalDensity.current
     val barShape = RoundedCornerShape(32.dp)
@@ -2421,8 +2931,8 @@ internal fun AppNavBar(
                 .fillMaxSize()
                 .clip(barShape)
                 .then(
-                    if (hazeState != null) Modifier.hazeEffect(hazeState, frostStyle)
-                    else Modifier.background(barColor),
+                    if (hazeState != null && !PerformanceMode.enabled) Modifier.hazeEffect(hazeState, frostStyle) { inputScale = HazeInputScale.Auto }
+                    else Modifier.background(barColor.copy(alpha = 0.96f)),
                 )
                 .drawWithContent {
                     drawContent()
@@ -2449,8 +2959,10 @@ internal fun AppNavBar(
         ) {
             val cellWidth = maxWidth / count
             val cellWidthPx = with(density) { cellWidth.toPx() }
-            val capsuleRadiusPx = with(density) { 26.dp.toPx() }
-            val capsuleShape = RoundedCornerShape(26.dp)
+            // 반지름이 칸 높이의 절반을 넘으면 모서리 호가 겹쳐 양끝에 첨점이 생깁니다 — 절반으로 묶습니다.
+            val capsuleRadius = minOf(26.dp, maxHeight / 2)
+            val capsuleRadiusPx = with(density) { capsuleRadius.toPx() }
+            val capsuleShape = RoundedCornerShape(capsuleRadius)
 
             // 선택 캡슐 — 삼성 헬스처럼 바를 4등분한 칸 하나 폭. 셰이더가 있으면 렌즈, 없으면 반투명 틴트.
             // 렌즈는 가장자리에서 캡슐 바깥의 화면을 끌어와 보여주므로, 상자를 사방 margin 만큼 키워 뒤 화면을 더 넓게
@@ -2466,7 +2978,7 @@ internal fun AppNavBar(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clip(RoundedCornerShape(26.dp))
+                            .clip(capsuleShape)
                             .then(
                                 if (clickableItems) Modifier.clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -2477,14 +2989,21 @@ internal fun AppNavBar(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        NavIcon(index, if (isSelected) activeTint else inactiveTint)
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            labels[index],
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) activeTint else inactiveTint,
-                        )
+                        // 기본은 아이콘만(캡슐이 어느 탭인지 알려 줌), 설정 → 화면에서 이름을 켤 수 있습니다.
+                        if (NavBarLabels.shown) {
+                            NavIcon(index, if (isSelected) activeTint else inactiveTint)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                labels[index],
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) activeTint else inactiveTint,
+                            )
+                        } else {
+                            Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                                NavIcon(index, if (isSelected) activeTint else inactiveTint)
+                            }
+                        }
                     }
                 }
             }
@@ -2496,7 +3015,7 @@ internal fun AppNavBar(
                 if (liquidEnabled && hazeState != null) {
                     Box(
                         Modifier
-                            .offset { IntOffset((capsuleIndex * cellWidthPx).roundToInt(), 0) }
+                            .offset { IntOffset((capsule.value * cellWidthPx).roundToInt(), 0) }
                             .width(cellWidth)
                             .fillMaxHeight()
                             .graphicsLayer {
@@ -2505,14 +3024,14 @@ internal fun AppNavBar(
                                 clip = true
                                 shape = capsuleShape
                             }
-                            .hazeEffect(hazeState, capsuleFrostStyle),
+                            .hazeEffect(hazeState, capsuleFrostStyle) { inputScale = HazeInputScale.Auto },
                     )
                 }
                 // 2) 렌즈 — 탭 아이콘·글자 복사본만 굴절합니다 (나머지는 투명해 아래 서리가 비침).
                 Box(
                     modifier = Modifier
                         // 세로는 requiredHeight 가 부모 높이를 넘어 자동으로 가운데 정렬되므로(위아래로 margin 씩 삐져나감) 옮기지 않습니다.
-                        .offset { IntOffset((capsuleIndex * cellWidthPx - lensMarginPx).roundToInt(), 0) }
+                        .offset { IntOffset((capsule.value * cellWidthPx - lensMarginPx).roundToInt(), 0) }
                         // 부모 제약보다 커야 하므로 required 크기로 (height 는 부모 최대 높이에 눌려 절반만 보였습니다).
                         .requiredWidth(cellWidth + lensMargin * 2)
                         .requiredHeight(maxHeight + lensMargin * 2)
@@ -2552,7 +3071,7 @@ internal fun AppNavBar(
                                 val placeable = measurable.measure(Constraints.fixed(itemsW, itemsH))
                                 layout(constraints.maxWidth, constraints.maxHeight) {
                                     placeable.place(
-                                        (lensMarginPx - capsuleIndex * cellWidthPx).roundToInt(),
+                                        (lensMarginPx - capsule.value * cellWidthPx).roundToInt(),
                                         lensMarginPx.roundToInt(),
                                     )
                                 }
@@ -2617,18 +3136,16 @@ private val ScheduleSubTabsHeight = 52.dp
 
 @Composable
 internal fun ScheduleSubTabs(selected: Int, onSelect: (Int) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().height(ScheduleSubTabsHeight).padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Box(Modifier.fillMaxWidth().height(ScheduleSubTabsHeight).padding(bottom = 8.dp), contentAlignment = Alignment.CenterStart) {
+    OneUiChipStrip {
         OneUiChip(selected = selected == 0, onClick = { onSelect(0) }, label = "시간표")
         OneUiChip(selected = selected == 1, onClick = { onSelect(1) }, label = "학사일정")
+    }
     }
 }
 
 @Composable
-private fun NavIcon(index: Int, tint: Color) {
+internal fun NavIcon(index: Int, tint: Color) {
     when (index) {
         TabIndex.HOME -> Icon(Icons.Outlined.Home, contentDescription = "홈", tint = tint)
         TabIndex.APPLY -> Icon(Icons.Outlined.Edit, contentDescription = "신청·내역", tint = tint)
@@ -2654,12 +3171,18 @@ private fun MealTab(
     onSelectDate: (LocalDate) -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     modifier: Modifier = Modifier,
+    /** 큰 화면에서 카드가 충분히 넓으면 메뉴 | 영양·원산지를 나란히. */
+    sideBySideMeals: Boolean = false,
+    /** 바뀌면 맨 위로 — 탭에 다시 들어올 때. */
+    resetTick: Int = 0,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(resetTick) { listState.scrollToItem(0) }
     val items = dayMeals?.items.orEmpty()
     val photos = dayMeals?.photos.orEmpty()
     val present = Meal.entries.filter { items[it.key].orEmpty().isNotEmpty() }
 
-    LazyColumn(modifier = modifier, contentPadding = contentPadding) {
+    LazyColumn(state = listState, modifier = modifier, contentPadding = contentPadding) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2675,13 +3198,7 @@ private fun MealTab(
 
         if (weekMode) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                OneUiChipStrip(Modifier.padding(vertical = 8.dp)) {
                     weekDates.forEach { date ->
                         val hasData = PlanStore.dayKey(date) in availableDays
                         // 식단이 없는 날은 점(" ·")을 붙이는 대신 칩을 옅게 — 점이 글자 뒤에 남은 것처럼 보였습니다.
@@ -2707,7 +3224,8 @@ private fun MealTab(
                 Text(
                     if (weekMode) "${shortMealDate(selectedDate)} 식단이 없습니다" else "등록된 식단이 없습니다",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // 카드 밖, 배경 위에 바로 놓이는 글자 — 사진 배경이면 사진 밝기에 맞춘 색.
+                    color = onPageVariantColor(),
                     modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
@@ -2719,6 +3237,7 @@ private fun MealTab(
                     photoFile = photos[meal.key],
                     allergyCodes = allergyCodes,
                     info = neisInfo[meal.key],
+                    sideBySide = sideBySideMeals,
                 )
             }
         }
@@ -2840,7 +3359,10 @@ internal fun MealCard(
     photoFile: String?,
     allergyCodes: Set<Int>,
     info: NeisMealInfo? = null,
+    /** 큰 화면 — 메뉴 왼쪽, 영양성분·원산지 오른쪽(처음부터 펼침). 폰은 메뉴 아래에 접어 둡니다. */
+    sideBySide: Boolean = false,
 ) {
+    val hasInfo = info != null && (info.nutrients.isNotEmpty() || info.origins.isNotEmpty())
     OneUiCard(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         // 끼니마다 색이 다른 원형 배지 — 아침 연두 / 점심 하늘 / 저녁 보라 (삼성 헬스 지표 아이콘 톤).
         val badge = when (meal) {
@@ -2858,75 +3380,95 @@ internal fun MealCard(
                     "${kcal.toDoubleOrNull()?.let { "%,.0f".format(it) } ?: kcal} kcal",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                 )
             }
         }
-        val thumbUrl = HanaMealClient.mealPhotoThumbUrl(photoFile)
-        if (thumbUrl != null) {
-            var showViewer by remember { mutableStateOf(false) }
-            Spacer(Modifier.height(12.dp))
-            RemoteThumbnail(
-                urls = listOf(thumbUrl),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(170.dp)
-                    .clip(RoundedCornerShape(OneUi.CornerMedium))
-                    .clickable { showViewer = true },
-            )
-            if (showViewer) {
-                // 원본이 비어 있으면 썸네일로 폴백합니다.
-                MealPhotoViewer(
-                    urls = listOfNotNull(HanaMealClient.mealPhotoFullUrl(photoFile), thumbUrl),
-                    onDismiss = { showViewer = false },
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        items.forEach { item ->
-            // 이름에 원재료가 없어도 항목 코드로 잡습니다 (예: 배추겉절이(9) → 새우).
-            val labels = shortAllergyLabels(detectedAllergies(item.codes, item.name, allergyCodes))
-            val flagged = labels.isNotEmpty()
-            Row(
-                modifier = Modifier.padding(vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "·",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (flagged) FontWeight.Bold else FontWeight.Normal,
-                    color = if (flagged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                )
-                if (flagged) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "⚠ ${labels.joinToString("·")}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
+        val menuColumn: @Composable ColumnScope.() -> Unit = {
+                val thumbUrl = HanaMealClient.mealPhotoThumbUrl(photoFile)
+                if (thumbUrl != null) {
+                    var showViewer by remember { mutableStateOf(false) }
+                    Spacer(Modifier.height(12.dp))
+                    RemoteThumbnail(
+                        urls = listOf(thumbUrl),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(170.dp)
+                            .clip(RoundedCornerShape(OneUi.CornerMedium))
+                            .clickable { showViewer = true },
                     )
+                    if (showViewer) {
+                        // 원본이 비어 있으면 썸네일로 폴백합니다.
+                        MealPhotoViewer(
+                            urls = listOfNotNull(HanaMealClient.mealPhotoFullUrl(photoFile), thumbUrl),
+                            onDismiss = { showViewer = false },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                items.forEach { item ->
+                    // 이름에 원재료가 없어도 항목 코드로 잡습니다 (예: 배추겉절이(9) → 새우).
+                    val labels = shortAllergyLabels(detectedAllergies(item.codes, item.name, allergyCodes))
+                    val flagged = labels.isNotEmpty()
+                    Row(
+                        modifier = Modifier.padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "·",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = onPageVariantColor(),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            item.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (flagged) FontWeight.Bold else FontWeight.Normal,
+                            color = if (flagged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (flagged) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "⚠ ${labels.joinToString("·")}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+        }
+        if (sideBySide && hasInfo) {
+            // 가운데 세로선은 오른쪽 칸 왼쪽 테두리로 그립니다 (사진 칸이 있어 행 높이를 고유 크기로 재지 않습니다).
+            val lineColor = MaterialTheme.colorScheme.outlineVariant
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f), content = menuColumn)
+                Spacer(Modifier.width(20.dp))
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .drawBehind { drawLine(lineColor, Offset(0f, 0f), Offset(0f, size.height), strokeWidth = 0.8.dp.toPx()) }
+                        .padding(start = 20.dp, top = 10.dp),
+                ) {
+                    MealInfoSection(info!!, initiallyExpanded = true, divider = false)
                 }
             }
-        }
-        if (info != null && (info.nutrients.isNotEmpty() || info.origins.isNotEmpty())) {
-            MealInfoSection(info)
+        } else {
+            menuColumn()
+            if (hasInfo) MealInfoSection(info!!)
         }
     }
 }
 
 /** 영양성분·원산지 — 접어 두고, 누르면 펼칩니다 (NEIS). */
 @Composable
-private fun MealInfoSection(info: NeisMealInfo) {
-    var expanded by rememberSaveable(info) { mutableStateOf(false) }
+private fun MealInfoSection(info: NeisMealInfo, initiallyExpanded: Boolean = false, divider: Boolean = true) {
+    var expanded by rememberSaveable(info) { mutableStateOf(initiallyExpanded) }
     val scheme = MaterialTheme.colorScheme
-    Spacer(Modifier.height(10.dp))
-    HorizontalDivider(thickness = 0.8.dp, color = scheme.outlineVariant.copy(alpha = 0.6f))
+    if (divider) {
+        Spacer(Modifier.height(10.dp))
+        HorizontalDivider(thickness = 0.8.dp, color = scheme.outlineVariant)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2989,7 +3531,7 @@ private fun MealInfoSection(info: NeisMealInfo) {
 
 /** 월~금 주간 시간표 — 오늘 요일 열에 옅은 배경을 깔아 한눈에 찾을 수 있게 합니다 */
 @Composable
-private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = Modifier, rowHeight: Dp = 78.dp) {
+private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = Modifier, rowHeight: Dp = 78.dp, headerHeight: Dp = rowHeight) {
     val todayDow = today.dayOfWeek.value
     val dayLabels = listOf("월", "화", "수", "목", "금")
     // revision 이 바뀌면 포털에서 받은 시간표로 다시 그립니다. 교시 목록과 칸 내용을
@@ -3007,13 +3549,13 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
     // 88dp 고정폭 대신 남는 폭을 5칸이 나눠 가져 금요일까지 스크롤 없이 보입니다.
     Column(modifier.fillMaxWidth()) {
         Row {
-            Spacer(Modifier.width(timeWidth).height(rowHeight))
+            Spacer(Modifier.width(timeWidth).height(headerHeight))
             dayLabels.forEachIndexed { index, label ->
                 val isToday = index + 1 == todayDow
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(rowHeight)
+                        .height(headerHeight)
                         .background(if (isToday) todayTint else Color.Transparent),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -3041,7 +3583,7 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                         Text(
                             timeLabel(it.first),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = onPageVariantColor(),
                             maxLines = 1,
                             softWrap = false,
                         )
@@ -3067,7 +3609,7 @@ private fun WeekTimetable(today: LocalDate, revision: Int, modifier: Modifier = 
                                     // 선생님·교실 두 줄이 들어가도록 과목명은 선생님이 있으면 두 줄까지.
                                     maxLines = if (lesson.teacher != null) 2 else 3,
                                     overflow = TextOverflow.Ellipsis,
-                                    color = if (lesson.isFree) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                    color = if (lesson.isFree) onPageVariantColor() else MaterialTheme.colorScheme.onSurface,
                                 )
                                 // 장소 자리 — 다른 화면은 "교실 · 선생님" 한 줄이지만, 칸이 좁은 주간 표는 한 줄씩 나눠 씁니다.
                                 listOfNotNull(lesson.room, lesson.teacher).forEach {
@@ -3110,7 +3652,7 @@ internal fun AccentPickerRow(selectedArgb: Int, onSelect: (Int) -> Unit) {
                 else -> "프리셋"
             },
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
             modifier = Modifier.padding(top = 2.dp),
         )
         Spacer(Modifier.height(12.dp))
@@ -3563,7 +4105,7 @@ private fun HanaAccountDialog(onDismiss: () -> Unit) {
             "입력한 계정으로 hh.hana.hs.kr(하이하나)에 로그인해 평일1·2타임 면학 위치를 자동으로 가져옵니다. " +
                 "비밀번호는 이 기기에 암호화되어 저장됩니다.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
         loginSucceeded?.let { ok ->
             Spacer(Modifier.height(12.dp))

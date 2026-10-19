@@ -222,7 +222,10 @@ fun OnboardingTour(
     }
 
     // 투어는 다른 창이라 카드가 메인 화면의 배경 Haze 를 비출 수 없습니다 — 반투명 색으로.
-    CompositionLocalProvider(com.yhjang.timetable.ui.LocalMaterialHazeState provides null) {
+    CompositionLocalProvider(
+        com.yhjang.timetable.ui.LocalMaterialHazeState provides null,
+        androidx.compose.material3.LocalContentColor provides (com.yhjang.timetable.ui.LocalOnPageColor.current ?: MaterialTheme.colorScheme.onSurface),
+    ) {
     Dialog(
         // 다이얼로그 창의 뒤로 가기는 여기로만 옵니다(안쪽 BackHandler 는 액티비티 쪽에 걸려 받지 못했습니다).
         // 앞 장으로만 가고, 첫 장에서는 닫히지 않습니다 — 건너뛸 수 없으니까요 (dev 빌드는 확인하기 편하게 닫힘).
@@ -246,10 +249,12 @@ fun OnboardingTour(
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val page = pages[pagerState.currentPage]
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
+            Box(Modifier.fillMaxSize().oneUiPageBackground(), contentAlignment = Alignment.TopCenter) {
+            // 태블릿에서는 투어를 손에 쥔 폰 화면 폭 정도로 가운데에 (폰은 그대로 전체 폭).
             Column(
                 Modifier
-                    .fillMaxSize()
-                    .oneUiPageBackground()
+                    .fillMaxHeight()
+                    .widthIn(max = com.yhjang.timetable.ui.Adaptive.ControlWidth)
                     .padding(top = statusTop + 12.dp, bottom = navBottom + 16.dp),
             ) {
                 // 위: 진행 점 + (로그인 장에서만) 나중에 · dev 빌드는 모든 장에 건너뛰기
@@ -337,6 +342,7 @@ fun OnboardingTour(
                         .padding(horizontal = 24.dp)
                         .padding(bottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding().coerceAtLeast(0.dp)),
                 )
+            }
             }
         }
         if (showingPrivacy) PrivacyScreen(onDismiss = { showingPrivacy = false })
@@ -1071,7 +1077,7 @@ private fun GlassDemo() {
                 slot { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(22.dp)) }
                 slot { Icon(painterResource(R.drawable.ic_weather_outline), contentDescription = null, modifier = Modifier.size(22.dp)) }
                 com.yhjang.timetable.ui.OneUiActionDivider()
-                slot { Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(22.dp)) }
+                slot { Icon(painterResource(R.drawable.ic_inbox), contentDescription = null, modifier = Modifier.size(22.dp)) }
                 slot { Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(22.dp)) }
             }
             BoxWithConstraints(Modifier.fillMaxWidth().align(Alignment.BottomCenter), contentAlignment = Alignment.Center) {
@@ -1652,7 +1658,7 @@ private fun ColumnScope.UpdateHeaderPage() {
             slot(left)
             slot(right)
             com.yhjang.timetable.ui.OneUiActionDivider(height = 14.dp, gap = 3.dp)
-            slot { Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            slot { Icon(painterResource(R.drawable.ic_inbox), contentDescription = null, modifier = Modifier.size(18.dp)) }
             slot { Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp)) }
         }
     }

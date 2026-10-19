@@ -1,5 +1,12 @@
 package com.yhjang.timetable.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -85,58 +92,120 @@ fun Modifier.oneUiPageBackground(): Modifier {
     val grain = ImageBitmap.imageResource(LocalContext.current.resources, R.drawable.page_grain_tile)
     val grainBrush = remember(grain) { ShaderBrush(ImageShader(grain, TileMode.Repeated, TileMode.Repeated)) }
     val photo = LocalPageBackground.current
+    val filter = PageBackgroundAdjust.colorFilter()
+    return drawBehind { drawPageBackground(size.width, size.height, dark, photo, grainBrush, filter) }
+}
+
+/**
+ * 페이지 배경을 그리는 빈 상자 — 화면을 덮는 다른 내용의 **형제**로 맨 아래에 둡니다. 배경은 바뀌지 않으므로 한 번 그린 텍스처를
+ * 재사용하도록(Offscreen 층) 자기만의 노드로 둡니다: 매 프레임 화면 크기 그라디언트 셋과 그레인을 다시 칠하면 중급 GPU 에선
+ * 프레임당 수 ms 가 들었습니다. (내용을 품은 상자에 층을 걸면 내용까지 매 프레임 텍스처로 복사돼 오히려 느려집니다.)
+ */
+@Composable
+fun OneUiPageBackdrop(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Box(
+        modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .oneUiPageBackground(),
+    )
+}
+
+/**
+ * 불투명 서리 페이지 배경 — 사진을 흐린 사본으로 깔고 그 위에 테마 면 색을 짙게(삼성 홈 위젯의 '불투명' 단계) 얹습니다.
+ * 정보·개인정보 보호·변경 사항처럼 글이 긴 화면용: 카드 밖에도 보통 글자색(회색 보조 글자 포함)을 그대로 쓸 수 있습니다.
+ * 사진이 없으면 보통 페이지 배경과 같습니다.
+ */
+@Composable
+fun Modifier.oneUiFrostedPageBackground(): Modifier {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.isDark
+    val grain = ImageBitmap.imageResource(LocalContext.current.resources, R.drawable.page_grain_tile)
+    val grainBrush = remember(grain) { ShaderBrush(ImageShader(grain, TileMode.Repeated, TileMode.Repeated)) }
+    val blurred = LocalBlurredPageBackground.current
+    val filter = PageBackgroundAdjust.colorFilter()
+    // 어두운 테마에선 면 색을 글자색 쪽으로 살짝 띄우고 덜 덮습니다 — 0.82 로 덮으니 사진이 거의 검게 눌렸습니다.
+    val tint = if (dark) androidx.compose.ui.graphics.lerp(scheme.surface, scheme.onSurface, 0.06f).copy(alpha = 0.64f)
+    else scheme.surface.copy(alpha = 0.80f)
     return drawBehind {
-        val w = size.width
-        val h = size.height
-        if (photo != null) {
-            // 사용자가 고른 사진 — 화면을 꽉 채우도록 잘라 그리고, 카드·글자가 읽히도록 테마에 맞는 스크림을 얹습니다.
-            val scale = maxOf(w / photo.width, h / photo.height)
-            val dw = (photo.width * scale).toInt()
-            val dh = (photo.height * scale).toInt()
-            drawImage(
-                photo,
-                dstOffset = IntOffset(((w - dw) / 2f).toInt(), ((h - dh) / 2f).toInt()),
-                dstSize = IntSize(dw, dh),
-            )
-            drawRect(if (dark) Color.Black.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.32f))
-            drawRect(brush = grainBrush, alpha = 0.04f)
-            return@drawBehind
-        }
-        if (dark) {
-            drawRect(Color(0xFF0B1512))
-            drawRect(
-                Brush.radialGradient(
-                    listOf(Color(0xFF1F4A3A), Color.Transparent),
-                    center = Offset(w * 0.9f, h * 0.08f),
-                    radius = w * 0.95f,
-                ),
-            )
-            drawRect(
-                Brush.radialGradient(
-                    listOf(Color(0xFF163A2F).copy(alpha = 0.9f), Color.Transparent),
-                    center = Offset(w * 0.05f, h * 0.7f),
-                    radius = w * 0.85f,
-                ),
-            )
-            drawRect(brush = grainBrush, alpha = 0.07f)
-        } else {
-            drawRect(Color(0xFFE4EEE8))
-            drawRect(
-                Brush.radialGradient(
-                    listOf(Color(0xFFBFDCCB), Color.Transparent),
-                    center = Offset(w * 0.9f, h * 0.08f),
-                    radius = w * 0.95f,
-                ),
-            )
-            drawRect(
-                Brush.radialGradient(
-                    listOf(Color(0xFFCDE5D6), Color.Transparent),
-                    center = Offset(w * 0.05f, h * 0.7f),
-                    radius = w * 0.85f,
-                ),
-            )
-            drawRect(brush = grainBrush, alpha = 0.06f)
-        }
+        drawPageBackground(size.width, size.height, dark, blurred, grainBrush, filter)
+        if (blurred != null) drawRect(tint)
+    }
+}
+
+/** [OneUiPageBackdrop] 의 불투명 서리판 — 글이 긴 보조 화면의 맨 아래에 둡니다. */
+@Composable
+fun OneUiFrostedPageBackdrop(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Box(
+        modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .oneUiFrostedPageBackground(),
+    )
+}
+
+/**
+ * 페이지 배경을 (0,0)–([w],[h]) 창 좌표에 그립니다. 카드의 서리 유리([oneUiFrostedBackdrop])도 같은 그림을 자기 위치만큼
+ * 옮겨 그려 뒤 배경을 비춥니다 — 그때는 사진 대신 미리 흐린 사본을 넘깁니다(그레인은 생략).
+ */
+internal fun DrawScope.drawPageBackground(w: Float, h: Float, dark: Boolean, photo: ImageBitmap?, grainBrush: Brush?, photoFilter: ColorFilter? = null) {
+    if (photo != null) {
+        // 사용자가 고른 사진 — 화면을 꽉 채우도록 잘라 그리고, 카드·글자가 읽히도록 테마에 맞는 스크림을 얹습니다.
+        val scale = maxOf(w / photo.width, h / photo.height)
+        val dw = (photo.width * scale).toInt()
+        val dh = (photo.height * scale).toInt()
+        drawImage(
+            photo,
+            dstOffset = IntOffset(((w - dw) / 2f).toInt(), ((h - dh) / 2f).toInt()),
+            dstSize = IntSize(dw, dh),
+            filterQuality = FilterQuality.Low,
+            // 설정의 밝기·채도 조절.
+            colorFilter = photoFilter,
+        )
+        // 사진은 막(스크림)·그레인 없이 원래 색 그대로 — 예전엔 글자가 읽히도록 흰 32%/검정 42% 막을 깔아 물 빠진 색이었습니다.
+        // 이제 글자는 서리 유리 카드 위에 있어 막이 필요 없습니다.
+        return
+    }
+    // 사진이 없을 때의 기본 배경 — 예전 초록 계열(0B1512 / 1F4A3A)은 S26+ 같은 기기에서 녹색 화면처럼 보였습니다.
+    // One UI 배경처럼 중성 회색에 아주 옅은 푸른 기운만 둡니다.
+    if (dark) {
+        drawRect(Color(0xFF0D0E12), size = Size(w, h))
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF23262F), Color.Transparent),
+                center = Offset(w * 0.9f, h * 0.08f),
+                radius = w * 0.95f,
+            ),
+            size = Size(w, h),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFF1B1D24).copy(alpha = 0.9f), Color.Transparent),
+                center = Offset(w * 0.05f, h * 0.7f),
+                radius = w * 0.85f,
+            ),
+            size = Size(w, h),
+        )
+        if (grainBrush != null) drawRect(brush = grainBrush, alpha = 0.07f, size = Size(w, h))
+    } else {
+        drawRect(Color(0xFFEDEFF4), size = Size(w, h))
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFFD6DCE8), Color.Transparent),
+                center = Offset(w * 0.9f, h * 0.08f),
+                radius = w * 0.95f,
+            ),
+            size = Size(w, h),
+        )
+        drawRect(
+            Brush.radialGradient(
+                listOf(Color(0xFFE0E4EC), Color.Transparent),
+                center = Offset(w * 0.05f, h * 0.7f),
+                radius = w * 0.85f,
+            ),
+            size = Size(w, h),
+        )
+        if (grainBrush != null) drawRect(brush = grainBrush, alpha = 0.06f, size = Size(w, h))
     }
 }
 
@@ -197,7 +266,7 @@ private fun oneUiLightScheme(): ColorScheme = lightColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFFFFE1E1),
     onErrorContainer = Color(0xFF8F1418),
-    background = Color(0xFFE4EEE8),
+    background = Color(0xFFEDEFF4),
     onBackground = Color(0xFF111114),
     surface = Color(0xFFFCFCFF),
     onSurface = Color(0xFF111114),
@@ -209,7 +278,8 @@ private fun oneUiLightScheme(): ColorScheme = lightColorScheme(
     surfaceContainerHigh = Color(0xFFE9E9EC),
     surfaceContainerHighest = Color(0xFFDDDDE1),
     outline = Color(0xFFC4C4C9),
-    outlineVariant = Color(0xFFE6E6EA),
+    // 구분선 — 반투명이라 서리 유리 카드 위에서도 배경색에 섞여 자연스럽습니다(불투명 회색은 사진 배경에서 진한 줄로 보였음).
+    outlineVariant = Color.Black.copy(alpha = 0.08f),
     inverseSurface = Color(0xFF17171A),
     inverseOnSurface = Color(0xFFFCFCFF),
     inversePrimary = Color(0xFF9EC1FF),
@@ -230,7 +300,7 @@ private fun oneUiDarkScheme(): ColorScheme = darkColorScheme(
     onError = Color.White,
     errorContainer = Color(0xFF5A1D1F),
     onErrorContainer = Color(0xFFFFDAD8),
-    background = Color(0xFF0B1512),
+    background = Color(0xFF0D0E12),
     onBackground = Color(0xFFF4F4F6),
     surface = Color(0xFF17171A),
     onSurface = Color(0xFFF4F4F6),
@@ -242,7 +312,7 @@ private fun oneUiDarkScheme(): ColorScheme = darkColorScheme(
     surfaceContainerHigh = Color(0xFF252528),
     surfaceContainerHighest = Color(0xFF343437),
     outline = Color(0xFF5C5C62),
-    outlineVariant = Color(0xFF2C2C30),
+    outlineVariant = Color.White.copy(alpha = 0.10f),
     inverseSurface = Color(0xFFFCFCFF),
     inverseOnSurface = Color(0xFF17171A),
     inversePrimary = OneUi.Blue,

@@ -48,6 +48,9 @@ object AppUpdater {
 
     val isConfigured: Boolean get() = BuildConfig.UPDATE_REPO.isNotBlank()
 
+    private val latestUrl: String
+        get() = "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
+
     /**
      * 최신 릴리스를 확인합니다.
      * - 자동([force] = false): [AUTO_CHECK_INTERVAL_MS] 안의 캐시를 재사용하고, **큰 버전이 오를 때만**(7.x → 8.0)
@@ -86,7 +89,7 @@ object AppUpdater {
 
     private fun fetchLatest(): UpdateInfo? {
         val request = Request.Builder()
-            .url("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
+            .url(latestUrl)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "HiHanaNeo/${BuildConfig.VERSION_NAME}")
             .build()

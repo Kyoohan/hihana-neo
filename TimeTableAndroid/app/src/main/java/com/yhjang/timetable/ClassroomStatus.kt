@@ -1,5 +1,13 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.OneUiChipStrip
+import com.yhjang.timetable.ui.OneUiFormCard
+import com.yhjang.timetable.ui.onPageVariantColor
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.PaddingValues
+import com.yhjang.timetable.ui.LocalMaterialHazeState
 import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.horizontalScroll
@@ -224,63 +232,73 @@ fun ClassroomStatusScreen(onDismiss: () -> Unit) {
         subtitle = selectedTime?.let { t -> listOfNotNull(t.name, t.start?.let { s -> "$s–${t.end.orEmpty()}" }).joinToString(" · ") },
         onDismiss = onDismiss,
     ) { toolbar ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
+        // 교실이 많으면 카드가 수십 장 — 한 Column 에 다 그리던 탓에 스크롤이 크게 끊겼습니다. 보이는 교실만 그리는 LazyColumn 으로.
+        val list = occupants
+        val grouped = remember(list) { list?.groupBy { it.room }?.toSortedMap()?.toList().orEmpty() }
+        CompositionLocalProvider(LocalMaterialHazeState provides LocalMaterialHazeState.current) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp),
         ) {
-            ChipRow("타임") {
-                times.forEach { t -> OneUiChip(selected = t.id == timeId, onClick = { timeId = t.id }, label = t.label) }
-            }
-            if (buildings.isNotEmpty()) {
-                ChipRow("건물") {
-                    buildings.forEach { b -> OneUiChip(selected = b.num == buildingNum, onClick = { buildingNum = b.num }, label = b.name) }
+            item(key = "filters") {
+                OneUiFormCard(Modifier.padding(bottom = 12.dp)) {
+                    ChipRow("타임") {
+                        times.forEach { t -> OneUiChip(selected = t.id == timeId, onClick = { timeId = t.id }, label = t.label) }
+                    }
+                    if (buildings.isNotEmpty()) {
+                        ChipRow("건물") {
+                            buildings.forEach { b -> OneUiChip(selected = b.num == buildingNum, onClick = { buildingNum = b.num }, label = b.name) }
+                        }
+                    }
+                    if (rooms.isNotEmpty()) {
+                        ChipRow("교실") {
+                            OneUiChip(selected = roomIdx == null, onClick = { roomIdx = null }, label = "전체")
+                            rooms.forEach { r -> OneUiChip(selected = r.idx == roomIdx, onClick = { roomIdx = r.idx }, label = r.name) }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
             }
-            if (rooms.isNotEmpty()) {
-                ChipRow("교실") {
-                    OneUiChip(selected = roomIdx == null, onClick = { roomIdx = null }, label = "전체")
-                    rooms.forEach { r -> OneUiChip(selected = r.idx == roomIdx, onClick = { roomIdx = r.idx }, label = r.name) }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            val list = occupants
             when {
-                error != null -> OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
-                    Text("불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(error!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                error != null -> item(key = "error") {
+                    OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
+                        Text("불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(error!!, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
+                    }
                 }
-                loading && list == null -> Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
-                    OneUiLoading(size = 18.dp, stroke = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text("신청 목록을 불러오는 중", style = MaterialTheme.typography.bodyMedium)
+                loading && list == null -> item(key = "loading") {
+                    Row(Modifier.padding(OneUi.PagePadding), verticalAlignment = Alignment.CenterVertically) {
+                        OneUiLoading(size = 18.dp, stroke = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("신청 목록을 불러오는 중", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
                 list != null -> {
-                    Text(
-                        if (list.isEmpty()) "이 조건으로 신청한 학생이 없습니다" else "신청 ${list.size}명",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = OneUi.PagePadding),
-                    )
-                    Spacer(Modifier.height(10.dp))
+                    item(key = "count") {
+                        Text(
+                            if (list.isEmpty()) "이 조건으로 신청한 학생이 없습니다" else "신청 ${list.size}명",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = onPageVariantColor(),
+                            modifier = Modifier.padding(horizontal = OneUi.PagePadding).padding(bottom = 10.dp),
+                        )
+                    }
                     // 교실별로 묶어 교실 이름 순으로.
-                    list.groupBy { it.room }.toSortedMap().forEach { (room, people) ->
-                        OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth()) {
+                    items(grouped, key = { it.first }) { (room, people) ->
+                        OneUiCard(Modifier.padding(horizontal = OneUi.PagePadding).padding(bottom = 12.dp).fillMaxWidth()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(room, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                Text("${people.size}명", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${people.size}명", style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
                             }
                             people.forEachIndexed { i, p ->
                                 if (i > 0) OneUiDivider(startIndent = 0.dp)
                                 OccupantRow(p)
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
                     }
                 }
             }
+        }
         }
     }
 }
@@ -290,7 +308,7 @@ private fun ChipRow(label: String, chips: @Composable () -> Unit) {
     Text(
         label,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = Modifier.padding(horizontal = OneUi.PagePadding),
     )
     Spacer(Modifier.height(6.dp))
@@ -310,21 +328,21 @@ private fun OccupantRow(p: ClassroomOccupant) {
             Text(p.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             p.grade?.let {
                 Spacer(Modifier.width(6.dp))
-                Text("${it}학년", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${it}학년", style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
             }
             Spacer(Modifier.weight(1f))
             p.status?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (it.contains("승인")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (it.contains("승인")) MaterialTheme.colorScheme.primary else onPageVariantColor(),
                 )
             }
         }
         Text(
             p.reason ?: "사유 없음",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
             modifier = Modifier.padding(top = 2.dp),
         )
     }

@@ -1,5 +1,14 @@
+@file:OptIn(dev.chrisbanes.haze.ExperimentalHazeApi::class)
 package com.yhjang.timetable.ui
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.core.animateFloatAsState
@@ -58,6 +67,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -108,6 +118,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
@@ -171,8 +182,9 @@ fun Modifier.oneUiGlassSurface(
     return this
         .clip(shape)
         .then(
-            if (state != null && alpha > 0f) {
-                Modifier.hazeEffect(state, style) { this.alpha = alpha }
+            if (state != null && alpha > 0f && !PerformanceMode.enabled) {
+                // 흐림은 낮은 해상도로 계산합니다(Auto) — 뭉개지는 효과라 차이가 거의 없고 GPU 비용은 크게 줄어듭니다.
+                Modifier.hazeEffect(state, style) { this.alpha = alpha; inputScale = HazeInputScale.Auto }
             } else {
                 Modifier.background(fallback.copy(alpha = fallback.alpha * alpha))
             },
@@ -201,27 +213,101 @@ fun OneUiCard(
     val material = color == scheme.surface
     val backdrop = LocalMaterialHazeState.current
     val edge = Color.White.copy(alpha = if (scheme.isDark) 0.12f else 0.9f)
-    val materialStyle = HazeStyle(
-        backgroundColor = color,
-        tints = listOf(HazeTint(color.copy(alpha = if (scheme.isDark) 0.46f else 0.48f))),
-        blurRadius = 26.dp,
-        noiseFactor = 0.02f,
-    )
+    // 서리 유리 — 뒤 배경(사진·색)이 흐리게 비치도록 옅은 틴트. 예전엔 실시간 흐림(Haze)이 배경을 잡지 못해 단색 판으로 보였고
+    // (사진 배경이면 검은/흰 판이 다 가림), 카드마다 프레임당 흐림 계산이 스크롤을 무겁게 했습니다.
+    // 배경이 반쯤 비치게 — 삼성 캘린더 위젯(홈 화면)과 같은 정도. 예전 값(스크림 + 0.52~0.58)은 사진이 30% 남짓만 보였습니다.
+    val frostTint = color.copy(alpha = FrostOpacity.alpha)
+    // 서리 카드가 어두운지(사진이 비쳐서) — 안의 글자색을 판의 실제 밝기에 맞춥니다. null 이면 테마색 그대로.
+    val frostOnDark = remember { mutableStateOf<Boolean?>(null) }
     Column(
         modifier = modifier
             .clip(shape)
             .then(
                 when {
-                    material && backdrop != null -> Modifier.hazeEffect(backdrop, materialStyle)
+                    // 성능 모드는 흐림 없이 거의 불투명한 면 — 배경 사진 위에서도 글자가 읽히게.
+                    material && PerformanceMode.enabled -> Modifier.background(color.copy(alpha = 0.94f))
+                    material && backdrop != null -> Modifier.oneUiFrostedBackdrop(frostTint, frostOnDark)
+                    // 불투명 서리 페이지(정보·변경 사항 등) 위의 카드 — 판보다 한 단계 떠 보이게 글자색 쪽으로 살짝.
+                    material && LocalBlurredPageBackground.current != null ->
+                        Modifier.background(lerp(color, scheme.onSurface, 0.07f).copy(alpha = 0.92f))
                     material -> Modifier.background(color.copy(alpha = if (scheme.isDark) 0.74f else 0.78f))
                     else -> Modifier.background(color)
                 },
             )
             .then(if (material) Modifier.materialEdge(shape, edge) else Modifier)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            // 카드 하나를 접근성·콘텐츠 캡처 노드 하나로 — 글자마다 노드를 두면 시스템이 화면이 바뀔 때마다 수백 노드를 훑어
+            // (중급 기기에서 한 번에 8ms) 끊겼습니다. 안의 버튼·행처럼 스스로 눌리는 요소는 그대로 따로 남습니다.
+            .semantics(mergeDescendants = true) {}
             .padding(contentPadding),
-        content = content,
+    ) {
+        // 카드 안 글자색은 판의 실제 밝기를 따릅니다 — 테마와 같은 쪽이면 테마색 그대로, 불투명도가 낮아 사진이 많이 비쳐
+        // 판이 반대쪽(라이트 테마인데 어두운 사진 위 등)이면 onSurface 계열을 통째로 바꿔, 안에서 테마색을 직접 쓴 글자도
+        // 같이 따라오게 합니다. 바깥(사진 위)의 LocalOnPageColor 는 여기서 끊습니다.
+        FrostContent(onDark = if (material) frostOnDark.value else null) { content() }
+    }
+}
+
+/** 서리 판 안의 색 규칙 — [onDark] 가 테마와 반대면 onSurface 계열·구분선을 판 밝기에 맞춘 색으로 덮어씁니다. */
+@Composable
+fun FrostContent(onDark: Boolean?, content: @Composable () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val inverted = onDark != null && onDark != scheme.isDark
+    if (!inverted) {
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, LocalOnPageColor provides null, content = content)
+        return
+    }
+    val onCard = if (onDark == true) Color(0xFFF4F4F7) else Color(0xFF111114)
+    val adapted = scheme.copy(
+        onSurface = onCard,
+        onBackground = onCard,
+        onSurfaceVariant = onCard.copy(alpha = 0.72f),
+        outlineVariant = onCard.copy(alpha = 0.12f),
+        outline = onCard.copy(alpha = 0.3f),
     )
+    MaterialTheme(colorScheme = adapted) {
+        CompositionLocalProvider(LocalContentColor provides onCard, LocalOnPageColor provides null, content = content)
+    }
+}
+
+/**
+ * 카드 서리 유리 — 페이지 배경(사진이면 미리 흐린 사본)을 카드의 창 위치만큼 옮겨 그리고 옅은 틴트를 얹습니다. 배경은 움직이지
+ * 않으니 실시간 흐림 대신 그림을 다시 쓰는 것으로 충분하고, 스크롤 중엔 위치만 바뀌어 비용이 거의 없습니다.
+ */
+@Composable
+fun Modifier.oneUiFrostedBackdrop(
+    tint: Color,
+    /**
+     * 판이 어두운지(→ 글자는 밝게)를 돌려받을 상태 — 판 아래 사진 밝기와 틴트로 판단해, 불투명도가 낮아 사진이 많이 비쳐도
+     * 글자가 묻히지 않게 합니다. 값이 바뀔 때만 씁니다(스크롤 프레임마다 재구성되지 않도록).
+     */
+    onDark: MutableState<Boolean?>? = null,
+): Modifier {
+    val dark = MaterialTheme.colorScheme.isDark
+    val blurred = LocalBlurredPageBackground.current
+    val filter = PageBackgroundAdjust.colorFilter()
+    val brightness = PageBackgroundAdjust.brightness
+    val window = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
+    // 위치는 그리기 단계에서만 읽습니다 — 스크롤해도 다시 구성하지 않고 다시 그리기만.
+    val origin = remember { mutableStateOf(Offset.Zero) }
+    return this
+        .onGloballyPositioned {
+            val pos = it.positionInWindow()
+            origin.value = pos
+            if (onDark != null) {
+                val next = if (blurred == null) null
+                else frostOnDark(
+                    blurredLuminanceUnder(blurred, window.width.toFloat(), window.height.toFloat(), pos.x, pos.y, it.size.width.toFloat(), it.size.height.toFloat(), brightness),
+                    tint, onDark.value,
+                )
+                if (onDark.value != next) onDark.value = next
+            }
+        }
+        .drawBehind {
+            val o = origin.value
+            translate(-o.x, -o.y) { drawPageBackground(window.width.toFloat(), window.height.toFloat(), dark, blurred, null, filter) }
+            drawRect(tint)
+        }
 }
 
 /** 재질 카드의 유리 테두리 — 위는 [top] 색으로 밝고, 아래는 옅게 남습니다. 카드가 [shape] 로 잘려 있어 선의 안쪽 절반만 보입니다. */
@@ -324,7 +410,7 @@ fun OneUiListItem(
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onPageVariantColor(),
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -346,7 +432,7 @@ fun OneUiSectionTitle(text: String, modifier: Modifier = Modifier) {
         text,
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = onPageVariantColor(),
         modifier = modifier.padding(start = OneUi.RowPadding, top = 18.dp, bottom = 8.dp),
     )
 }
@@ -377,14 +463,24 @@ fun OneUiButton(
     leading: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val onPage = LocalOnPageColor.current
+    val neutralBase = onPage ?: scheme.onSurface
+    // 사진 위(카드 밖)의 보조 버튼은 칩과 같은 서리 알약 — 옅은 반투명 판은 사진에 묻혔습니다. 카드 안은 옅은 면 그대로.
+    val frostedNeutral = style == OneUiButtonStyle.Neutral && onPage != null && LocalMaterialHazeState.current != null && !PerformanceMode.enabled
+    val frostOnDark = remember { mutableStateOf<Boolean?>(null) }
     val container = when (style) {
         OneUiButtonStyle.Filled -> scheme.primary
-        OneUiButtonStyle.Neutral -> scheme.floatingPill
+        OneUiButtonStyle.Neutral -> if (onPage != null && PerformanceMode.enabled) scheme.surface.copy(alpha = 0.94f)
+            else neutralBase.copy(alpha = if (neutralBase.luminance() > 0.5f) 0.14f else 0.07f)
         OneUiButtonStyle.Outlined -> Color.Transparent
     }
     val content = when (style) {
         OneUiButtonStyle.Filled -> scheme.onPrimary
-        OneUiButtonStyle.Neutral -> scheme.onSurface
+        OneUiButtonStyle.Neutral -> when {
+            frostedNeutral -> when (frostOnDark.value) { true -> Color(0xFFF4F4F7); false -> Color(0xFF111114); null -> scheme.onSurface }
+            onPage != null && PerformanceMode.enabled -> scheme.onSurface
+            else -> neutralBase
+        }
         OneUiButtonStyle.Outlined -> scheme.primary
     }
     val height = if (compact) 36.dp else 46.dp
@@ -410,29 +506,14 @@ fun OneUiButton(
         .clip(CircleShape)
         .clickable(enabled = enabled, onClick = onClick)
         .defaultMinSize(minHeight = height)
-    if (style == OneUiButtonStyle.Neutral) {
-        // 보조 버튼은 칩과 같은 액체 유리(색 판 위의 렌즈 림·반사광) — 화면마다 칩은 유리인데 버튼만 밋밋한 회색이던 것을
-        // 한 결로 맞춥니다. 강조색(주 동작) 버튼은 그대로 칠합니다 — 유리에 색을 입히는 건 주 동작 하나뿐이라는 원칙.
-        OneUiLiquidGlassBox(
-            modifier = base,
-            cornerRadius = height / 2,
-            strength = 0.6f,
-            fill = scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
-        ) {
-            Row(
-                modifier = Modifier.defaultMinSize(minHeight = height).padding(horizontal = horizontal),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                content = label,
-            )
-        }
-        return
-    }
     Row(
         modifier = base
-            .background(container)
+            .then(if (frostedNeutral) Modifier.oneUiFrostedBackdrop(scheme.surface.copy(alpha = FrostOpacity.alpha), frostOnDark) else Modifier.background(container))
             .then(
-                if (style == OneUiButtonStyle.Outlined) Modifier.border(1.5.dp, scheme.primary, CircleShape) else Modifier,
+                when (style) {
+                    OneUiButtonStyle.Outlined -> Modifier.border(1.5.dp, scheme.primary, CircleShape)
+                    else -> Modifier
+                },
             )
             .padding(horizontal = horizontal),
         verticalAlignment = Alignment.CenterVertically,
@@ -450,7 +531,7 @@ fun OneUiTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    color: Color = MaterialTheme.colorScheme.onSurface,
+    color: Color = LocalContentColor.current,
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
 ) {
     Box(
@@ -477,12 +558,17 @@ fun OneUiActionPill(
     content: @Composable RowScope.() -> Unit,
 ) {
     // 접히면 액체 유리 섬(서리 유리 + 무지개 림)으로 떠오릅니다.
+    // 섬 유리가 안 보일 땐(헤더 펼침) 아이콘이 사진 위에 바로 놓이므로 사진 밝기에 맞춘 색으로.
+    val onPage = LocalOnPageColor.current
+    val iconColor = onPage?.let { lerp(it, MaterialTheme.colorScheme.onSurface, pillAlpha) } ?: LocalContentColor.current
     OneUiLiquidGlassBox(modifier = modifier, cornerRadius = 22.dp, alpha = pillAlpha) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content,
-        )
+        CompositionLocalProvider(LocalContentColor provides iconColor) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
     }
 }
 
@@ -532,24 +618,37 @@ fun OneUiChip(
     leading: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
-    // 액체 유리 칩 — 선택되면 강조색 유리, 아니면 옅은 회색 유리. 본문(haze 소스) 안이라 뒤 화면 대신 색 판 위에
-    // 렌즈(림·반사광)를 얹습니다.
-    val container by animateColorAsState(
-        if (selected) scheme.primary.copy(alpha = 0.9f) else scheme.onSurface.copy(alpha = if (scheme.isDark) 0.10f else 0.07f),
-        label = "chipContainer",
-    )
-    val content by animateColorAsState(
-        if (selected) scheme.onPrimary else scheme.onSurface,
-        label = "chipContent",
-    )
-    OneUiLiquidGlassBox(
+    // 평평한 반투명 알약 — 선택되면 강조색, 아니면 글자색의 옅은 판. 사진 위에선 사진 밝기에 맞춘 색(흰/검정)을 바탕으로.
+    // (예전엔 칩마다 액체 유리 렌즈 셰이더 레이어를 두어 칩이 많은 화면이 무거웠습니다.)
+    val onPage = LocalOnPageColor.current
+    val base = onPage ?: scheme.onSurface
+    val dark = base.luminance() > 0.5f
+    // 사진 위(카드 밖)의 칩은 카드와 같은 서리 알약 — 예전엔 칩 줄을 통째로 서리 카드에 넣어 카드 속 칩의 이중 구조였고,
+    // 칩만 두면 사진에 묻혔습니다. 카드 안의 칩은 글자색의 옅은 판 그대로.
+    val frosted = !selected && onPage != null && LocalMaterialHazeState.current != null && !PerformanceMode.enabled
+    val frostOnDark = remember { mutableStateOf<Boolean?>(null) }
+    // 색 전환 애니메이션은 두지 않습니다 — 칩마다 애니메이션 상태 둘을 두면 칩이 10개인 화면에서 구성 비용만 늘었습니다.
+    val container = when {
+        selected -> scheme.primary.copy(alpha = 0.92f)
+        onPage != null && PerformanceMode.enabled -> scheme.surface.copy(alpha = 0.94f)
+        else -> base.copy(alpha = if (dark) 0.14f else 0.08f)
+    }
+    val content = when {
+        selected -> scheme.onPrimary
+        // 서리 알약은 판의 실제 밝기대로 — 사진이 많이 비칠 때 테마색이 묻지 않게.
+        frosted -> when (frostOnDark.value) { true -> Color(0xFFF4F4F7); false -> Color(0xFF111114); null -> scheme.onSurface }
+        onPage != null && PerformanceMode.enabled -> scheme.onSurface
+        else -> base
+    }
+    Box(
         modifier = modifier
             .clip(CircleShape)
+            .then(
+                if (frosted) Modifier.oneUiFrostedBackdrop(scheme.surface.copy(alpha = FrostOpacity.alpha), frostOnDark)
+                else Modifier.background(container),
+            )
             .clickable(onClick = onClick)
             .height(36.dp),
-        cornerRadius = 18.dp,
-        strength = 0.6f,
-        fill = container,
     ) {
     Row(
         modifier = Modifier.padding(horizontal = 16.dp).height(36.dp),
@@ -627,7 +726,7 @@ fun OneUiRadioRow(
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
             }
         }
     }
@@ -857,7 +956,8 @@ fun OneUiDialog(
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-            contentAlignment = Alignment.BottomCenter,
+            // 폰은 One UI 시트처럼 아래쪽, 태블릿은 One UI 태블릿처럼 화면 가운데에 띄웁니다.
+            contentAlignment = if (isWideWindow()) Alignment.Center else Alignment.BottomCenter,
         ) {
         Box(
             modifier = modifier
@@ -866,7 +966,7 @@ fun OneUiDialog(
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
                 .clip(shape)
                 .then(
-                    if (hazeState != null) Modifier.hazeEffect(hazeState, cardStyle)
+                    if (hazeState != null && !PerformanceMode.enabled) Modifier.hazeEffect(hazeState, cardStyle) { inputScale = HazeInputScale.Auto }
                     else Modifier.background(if (scheme.isDark) scheme.surfaceContainerHigh else scheme.surface),
                 ),
         ) {
@@ -925,7 +1025,14 @@ fun OneUiDialog(
         }
     }
     // 다이얼로그는 다른 창이라 안쪽 카드가 메인 화면의 배경 Haze 를 비출 수 없습니다 — 반투명 색으로.
-    val content: @Composable () -> Unit = { CompositionLocalProvider(LocalMaterialHazeState provides null, content = body) }
+    val content: @Composable () -> Unit = {
+        CompositionLocalProvider(
+            LocalMaterialHazeState provides null,
+            LocalOnPageColor provides null,
+            LocalContentColor provides MaterialTheme.colorScheme.onSurface,
+            content = body,
+        )
+    }
     if (hazeState != null) {
         HazeDialog(hazeState = hazeState, onDismissRequest = onDismissRequest, properties = properties, content = content)
     } else {
@@ -946,7 +1053,7 @@ fun OneUiAlertDialog(
         title = title,
         buttons = listOf(OneUiDialogButton(confirmText, onDismissRequest)),
     ) {
-        Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(message, style = MaterialTheme.typography.bodyMedium, color = onPageVariantColor())
     }
 }
 
@@ -970,6 +1077,13 @@ fun OneUiFullScreen(
     actions: (@Composable RowScope.() -> Unit)? = null,
     /** 콘텐츠 위에 뜨는 것(팝업 등) — 콘텐츠의 haze 소스 밖에 놓여 액체 유리로 콘텐츠를 흐려 비출 수 있습니다. */
     overlay: (@Composable BoxScope.(PaddingValues) -> Unit)? = null,
+    /** 태블릿에서 콘텐츠 최대 폭 — 글·목록은 읽기 폭, 좌석 배치도처럼 넓게 펼칠 화면은 더 크게 줍니다. */
+    maxContentWidth: Dp = Adaptive.ReadingWidth,
+    /**
+     * 불투명 서리 페이지 — 사진 배경을 흐리고 면 색을 짙게 덮어, 카드 밖 글자도 보통 테마색(회색 보조 글자 포함)으로 읽히게.
+     * 정보·개인정보 보호·변경 사항처럼 글이 긴 화면용. 카드는 서리 대신 보통 면으로 그립니다.
+     */
+    frosted: Boolean = false,
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1012,18 +1126,29 @@ fun OneUiFullScreen(
         CompositionLocalProvider(
             LocalHazeState provides hazeState,
             LocalDialogHazeState provides dialogHazeState,
-            LocalMaterialHazeState provides materialHazeState,
+            // 서리 페이지에선 카드가 사진을 비추지 않습니다(불투명 판 위의 보통 면).
+            LocalMaterialHazeState provides if (frosted) null else materialHazeState,
+            LocalOnPageColor provides if (frosted) null else LocalOnPageColor.current,
         ) {
-        Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent) {
-            Box(Modifier.fillMaxSize().hazeSource(dialogHazeState)) {
-                Box(Modifier.fillMaxSize().oneUiPageBackground().hazeSource(materialHazeState))
+        // 사진 배경이면 카드 밖 글자·아이콘은 사진 밝기에 맞춘 색 — 카드(OneUiCard) 안에서 다시 테마색으로 돌아갑니다.
+        val onPage = LocalOnPageColor.current ?: scheme.onSurface
+        Surface(modifier = modifier.fillMaxSize(), color = Color.Transparent, contentColor = onPage) {
+            Box(Modifier.fillMaxSize().hazeSourceUnlessPerf(dialogHazeState)) {
+                // 카드 재질이 비출 배경 — 카드가 들어 있는 콘텐츠 소스(zIndex 0)보다 아래(-1)여야 Haze 가 그려 줍니다. 같은 0 이면
+                // "자기를 품은 소스보다 아래 층만" 규칙에 걸려 배경이 빠지고 카드가 단색 판(배경 사진이 안 비침)으로 보였습니다.
+                if (frosted) OneUiFrostedPageBackdrop()
+                else OneUiPageBackdrop(if (PerformanceMode.enabled) Modifier else Modifier.hazeSource(materialHazeState, zIndex = -1f))
                 Box(
                     Modifier
                         .fillMaxSize()
                         .nestedScroll(scrollConnection)
-                        .hazeSource(hazeState),
+                        .hazeSourceUnlessPerf(hazeState),
+                    contentAlignment = Alignment.TopCenter,
                 ) {
-                    content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
+                    // 태블릿에서는 글·목록이 화면 끝까지 늘어나지 않게 읽기 좋은 폭으로 가운데에 (폰은 그대로 전체 폭).
+                    Box(Modifier.fillMaxHeight().widthIn(max = maxContentWidth + OneUi.PagePadding * 2)) {
+                        content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -1038,8 +1163,11 @@ fun OneUiFullScreen(
                         cornerRadius = 22.dp,
                         alpha = glass,
                     ) {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                        // 유리 원이 켜지면 그 위의 화살표는 테마 글자색으로.
+                        CompositionLocalProvider(LocalContentColor provides lerp(onPage, scheme.onSurface, glass)) {
+                            IconButton(onClick = onDismiss) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                            }
                         }
                     }
                     Spacer(Modifier.width(6.dp))
@@ -1063,7 +1191,7 @@ fun OneUiFullScreen(
                             Text(
                                 subtitle,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = scheme.onSurfaceVariant,
+                                color = onPageVariantColor(),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1171,6 +1299,9 @@ fun OneUiCollapsingHeader(
     // 섬 유리는 글자가 도착하기 조금 전부터 떠오릅니다.
     val barAlpha = ((fraction - 0.25f) / 0.6f).coerceIn(0f, 1f)
     val progress = FastOutSlowInEasing.transform(fraction)
+    // 배경 사진 위(펼친 헤더)에선 사진 밝기에 맞춘 색, 섬 안으로 접히면 테마 색 — 흰 글자엔 옅은 그림자를 둡니다.
+    val onPage = LocalOnPageColor.current
+    val onPageShadow = if (onPage == Color.White && barAlpha < 0.5f) Shadow(Color.Black.copy(alpha = 0.35f), blurRadius = 8f) else null
 
     val bigTitleStyle = MaterialTheme.typography.headlineMedium.copy(lineHeight = 36.sp)
     val smallTitleStyle = MaterialTheme.typography.titleMedium
@@ -1245,8 +1376,9 @@ fun OneUiCollapsingHeader(
         ) {
             Text(
                 title,
-                style = bigTitleStyle,
+                style = bigTitleStyle.copy(shadow = onPageShadow),
                 fontWeight = FontWeight.Bold,
+                color = onPage?.let { lerp(it, scheme.onSurface, barAlpha) } ?: Color.Unspecified,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -1256,8 +1388,8 @@ fun OneUiCollapsingHeader(
             if (subtitle != null) {
                 Text(
                     subtitle,
-                    style = bigSubtitleStyle,
-                    color = scheme.onSurfaceVariant,
+                    style = bigSubtitleStyle.copy(shadow = onPageShadow),
+                    color = onPage?.let { lerp(it.copy(alpha = 0.85f), scheme.onSurfaceVariant, barAlpha) } ?: scheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -1309,4 +1441,32 @@ fun OneUiMetricIcon(
     ) {
         Icon(painter, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.5f))
     }
+}
+
+/**
+ * 입력·선택 묶음을 담는 서리 카드 — 날짜 선택 알약, 칩 줄, 입력란처럼 카드 없이 배경 사진 위에 바로 놓이던 조작부용.
+ * 사진 위에선 흰/검정 어느 쪽으로 맞춰도 글자가 묻혀서, 삼성 캘린더·리마인더처럼 반드시 판 위에 둡니다.
+ * 안쪽 요소들이 좌우 [OneUi.PagePadding] 을 스스로 두므로 카드 안쪽 여백은 위아래만 줍니다.
+ */
+@Composable
+fun OneUiFormCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    OneUiCard(
+        modifier = modifier.padding(horizontal = OneUi.PagePadding).fillMaxWidth(),
+        contentPadding = PaddingValues(vertical = 12.dp),
+        content = content,
+    )
+}
+
+/**
+ * 목록 위의 칩 줄 — 게시판 분류·급식 요일처럼 목록을 거르는 칩들. 삼성 갤러리·노트의 필터 칩처럼 판 없이 놓이고(사진 위에선
+ * 칩 하나하나가 작은 서리 알약, [OneUiChip]), 다 안 들어가면 가로로 조금 밀리는 대신 다음 줄로 넘어갑니다.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun OneUiChipStrip(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) { content() }
 }

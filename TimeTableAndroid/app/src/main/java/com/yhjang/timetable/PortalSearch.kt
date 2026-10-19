@@ -1,5 +1,6 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -239,7 +240,7 @@ fun PortalSearchScreen(onDismiss: () -> Unit, onOpenPost: (url: String, title: S
         targets.forEach { bmt -> if (pages[bmt to order] == null) launch { loadMore(o.query, bmt, order) } }
     }
 
-    OneUiFullScreen(title = "하이하나 검색", subtitle = "모든 게시판 · 모든 기간", onDismiss = onDismiss) { toolbar ->
+    OneUiFullScreen(title = "하이하나 검색", subtitle = "모든 게시판 · 모든 기간", onDismiss = onDismiss, frosted = true) { toolbar ->
         val scheme = MaterialTheme.colorScheme
         val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         val focusManager = LocalFocusManager.current

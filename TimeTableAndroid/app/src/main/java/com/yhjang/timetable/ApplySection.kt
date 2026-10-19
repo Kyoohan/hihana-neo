@@ -1,5 +1,6 @@
 package com.yhjang.timetable
 
+import com.yhjang.timetable.ui.onPageVariantColor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,7 +38,7 @@ import com.yhjang.timetable.ui.OneUiDivider
 import com.yhjang.timetable.ui.OneUiGroupColumn
 import kotlinx.coroutines.launch
 
-private const val PORTAL_BASE = "https://hh.hana.hs.kr"
+internal const val PORTAL_BASE = "https://hh.hana.hs.kr"
 
 // MARK: - 신청·내역
 
@@ -83,6 +84,12 @@ internal fun ApplyHistorySection(
     onOpenSeats: (SeatService) -> Unit,
     /** 헤더의 연필 아이콘으로 켜는 순서 편집 — 블록 대신 위·아래 버튼이 달린 목록을 보여 줍니다. */
     editing: Boolean = false,
+    /**
+     * 큰 화면 두 칸 — 면학실·도서관·외출외박 내역을 전체 화면 대신 오른쪽 칸에 띄웁니다(null 이면 폰처럼 전체 화면).
+     * [historyShown] 은 지금 오른쪽 칸에 떠 있는 서비스 — 그 카드의 '내역' 버튼을 강조합니다.
+     */
+    onShowHistory: ((ApplyService) -> Unit)? = null,
+    historyShown: ApplyService? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -121,7 +128,10 @@ internal fun ApplyHistorySection(
         ApplyService.OUTING -> OutingApplyScreen(
             onDismiss = { applyScreen = null },
             onOpenPortal = { applyScreen = null; openApplyPortal(ApplyService.OUTING) },
-            onOpenHistory = { applyScreen = null; historyScreen = ApplyService.OUTING },
+            onOpenHistory = {
+                applyScreen = null
+                if (onShowHistory != null) onShowHistory(ApplyService.OUTING) else historyScreen = ApplyService.OUTING
+            },
         )
         else -> Unit
     }
@@ -180,7 +190,14 @@ internal fun ApplyHistorySection(
                 // 교과교실은 "누가 어느 교실에 있는지" 현황 조회를 하나 더.
                 onStatus = if (service == ApplyService.CLASSROOM) ({ showingClassroomStatus = true }) else null,
                 // 교과교실은 카드 안에 목록, 나머지 셋은 전체 화면.
-                onHistory = { if (service == ApplyService.CLASSROOM) loadHistory(service) else historyScreen = service },
+                onHistory = {
+                    when {
+                        service == ApplyService.CLASSROOM -> loadHistory(service)
+                        onShowHistory != null -> onShowHistory(service)
+                        else -> historyScreen = service
+                    }
+                },
+                historySelected = historyShown == service,
                 // 도서관·면학실은 좌석 화면, 교과교실·외출외박은 신청 화면 — 모두 앱 안.
                 onApply = {
                     when (service) {
@@ -207,7 +224,7 @@ internal fun OrderEditor(
         Text(
             "위·아래 버튼으로 순서를 바꾸고, 끝나면 위의 체크를 누르세요.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
             modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
         )
         OneUiGroupColumn {
@@ -219,7 +236,7 @@ internal fun OrderEditor(
                     Text(
                         "${index + 1}",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = onPageVariantColor(),
                         modifier = Modifier.width(24.dp),
                     )
                     Text(
@@ -257,6 +274,7 @@ private fun ApplyServiceCard(
     onHistory: () -> Unit,
     onApply: () -> Unit,
     onStatus: (() -> Unit)? = null,
+    historySelected: Boolean = false,
 ) {
     // 내역 조회와 신청하기는 같은 급의 동작이라, 카드 아래에 같은 모양·같은 폭의 알약 버튼 두 개로 나란히 둡니다.
     val historyLabel = when (state) {
@@ -276,7 +294,7 @@ private fun ApplyServiceCard(
             OneUiButton(
                 text = historyLabel,
                 onClick = onHistory,
-                style = OneUiButtonStyle.Neutral,
+                style = if (historySelected) OneUiButtonStyle.Filled else OneUiButtonStyle.Neutral,
                 enabled = state != ApplyHistoryState.Loading,
                 modifier = Modifier.weight(1f),
             )
@@ -311,21 +329,21 @@ private fun ClassroomHistoryBody(state: ApplyHistoryState) {
             Text(
                 "내역을 불러오는 중",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
             )
         }
 
         is ApplyHistoryState.Error -> Text(
             if (state.message == ACADEMIC_NEEDS_LOGIN) "하이하나 계정을 먼저 등록해 주세요" else state.message,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onPageVariantColor(),
         )
 
         is ApplyHistoryState.Rows -> if (state.rows.isEmpty()) {
             Text(
                 "내역 없음",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onPageVariantColor(),
             )
         } else {
             Column {
