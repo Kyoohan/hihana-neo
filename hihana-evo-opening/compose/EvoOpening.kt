@@ -114,32 +114,41 @@ private val RIBBON_FRAMES = arrayOf(
     floatArrayOf(179.0f, 46.0f, 1.0f, -0.69f),   // center
     floatArrayOf(0.0f, 1.0f, 1.0f, 0.0f),   // right
 )
-private val SEGMENTS = intArrayOf(12, 10, 12)
+private val SEGMENTS = intArrayOf(20, 16, 20)
 
 private val CHOREO = arrayOf(
     RibbonCfg(   // left
         order = 0, uc = 0.5f, t0 = -0.1f, kappa = 0.62f,
         fx = 77.99f, fy = 197.24f, h0x = 85.15f, h0y = -11.81f, dinX = -0.616f, dinY = -0.7877f, h1 = 153.4f, wf = 46.0f,
-        flutter = floatArrayOf(30.0f, 0.6f, 0.6f, 0.0f, 8.0f, 1.6f, 1.1f, 1.3f),
-        twist = floatArrayOf(2.6f, 0.8f, 0.35f, 0.4f, 0.7f, 1.9f, 0.8f, 2.0f),
+        flutter = floatArrayOf(),
+        twist = floatArrayOf(1.9f, 0.8f, 0.35f, 0.4f, 0.5f, 1.9f, 0.8f, 2.0f),
         omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
         eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
+        windAmp = 46.0f, windLong = 0.35f, windFlap = 0.9f, windRipple = 0.22f, windShear = 0.2f,
+        waves = floatArrayOf(1.0f, 1.15f, 0.95f, 0.0f, 0.55f, 2.1f, 1.65f, 1.9f, 0.25f, 3.6f, 2.8f, 4.1f),
+        gust = floatArrayOf(0.3f, 0.31f, 1.1f, 0.2f, 0.53f, 2.3f),
     ),
     RibbonCfg(   // center
         order = 0, uc = 0.5f, t0 = 0.1f, kappa = 0.55f,
         fx = 114.81f, fy = 178.47f, h0x = -133.14f, h0y = 12.39f, dinX = -0.8894f, dinY = -0.4572f, h1 = 270.73f, wf = 48.0f,
-        flutter = floatArrayOf(22.0f, 0.75f, 0.8f, 1.0f, 7.0f, 1.9f, 1.4f, 0.0f),
+        flutter = floatArrayOf(),
         twist = floatArrayOf(2.2f, 0.9f, 0.5f, 0.0f, 0.6f, 2.0f, 1.0f, 0.4f),
         omega = 3.692308f, zeta = 0.9f, sW0 = 2.015f, sW1 = 2.535f, sa0 = 1.144f, sa1 = 1.69f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.715f, st1 = 1.235f, kp = 0.24f, taper = 0.22f,
         eps = 0.2f, spread = 0.0f, twistLag = 0.325f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
+        windAmp = 38.0f, windLong = 0.35f, windFlap = 0.8f, windRipple = 0.2f, windShear = 0.18f,
+        waves = floatArrayOf(1.0f, 1.2f, 0.9f, 1.0f, 0.55f, 2.0f, 1.6f, 2.6f, 0.25f, 3.7f, 2.7f, 0.3f),
+        gust = floatArrayOf(0.3f, 0.33f, 0.6f, 0.2f, 0.49f, 1.7f),
     ),
     RibbonCfg(   // right
         order = 1, uc = 0.5f, t0 = 0.0f, kappa = 0.62f,
         fx = -38.0f, fy = -173.1f, h0x = -93.72f, h0y = 44.41f, dinX = 0.6967f, dinY = 0.7173f, h1 = 41.34f, wf = 46.0f,
-        flutter = floatArrayOf(30.0f, 0.6f, -0.6f, 2.0f, 8.0f, 1.6f, -1.1f, 0.3f),
-        twist = floatArrayOf(2.6f, 0.8f, -0.35f, 2.1f, 0.7f, 1.9f, -0.8f, 0.7f),
+        flutter = floatArrayOf(),
+        twist = floatArrayOf(1.9f, 0.8f, -0.35f, 2.1f, 0.5f, 1.9f, -0.8f, 0.7f),
         omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
         eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 1.0f, persp = 8.0f,
+        windAmp = 46.0f, windLong = 0.35f, windFlap = 0.9f, windRipple = 0.22f, windShear = 0.2f,
+        waves = floatArrayOf(1.0f, 1.1f, 1.0f, 2.0f, 0.55f, 2.2f, 1.7f, 0.4f, 0.25f, 3.5f, 2.9f, 3.0f),
+        gust = floatArrayOf(0.3f, 0.29f, 2.0f, 0.2f, 0.57f, 0.4f),
     ),
 )
 
@@ -385,7 +394,7 @@ private fun uRoots(c: Cub, gx: Float, gy: Float, g0: Float, level: Float): List<
 }
 
 /** 외곽 베지어를 u 경계(levels)와 최대 길이로 잘게 나눈다 — 모양은 원래 곡선과 정확히 같다. */
-private fun subdivide(cubs: List<Cub>, p: RibbonParam, levels: FloatArray, maxLen: Float = 36f): List<Cub> {
+private fun subdivide(cubs: List<Cub>, p: RibbonParam, levels: FloatArray, maxLen: Float = 24f): List<Cub> {
     val gx = p.gx; val gy = p.gy; val g0 = p.g0
     val out = ArrayList<Cub>()
     for (c in cubs) {
@@ -519,6 +528,10 @@ private class RibbonCfg(
     val drape: Float = 0.30f,    // 바깥 가장자리(v0)부터 안쪽으로 내려앉는 지연
     val v0: Float = 0.5f,
     val persp: Float = 1f,       // 원근: 출발 배율 (카메라 앞 → 로고 평면 1배)
+    // 바람: 앞 끝 → 뒤 끝으로 흐르는 물결 (상대 진폭, k 주기/리본, f Hz, 위상) × n 과 돌풍 (진폭, f Hz, 위상) × n
+    val windAmp: Float = 0f, val windLong: Float = 0f, val windFlap: Float = 0f,
+    val windRipple: Float = 0f, val windShear: Float = 0f,
+    val waves: FloatArray = FloatArray(0), val gust: FloatArray = FloatArray(0),
 ) {
     // 접근 경로 B(r): F → F+h0 → −din·h1 → 0  (r > 1 이면 착지 방향으로 살짝 지나친다)
     val p1x = fx + h0x; val p1y = fy + h0y
@@ -542,9 +555,14 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
     val ox = FloatArray(nu); val oy = FloatArray(nu)
     val sec = FloatArray(nu)                       // 섹션 경과 시간 s
     val ps = FloatArray(nu)                        // 원근 배율
-    val alpha = FloatArray(nu); val tx = FloatArray(nu); val ty = FloatArray(nu)
-    val fl = FloatArray(nu); val th = FloatArray(nu)
+    val alpha = FloatArray(nu)
+    val tx = FloatArray(nu); val ty = FloatArray(nu)       // 바람에 휜 중심선의 접선 (단면 방향)
+    val t0x = FloatArray(nu); val t0y = FloatArray(nu)     // 바람 전 중심선의 접선 (바람 변위 방향)
+    val fl = FloatArray(nu); val flt = FloatArray(nu)      // 바람: 옆·길이 방향 변위
+    val rip = FloatArray(nu); val shr = FloatArray(nu)     // 바람: 폭 출렁임·단면 밀림
+    val th = FloatArray(nu)
     private val cx = FloatArray(nu); private val cy = FloatArray(nu)
+    private val envF = FloatArray(nu)
 
     private fun order(u: Float): Float = when (c.order) {
         0 -> u
@@ -555,7 +573,21 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
         }
     }
 
+    /** np.gradient 와 같은 차분으로 (x, y) 곡선의 단위 접선. */
+    private fun tangents(x: FloatArray, y: FloatArray, outX: FloatArray, outY: FloatArray) {
+        for (k in 0 until nu) {
+            val k0 = max(k - 1, 0); val k1 = min(k + 1, nu - 1)
+            val dx = x[k1] - x[k0]; val dy = y[k1] - y[k0]
+            val n = max(sqrt(dx * dx + dy * dy), 1e-9f)
+            outX[k] = dx / n; outY[k] = dy / n
+        }
+    }
+
     fun update(t: Float) {
+        // 돌풍: 바람 세기가 시간에 따라 불규칙하게 출렁인다
+        var gust = 1f
+        var gi = 0
+        while (gi < c.gust.size) { gust += c.gust[gi] * sin(TWO_PI * c.gust[gi + 1] * t + c.gust[gi + 2]); gi += 3 }
         for (k in 0 until nu) {
             val u = ug[k]
             val w = order(u)
@@ -578,36 +610,52 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
             if (c.persp > 1f) pss *= 1.0 + 20.0 * (1.0 - smootherstep(0f, 0.18f, s))
             ps[k] = pss.toFloat()
             alpha[k] = smootherstep(c.sa0, c.sa1, s)
-            val envF = 1f - smootherstep(c.sf0, c.sf1, s)
+            val ef = 1f - smootherstep(c.sf0, c.sf1, s)
+            envF[k] = ef
             val lag = c.twistLag * (1f - w)
             val envT = 1f - smootherstep(c.st0 + lag, c.st1 + lag, s)
-            var f = 0f
-            var i = 0
-            while (i < c.flutter.size) {
-                f += c.flutter[i] * sin(TWO_PI * (c.flutter[i + 1] * u - c.flutter[i + 2] * t) + c.flutter[i + 3]); i += 4
-            }
-            fl[k] = f * envF
             var a = 0f
-            i = 0
+            var i = 0
             while (i < c.twist.size) {
                 a += c.twist[i] * sin(TWO_PI * (c.twist[i + 1] * u - c.twist[i + 2] * t) + c.twist[i + 3]); i += 4
             }
             th[k] = a * envT
+            // 바람: 앞(먼저 닿는) 끝에서 뒤 끝으로 흐르는 물결 (위상 k·d − f·t), 뒤 끝일수록 크게
+            var wv = 0f; var wv2 = 0f; var wv3 = 0f; var rr = 0f; var rs = 0f
+            i = 0
+            while (i < c.waves.size) {
+                val amp = c.waves[i]; val kk = c.waves[i + 1]; val ff = c.waves[i + 2]; val ph = c.waves[i + 3]
+                val q = TWO_PI * (kk * w - ff * t) + ph
+                wv += amp * sin(q); wv2 += amp * sin(q + 1.3f); wv3 += amp * cos(q)
+                val q2 = TWO_PI * (1.7f * kk * w - 1.3f * ff * t) + ph + 0.7f
+                rr += amp * sin(q2); rs += amp * cos(q2)
+                i += 4
+            }
+            val base = ef * gust * (0.2f + 0.8f * w.pow(0.8f))
+            fl[k] = c.windAmp * base * wv
+            flt[k] = c.windLong * c.windAmp * base * wv2
+            th[k] += c.windFlap * base * wv3           // 면이 기울며 폭 마디가 물결을 따라 흐른다
+            rip[k] = c.windRipple * base * rr
+            shr[k] = c.windShear * base * rs
+            i = 0
+            while (i < c.flutter.size) {
+                fl[k] += ef * c.flutter[i] * sin(TWO_PI * (c.flutter[i + 1] * u - c.flutter[i + 2] * t) + c.flutter[i + 3]); i += 4
+            }
             cx[k] = smx[k] + ox[k]; cy[k] = smy[k] + oy[k]
         }
-        // 비행 중심선의 접선 T (np.gradient 와 같은 차분), 법선 N = (T.y, −T.x)
+        tangents(cx, cy, t0x, t0y)
+        // 단면 방향은 바람에 휜 실제 중심선에서 다시 잰다
         for (k in 0 until nu) {
-            val k0 = max(k - 1, 0); val k1 = min(k + 1, nu - 1)
-            val dx = cx[k1] - cx[k0]; val dy = cy[k1] - cy[k0]
-            val n = max(sqrt(dx * dx + dy * dy), 1e-9f)
-            tx[k] = dx / n; ty[k] = dy / n
+            val nX = t0y[k]; val nY = -t0x[k]
+            cx[k] += fl[k] * nX + flt[k] * t0x[k]; cy[k] += fl[k] * nY + flt[k] * t0y[k]
         }
+        tangents(cx, cy, tx, ty)
     }
 
     /**
-     * 재료점 (u, v) 의 위치.  X = O + (1−α)·F + α·P(u, v)
-     *   F = Sm(u) + 흩날림·N + (v−½)·wf(u)·(cosθ·N + k·sinθ·T)   (비행 모양: 가늘고 비틀린 실크)
-     *   P(u, v) = 로고의 정확한 점   (α = 1, O = 0 이면 원본 그대로)
+     * 재료점 (u, v) 의 위치.  X = 중심 + ps·(O + (1−α)·F + α·P(u, v) − 중심)
+     *   F = Sm(u) + 바람(옆·길이) + (v−½)·wf(u)·[(1+출렁임)(cosθ·N + k·sinθ·T) + 밀림·T]   (비행 모양: 펄럭이는 실크)
+     *   P(u, v) = 로고의 정확한 점   (α = 1, O = 0, ps = 1 이면 원본 그대로)
      */
     fun x(u: Float, v: Float, out: FloatArray, o: Int) {
         val f = ((u - ug[0]) / (ug[nu - 1] - ug[0]) * (nu - 1)).coerceIn(0f, (nu - 1).toFloat())
@@ -616,17 +664,21 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
         var tX = ip(tx); var tY = ip(ty)
         val tn = max(sqrt(tX * tX + tY * tY), 1e-9f); tX /= tn; tY /= tn
         val nX = tY; val nY = -tX
+        var t0X = ip(t0x); var t0Y = ip(t0y)
+        val t0n = max(sqrt(t0X * t0X + t0Y * t0Y), 1e-9f); t0X /= t0n; t0Y /= t0n
+        val n0X = t0Y; val n0Y = -t0X
         val al = if (c.drape != 0f) {
             // 바깥 가장자리(v0)부터 안쪽으로 내려앉는다: α 를 v 에 따라 조금 늦춘다 (끝 단면 근처는 약하게)
             val dv = abs(v.coerceIn(0f, 1f) - c.v0) / max(c.v0, 1f - c.v0)
             val le = c.drape * smootherstep(0.05f, 0.18f, min(u, 1f - u))
             smootherstep(c.sa0 + le * (dv - 0.5f), c.sa1 + le * (dv - 0.5f), ip(sec))
         } else ip(alpha)
-        val flv = ip(fl); val thv = ip(th); val wfv = ip(wf)
+        val flv = ip(fl); val fltv = ip(flt); val ripv = ip(rip); val shrv = ip(shr)
+        val thv = ip(th); val wfv = ip(wf)
         val vc = v.coerceIn(-0.05f, 1.05f) - 0.5f
-        val ct = cos(thv); val st = sin(thv)
-        val fx = p.smX(u) + flv * nX + vc * wfv * (ct * nX + c.kp * st * tX)
-        val fy = p.smY(u) + flv * nY + vc * wfv * (ct * nY + c.kp * st * tY)
+        val ct = cos(thv) * (1f + ripv); val st = c.kp * sin(thv) * (1f + ripv) + shrv
+        val fx = p.smX(u) + flv * n0X + fltv * t0X + vc * wfv * (ct * nX + st * tX)
+        val fy = p.smY(u) + flv * n0Y + fltv * t0Y + vc * wfv * (ct * nY + st * tY)
         val xf = ip(ox) + (1f - al) * fx + al * p.px(u, v)
         val yf = ip(oy) + (1f - al) * fy + al * p.py(u, v)
         // 원근 투영: 로고 중심을 소실점으로 배율 ps

@@ -120,7 +120,7 @@ def main():
     # 1) Lottie
     os.makedirs(os.path.join(ROOT, "lottie"), exist_ok=True)
     lj = os.path.join(ROOT, "lottie", "opening.json")
-    report["lottie"] = export_lottie.export(v, lj, tol_path=0.3)
+    report["lottie"] = export_lottie.export(v, lj, tol_path=0.2)
 
     # 2) Compose: 생성 상수 블록 갱신 → 하네스에 복사 (검증 테스트가 접근하도록 private class → internal)
     kt = os.path.join(ROOT, "compose", "EvoOpening.kt")

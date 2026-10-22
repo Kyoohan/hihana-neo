@@ -300,7 +300,7 @@ def _clip_half(pieces, param, level, keep_below):
     return out
 
 
-def segment_surface(surface, param, cuts, overlap, max_len=36.0):
+def segment_surface(surface, param, cuts, overlap, max_len=24.0):
     """면을 u 띠 [cut_k - overlap, cut_{k+1}] 로 나눈 세그먼트 리스트.
     세그먼트마다 자기 경계에서만 외곽선을 나눠 정점 수를 줄인다. 빈 띠는 건너뛴다."""
     segs = []

@@ -100,17 +100,48 @@ class Ribbon:
         lag = c.get("twist_lag", 0.0) * (1 - w)
         env_t = 1 - smootherstep(c["st0"] + lag, c["st1"] + lag, s)
         C = self.Sm + O
-        T = np.gradient(C, u, axis=0)
-        T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-9)
-        N = np.stack([T[:, 1], -T[:, 0]], axis=1)
-        fl = np.zeros_like(u)
-        for A, k, f, ph in c["flutter"]:
-            fl += A * np.sin(2 * math.pi * (k * u - f * t) + ph)
-        fl *= env_f
+        T0 = np.gradient(C, u, axis=0)
+        T0 /= np.maximum(np.linalg.norm(T0, axis=1, keepdims=True), 1e-9)
+        N0 = np.stack([T0[:, 1], -T0[:, 0]], axis=1)
         th = np.zeros_like(u)
         for A, k, f, ph in c["twist"]:
             th += A * np.sin(2 * math.pi * (k * u - f * t) + ph)
         th = th * env_t
+        # ── 바람 ──────────────────────────────────────────────────────────────
+        # 앞(먼저 닿는) 끝에서 자유로운 뒤 끝으로 흘러가는 물결 3개 (위상 k·d − f·t), 뒤 끝일수록 크게,
+        # 돌풍 g(t) 로 세기가 출렁인다. 옆 흔들림 + 길이 방향 출렁임 + 면 기울기(폭 마디) + 가장자리 잔물결.
+        wd = c.get("wind")
+        fl = np.zeros_like(u)
+        flt = np.zeros_like(u)
+        rip = np.zeros_like(u)
+        shr = np.zeros_like(u)
+        if wd:
+            d = w
+            gust = 1.0
+            for a, f, ph in wd["gust"]:
+                gust += a * math.sin(2 * math.pi * f * t + ph)
+            base = env_f * gust * (0.2 + 0.8 * d ** 0.8)
+            W = np.zeros_like(u); W2 = np.zeros_like(u); W3 = np.zeros_like(u); R = np.zeros_like(u); Rs = np.zeros_like(u)
+            for a, k, f, ph in wd["waves"]:
+                q = 2 * math.pi * (k * d - f * t) + ph
+                W += a * np.sin(q)
+                W2 += a * np.sin(q + 1.3)
+                W3 += a * np.cos(q)
+                q2 = 2 * math.pi * (1.7 * k * d - 1.3 * f * t) + ph + 0.7
+                R += a * np.sin(q2)
+                Rs += a * np.cos(q2)
+            fl = wd["amp"] * base * W
+            flt = wd["long"] * wd["amp"] * base * W2
+            th = th + wd["flap"] * base * W3
+            rip = wd["ripple"] * base * R
+            shr = wd["shear"] * base * Rs
+        for A, k, f, ph in c.get("flutter", []):
+            fl += env_f * A * np.sin(2 * math.pi * (k * u - f * t) + ph)
+        # 단면 방향은 바람에 휜 실제 중심선에서 다시 잰다
+        C2 = C + fl[:, None] * N0 + flt[:, None] * T0
+        T = np.gradient(C2, u, axis=0)
+        T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-9)
+        N = np.stack([T[:, 1], -T[:, 0]], axis=1)
         # 원근: 카메라(눈) 바로 앞에서 출발해 로고 평면으로 멀어진다. 배율 ps = 1 + (S0 − 1)·(1 − r)²
         # (출발 S0 배 → 착지 r = 1 에서 정확히 1). 로고 중심을 소실점으로 위치·폭·흩날림이 함께 줄어든다.
         S0 = c.get("persp", 1.0)
@@ -118,7 +149,8 @@ class Ribbon:
         if S0 > 1:
             # 출발 전·직후에는 카메라 뒤(배율 21배)에 있다가 0.18초 동안 화면 안으로 스쳐 들어온다 → 멈춘 큰 조각이 보이지 않게
             ps = ps * (1 + 20 * (1 - smootherstep(0.0, 0.18, s)))
-        return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, fl=fl, th=th, env_f=env_f, ps=ps)
+        return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, T0=T0, fl=fl, flt=flt, rip=rip, shr=shr,
+                    th=th, env_f=env_f, ps=ps)
 
     def X(self, F, u, v):
         """임의의 재료점 (u, v) 위치 (로고 단위)."""
@@ -141,14 +173,21 @@ class Ribbon:
             al = smootherstep(c["sa0"] + le * (dv - 0.5), c["sa1"] + le * (dv - 0.5), s)[..., None]
         else:
             al = ip(F["alpha"])[..., None]
+        T0 = np.stack([ip(F["T0"][:, 0]), ip(F["T0"][:, 1])], -1)
+        T0 /= np.maximum(np.linalg.norm(T0, axis=-1, keepdims=True), 1e-9)
+        N0 = np.stack([T0[..., 1], -T0[..., 0]], -1)
         fl = ip(F["fl"])[..., None]
+        flt = ip(F["flt"])[..., None]
+        rip = ip(F["rip"])[..., None]
+        shr = ip(F["shr"])[..., None]
         th = ip(F["th"])[..., None]
         wf = ip(self.wf)[..., None]
         Sm = self.p.spine_smooth(u)
         k = self.c.get("kp", 0.22)
         # 끝 단면이 아주 짧은 곳은 v 가 [0,1] 밖으로 크게 벗어나므로 비행 단면에서는 잘라 쓴다
         vc = np.clip(v, -0.05, 1.05)[..., None]
-        flight = Sm + fl * N + (vc - 0.5) * wf * (np.cos(th) * N + k * np.sin(th) * T)
+        flight = (Sm + fl * N0 + flt * T0
+                  + (vc - 0.5) * wf * ((1 + rip) * (np.cos(th) * N + k * np.sin(th) * T) + shr * T))
         Xf = O + (1 - al) * flight + al * self.p.P(u, v)
         ps = ip(F["ps"])[..., None]
         return LOGO_CENTER + ps * (Xf - LOGO_CENTER)

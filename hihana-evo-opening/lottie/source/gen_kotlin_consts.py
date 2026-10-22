@@ -75,6 +75,12 @@ def gen(variant):
         w("        eps = %s, spread = %s, twistLag = %s, drape = %s, v0 = %s, persp = %s,"
           % (f(c.get("eps", 0.2)), f(c.get("spread", 0.0)), f(c.get("twist_lag", 0.0)), f(c.get("drape", 0.0)), f(c.get("v0", 0.5)),
              f(c.get("persp", 1.0))))
+        wd = c.get("wind")
+        if wd:
+            w("        windAmp = %s, windLong = %s, windFlap = %s, windRipple = %s, windShear = %s,"
+              % (f(wd["amp"]), f(wd["long"]), f(wd["flap"]), f(wd["ripple"]), f(wd["shear"])))
+            w("        waves = floatArrayOf(%s)," % ", ".join(f(x) for t in wd["waves"] for x in t))
+            w("        gust = floatArrayOf(%s)," % ", ".join(f(x) for t in wd["gust"] for x in t))
         w("    ),")
     w(")")
     w("")

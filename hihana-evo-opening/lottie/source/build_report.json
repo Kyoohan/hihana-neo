@@ -37,8 +37,8 @@
   "hold_s": 2.55
  },
  "lottie": {
-  "bytes": 1443294,
-  "keys": 3021,
+  "bytes": 2374338,
+  "keys": 5412,
   "markers": [
    {
     "tm": 110,
@@ -70,7 +70,7 @@
   "complete": 237
  },
  "parity": [
-  "worst path 0.0899, grad 0.0734, shade 0.00000 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
+  "worst path 0.2622, grad 0.1577, shade 0.00001 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
  ],
  "lottie_android_log": [
   "[lottie] file=/home/user/hihana-neo/hihana-evo-opening/lottie/opening.json",
@@ -81,7 +81,7 @@
   "[lottie-marker] name=land_coral startFrame=116.0 durationFrames=0.0",
   "[lottie-marker] name=land_indigo startFrame=168.0 durationFrames=0.0",
   "[lottie-marker] name=logo_complete startFrame=237.0 durationFrames=0.0",
-  "[lottie] rendered 390 frames (0..389) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 12.6 s (32.4 ms/frame)"
+  "[lottie] rendered 390 frames (0..389) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 16.3 s (41.9 ms/frame)"
  ],
  "keyframes": [
   "00_start_f012.png",
@@ -94,13 +94,13 @@
   "07_final_f389.png"
  ],
  "android_vs_web": {
-  "mean_absdiff_max": 1.83323876226654,
-  "px_over40_max": 17
+  "mean_absdiff_max": 0.5369234726179171,
+  "px_over40_max": 0
  },
  "compose_log": [
   "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..6500.0ms frames=0..390 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
   "[record] root capture size=1080x2340",
-  "[record] wrote 391 frames in 23.1 s (59.1 ms/frame; advance 2.9 ms/frame, capture+copy 56.0 ms/frame)",
+  "[record] wrote 391 frames in 30.9 s (78.9 ms/frame; advance 3.0 ms/frame, capture+copy 75.8 ms/frame)",
   "[record] onFinish called at 6502 ms after the first frame",
   "[record] decorView=1080x2340",
   "[record] haptics recorded: AndroidComposeView=4 (CLOCK_TICK=4)"
