@@ -120,7 +120,8 @@ class Ribbon:
             gust = 1.0
             for a, f, ph in wd["gust"]:
                 gust += a * math.sin(2 * math.pi * f * t + ph)
-            base = env_f * gust * (0.2 + 0.8 * d ** 0.8)
+            # 카메라 가까이(막 등장)일수록 더 크게 펄럭인다: × (1 + boost·(1 − r)²)
+            base = env_f * gust * (0.2 + 0.8 * d ** 0.8) * (1 + wd.get("boost", 0.0) * (1 - r) ** 2)
             W = np.zeros_like(u); W2 = np.zeros_like(u); W3 = np.zeros_like(u); R = np.zeros_like(u); Rs = np.zeros_like(u)
             for a, k, f, ph in wd["waves"]:
                 q = 2 * math.pi * (k * d - f * t) + ph
@@ -150,8 +151,10 @@ class Ribbon:
             # 출발 전·직후에는 카메라 뒤(배율 21배)에 있다가 0.18초 동안 화면 안으로 스쳐 들어온다 → 멈춘 큰 조각이 보이지 않게
             ps = ps * (1 + 20 * (1 - smootherstep(0.0, 0.18, s)))
         lit = lighting(th, N, alpha)
+        # 막 등장할 때 천이 더 넓다: 폭 × (1 + wide·(1 − r)^1.5)  (착지하면 1)
+        wm = 1 + c.get("wide", 0.0) * np.clip(1 - r, 0, None) ** 1.5
         return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, T0=T0, fl=fl, flt=flt, rip=rip, shr=shr,
-                    th=th, env_f=env_f, ps=ps, lit=lit)
+                    th=th, env_f=env_f, ps=ps, lit=lit, wm=wm)
 
     def X(self, F, u, v):
         """임의의 재료점 (u, v) 위치 (로고 단위)."""
@@ -182,7 +185,7 @@ class Ribbon:
         rip = ip(F["rip"])[..., None]
         shr = ip(F["shr"])[..., None]
         th = ip(F["th"])[..., None]
-        wf = ip(self.wf)[..., None]
+        wf = ip(self.wf)[..., None] * ip(F["wm"])[..., None]
         Sm = self.p.spine_smooth(u)
         k = self.c.get("kp", 0.22)
         # 끝 단면이 아주 짧은 곳은 v 가 [0,1] 밖으로 크게 벗어나므로 비행 단면에서는 잘라 쓴다
@@ -284,7 +287,8 @@ class SegmentRig:
         else:
             p1 = e[5]
         al = ip(F["alpha"], um)
-        return dict(sid=self.sid, k=self.k, cubics=cub, grad=(gs, ge), stops=self.stops,
+        return dict(sid=self.sid, k=self.k, cubics=cub, grad=(gs, ge), aff=M, grad_logo=(self.start, self.end),
+                    stops=self.stops,
                     shade=tuple(sh), light=tuple(li), shade_pts=(p0, p1), alpha=al)
 
 

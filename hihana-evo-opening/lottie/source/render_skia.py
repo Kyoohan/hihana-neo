@@ -62,10 +62,15 @@ class Renderer:
                     if op <= 0.001:
                         continue
                 path = path_of(sg["cubics"])
-                gs, ge = sg["grad"]
+                # 바탕 그라데이션: 로고 좌표의 원래 그라데이션을 세그먼트 아핀 (A, t) 로 옮긴다 (Lottie·Compose 와 같은 방식)
+                M = sg["aff"]
+                st, en = sg["grad_logo"]
                 cols = [hexcol(c).toColor() for _, c in sg["stops"]]
                 pos = [o for o, _ in sg["stops"]]
-                sh = skia.GradientShader.MakeLinear([skia.Point(*gs), skia.Point(*ge)], cols, pos)
+                lm = skia.Matrix.MakeAll(float(M[0, 0]), float(M[1, 0]), float(M[2, 0]),
+                                         float(M[0, 1]), float(M[1, 1]), float(M[2, 1]), 0, 0, 1)
+                sh = skia.GradientShader.MakeLinear([skia.Point(*st), skia.Point(*en)], cols, pos,
+                                                    skia.TileMode.kClamp, 0, lm)
                 canvas.drawPath(path, skia.Paint(AntiAlias=True, Shader=sh, Alphaf=op))
                 p0, p1 = sg["shade_pts"]
                 if np.linalg.norm(p1 - p0) < 1e-3:

@@ -120,10 +120,11 @@ def simplify_keys(track, tol, dont_care, path_check=False):
             w = (np.arange(i + 1, j) - i) / (j - i)
             interp = track[i] + (track[j] - track[i]) * w[:, None]
             err = np.abs(interp - track[i + 1:j]).max(axis=1)
-            bad = (err > tol) & ~dont_care[i + 1:j] if not path_check else (err > tol)
+            tl = tol[i + 1:j] if np.ndim(tol) else tol
+            bad = (err > tl) & ~dont_care[i + 1:j] if not path_check else (err > tl)
             if path_check:
                 for q in np.where(bad & dont_care[i + 1:j])[0]:
-                    lo, hi = screen_bbox(interp[q].reshape(-1, 4, 2))
+                    lo, hi = screen_bbox(path_check(interp[q], i + 1 + q) if callable(path_check) else interp[q].reshape(-1, 4, 2))
                     if offscreen(lo, hi):
                         bad[q] = False
             if bad.any():
@@ -132,6 +133,35 @@ def simplify_keys(track, tol, dont_care, path_check=False):
         keys.append(best)
         i = best
     return keys
+
+
+def decompose_affines(Ms):
+    """세그먼트 아핀 열 (각 M: 3×2, X = [x y 1]·M) → 연속적인 (위치, φ, 배율 s1·s2, θ).
+
+    A = R(φ)·diag(s1, s2)·R(θ)  (2×2 닫힌 꼴 SVD, s2 는 부호 있음 = 뒤집힘).  φ+θ, φ−θ 를 프레임마다
+    이전 값에 이어 붙여(unwrap) 각도가 튀지 않게 하고, 등방(φ−θ 가 정의되지 않음)일 땐 이전 값을 쓴다."""
+    out = []
+    ps = pd = None
+    for M in Ms:
+        a, b, c, d = M[0, 0], M[1, 0], M[0, 1], M[1, 1]      # A = [[a b],[c d]]
+        E, F, G, H = (a + d) / 2, (a - d) / 2, (c + b) / 2, (c - b) / 2
+        Q, R = math.hypot(E, H), math.hypot(F, G)
+        s1, s2 = Q + R, Q - R
+        sm = math.atan2(H, E) if Q > 1e-9 else (ps if ps is not None else 0.0)
+        df = math.atan2(G, F) if R > 1e-6 * max(Q, 1e-9) else (pd if pd is not None else 0.0)
+        if ps is not None:
+            sm += 2 * math.pi * round((ps - sm) / (2 * math.pi))
+            df += 2 * math.pi * round((pd - df) / (2 * math.pi))
+        ps, pd = sm, df
+        phi, th = (sm + df) / 2, (sm - df) / 2
+        out.append((M[2].copy(), phi, s1, s2, th))
+    return out
+
+
+def affine_of(t, phi, s1, s2, th):
+    cp, sp, ct, st = math.cos(phi), math.sin(phi), math.cos(th), math.sin(th)
+    A = np.array([[cp, -sp], [sp, cp]]) @ np.diag([s1, s2]) @ np.array([[ct, -st], [st, ct]])
+    return A, np.asarray(t)
 
 
 TR = {"ty": "tr", "p": static([0, 0]), "a": static([0, 0]), "s": static([100, 100]),
@@ -214,13 +244,15 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
         ind += 1
         groups = []
         for j, rg in enumerate(rigs):
-            cubs, gs, ge, ov_s, ov_e, ov_g, li_g, op = [], [], [], [], [], [], [], []
+            # 세그먼트 = 움직이는 그룹 변환(위치·회전·배율·회전) + 로컬 좌표 경로 + 정적 그라데이션.
+            # lottie-android 는 그라데이션 셰이더를 32ms 단위로 캐시하므로(60fps 에서 두 프레임마다 재사용),
+            # 그라데이션 자체는 정적으로 두고 움직임은 캐시되지 않는 변환 행렬이 맡게 한다.
+            cubs, Ms, ov_s, ov_e, ov_g, li_g, op = [], [], [], [], [], [], []
             for f in fs:
                 sg = frames_cache[f]["layers"]
                 seg = [x for (lid, segs) in sg if lid == sid for x in segs][j]
                 cubs.append(seg["cubics"])
-                gs.append(seg["grad"][0])
-                ge.append(seg["grad"][1])
+                Ms.append(seg["aff"])
                 a0, a1 = seg["shade"]
                 p0, p1 = seg["shade_pts"]
                 if np.linalg.norm(p1 - p0) < 0.05:
@@ -239,39 +271,73 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
             dc = np.array([offscreen(*screen_bbox(c)) for c in cubs])
             ov_g = np.array(ov_g)
             li_g = np.array(li_g)
-            # 속성마다 따로 단순화 (느린 속성은 키가 적다)
-            kp = simplify_keys(cubs.reshape(nfk, -1), tol_path, dc, path_check=True)
-            kg = simplify_keys(np.hstack([gs, ge]), 1.5, dc)
-            shade_off = dc | (np.maximum(ov_g.max(axis=1), li_g.max(axis=1)) < 0.004)
-            ka = sorted(set(simplify_keys(ov_g, 0.012, dc)) | set(simplify_keys(li_g, 0.012, dc)))
-            ks = simplify_keys(np.hstack([ov_s, ov_e]), 2.0, shade_off)
+            dec = decompose_affines(Ms)
+            # 변환·로컬 경로를 따로 보간하면 화면 밖에서도 둘의 조합이 화면 안으로 튈 수 있다 → 화면 밖 생략을 쓰지 않는다
+            dc_any = dc
+            dc = np.zeros_like(dc)
+            loc, ls, le, s1s, rads = [], [], [], [], []
+            for q, (t_, phi, s1, s2, th) in enumerate(dec):
+                A, tt = affine_of(t_, phi, s1, s2, th)
+                Ai = np.linalg.inv(A)
+                lc = (cubs[q].reshape(-1, 2) - tt) @ Ai.T
+                loc.append(lc.reshape(-1, 4, 2))
+                ls.append((ov_s[q] - tt) @ Ai.T)
+                le.append((ov_e[q] - tt) @ Ai.T)
+                s1s.append(max(abs(s1), abs(s2)))
+                rads.append(float(np.abs(lc - lc.mean(0)).max()) + 1.0)
+            loc = np.array(loc)
+            s1s = np.array(s1s)
+            rads = np.array(rads)
+            # 단순화: 화면 오차 ≈ 배율 × 로컬 오차, 각도 오차 ≈ 반지름 × 배율 × Δ각
+            tol_loc = tol_path / s1s
+            path_scr = lambda flat, q: (flat.reshape(-1, 2) @ affine_of(*dec[q])[0].T + dec[q][0]).reshape(-1, 4, 2)
+            kp = simplify_keys(loc.reshape(nfk, -1), tol_loc, dc, path_check=path_scr)
+            kt = sorted(set(simplify_keys(np.array([d[0] for d in dec]), tol_path, dc))
+                        | set(simplify_keys(np.array([[d[1], d[4]] for d in dec]), tol_path / (rads * s1s), dc))
+                        | set(simplify_keys(np.array([[d[2], d[3]] for d in dec]), tol_path / rads, dc)))
+            shade_off = dc_any | (np.maximum(ov_g.max(axis=1), li_g.max(axis=1)) < 0.004)
+            ka = sorted(set(simplify_keys(ov_g, 0.012, dc_any)) | set(simplify_keys(li_g, 0.012, dc_any)))
+            ks = simplify_keys(np.hstack([ls, le]), 2.0 / s1s, shade_off)
             k_sh = sorted(set(ka) | set(ks))
             ko = simplify_keys(np.array(op)[:, None], 0.8, dc)
             F_ = lambda ks_: [fs[q] for q in ks_]
-            items = [{"ty": "sh", "nm": "path", "ks": animated_shape(F_(kp), [shape_of(cubs[q], nd) for q in kp])}]
+            items = [{"ty": "sh", "nm": "path", "ks": animated_shape(F_(kp), [shape_of(loc[q], 2) for q in kp])}]
             o = animated(F_(ko), [round(op[q], 1) for q in ko]) if sid == "04_center_fold" else None
             if max(ov_g.max(), li_g.max()) > 0.003:
-                # 빛(+)·그늘(−) 을 덮개 하나로: 각 끝의 색 = 흰/검정, 불투명도 = |빛 − 그늘|.
-                # 부호가 바뀌는 순간은 불투명도가 0 근처라 색이 바뀌어도 보이지 않는다. (채움 수를 줄여 재생기 차이를 피함)
-                def ov(q):
-                    out = []
-                    for e in (0, 1):
-                        net = float(li_g[q][e] - ov_g[q][e])
-                        out.append(([1, 1, 1] if net > 0 else [0, 0, 0], round(abs(net), 3)))
-                    (c0, a0), (c1, a1) = out
-                    return [0] + c0 + [1] + c1 + [0, a0, 1, a1]
-                items.append(gfill("shade",
-                                   animated(F_(k_sh), [ov(q) for q in k_sh]),
-                                   animated(F_(k_sh), [rnd(ov_s[q], nd) for q in k_sh]),
-                                   animated(F_(k_sh), [rnd(ov_e[q], nd) for q in k_sh]), o=o, np_=2))
-            items.append(gfill("fill", static(grad_colors(s["stops"])),
-                               animated(F_(kg), [rnd(gs[q], nd) for q in kg]),
-                               animated(F_(kg), [rnd(ge[q], nd) for q in kg]),
+                # 명암 덮개: 로고 좌표에 고정된 정적 램프 4개(흰·검정 × 앞·뒤 끝) + 매 프레임 바뀌는 채움 불투명도.
+                # 앞 끝 램프(1→0) 와 뒤 끝 램프(0→1) 를 불투명도 a0, a1 로 겹치면 a0 → a1 선형 명암이 된다.
+                # 그라데이션 자체는 바뀌지 않으므로 lottie-android 의 그라데이션 캐시(32ms)에 걸리지 않는다.
+                pr = sc.params[rname]
+                c0 = pr.P(np.array(rg.u0), np.array(0.5))
+                c1 = pr.P(np.array(rg.u1), np.array(0.5))
+                ax = np.array([pr.S[1], -pr.S[0]])
+                q0, q1 = c0, c0 + ax * float(np.dot(c1 - c0, ax))
+                if np.linalg.norm(q1 - q0) < 0.05:
+                    q1 = q0 + ax * 0.05
+                opf = np.array(op) / 100.0
+                for nm_, col, vals in (("light", [1, 1, 1], li_g), ("shade", [0, 0, 0], ov_g)):
+                    for e, ramp in ((0, [0, 1, 1, 0]), (1, [0, 0, 1, 1])):
+                        track = 100 * vals[:, e] * opf
+                        if track.max() < 0.3:
+                            continue
+                        kk_ = simplify_keys(track[:, None], 1.2, dc_any)
+                        items.append(gfill("%s%d" % (nm_, e),
+                                           static([0] + col + [1] + col + ramp),
+                                           static(rnd(q0, 3)), static(rnd(q1, 3)),
+                                           o=animated(F_(kk_), [round(float(track[q]), 1) for q in kk_]), np_=2))
+            # 바탕: 부록 그라데이션 그대로 (정적) — 로컬 좌표 ≈ 로고 좌표
+            items.append(gfill("fill", static(grad_colors(s["stops"])), static(rnd(s["start"], 6)), static(rnd(s["end"], 6)),
                                o=o, np_=len(s["stops"])))
-            kk = kp
-            items.append(TR)
-            nkeys += len(kk)
-            groups.append({"ty": "gr", "nm": "seg %02d" % rg.k, "it": items})
+            tr_in = dict(TR)
+            tr_in["r"] = animated(F_(kt), [round(math.degrees(dec[q][4]), 4) for q in kt])
+            items.append(tr_in)
+            tr_out = dict(TR)
+            tr_out["p"] = animated(F_(kt), [rnd(dec[q][0], 2) for q in kt])
+            tr_out["r"] = animated(F_(kt), [round(math.degrees(dec[q][1]), 4) for q in kt])
+            tr_out["s"] = animated(F_(kt), [[round(100 * dec[q][2], 4), round(100 * dec[q][3], 4)] for q in kt])
+            nkeys += len(kp)
+            groups.append({"ty": "gr", "nm": "seg %02d" % rg.k, "it": [
+                {"ty": "gr", "nm": "local", "it": items}, tr_out]})
         # JSON 순서 = 위가 앞. 엔진은 세그먼트를 k 순서로 덧그리므로 뒤집는다.
         L["shapes"] = list(reversed(groups))
         layers.append(L)

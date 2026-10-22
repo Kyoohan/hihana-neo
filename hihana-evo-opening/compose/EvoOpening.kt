@@ -91,25 +91,25 @@ private const val SKIP_AFTER_MS = 600L       // 화면이 뜬 지 이 시간 이
 private const val FADE = 0.6f                 // 마지막 페이드아웃 길이
 private const val TEXT_STAGGER = 0.16f
 private const val TEXT_DUR = 0.5f
-private const val T_STILL = 5.4f              // '애니메이션 끄기' 일 때 보여 줄 정지 장면 시각
+private const val T_STILL = 4.5f              // '애니메이션 끄기' 일 때 보여 줄 정지 장면 시각 (완성 로고 + 글자)
 private const val REDUCED_HOLD_MS = 1400L
 
 private val BACKGROUND = Brush.verticalGradient(listOf(Color(0xFF090A1C), Color(0xFF11102B), Color(0xFF0A0A18)))
 private val EVO_BRUSH = Brush.linearGradient(listOf(Color(0xFF38EAA8), Color(0xFF8C6BFF), Color(0xFFFF5A97)))
 
 // ── BEGIN 생성된 상수 (lottie/source/gen_kotlin_consts.py, 시안 A) — Lottie 와 같은 숫자. 손으로 고치지 말 것 ──
-private const val TOTAL = 6.5f            // 전체 길이 (초)
+private const val TOTAL = 6.0f            // 전체 길이 (초)
 private const val LOGO_CX = 204.0f; private const val LOGO_CY = 217.0f
 private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)
 /** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */
-private val LAND_MARKS = floatArrayOf(1.833333f, 2.8f, 1.933333f)
-private const val TEXT_T0 = 3.95f            // 글자 등장 = logo_complete (프레임 237)
+private val LAND_MARKS = floatArrayOf(1.833333f, 2.1f, 1.933333f)
+private const val TEXT_T0 = 3.25f            // 글자 등장 = logo_complete (프레임 195)
 // 조명 (왼쪽 위 앞쪽) — motion.LIGHT / HALF / K_DIFF / K_SPEC / SPEC_P / DIFF_REF
 private const val LIGHT_X = -0.451129f; private const val LIGHT_Y = -0.55138f; private const val LIGHT_Z = 0.701757f
 private const val HALF_X = -0.244533f; private const val HALF_Y = -0.298874f; private const val HALF_Z = 0.922431f
 private const val K_DIFF = 0.45f; private const val K_SPEC = 0.5f; private const val SPEC_P = 8.0f; private const val DIFF_REF = 0.55f
-private const val BREATH_T0 = 2.85f; private const val BREATH_T1 = 3.45f; private const val BREATH_AMP = 0.022f
-private const val HL_T0 = 3.05f; private const val HL_T1 = 3.95f; private const val HL_PEAK = 0.3f
+private const val BREATH_T0 = 2.15f; private const val BREATH_T1 = 2.75f; private const val BREATH_AMP = 0.022f
+private const val HL_T0 = 2.35f; private const val HL_T1 = 3.25f; private const val HL_PEAK = 0.3f
 private const val HL_DIR_X = 0.545f; private const val HL_DIR_Y = 0.838f; private const val HL_SPAN = 290.0f; private const val HL_WIDTH = 70.0f
 
 /** 갈래 순서: 0 = 왼쪽(민트), 1 = 가운데(인디고), 2 = 오른쪽(코랄). (길이축 L, 단면 방향 S) */
@@ -131,21 +131,25 @@ private val CHOREO = arrayOf(
         windAmp = 46.0f, windLong = 0.35f, windFlap = 0.9f, windRipple = 0.22f, windShear = 0.2f,
         waves = floatArrayOf(1.0f, 1.15f, 0.95f, 0.0f, 0.55f, 2.1f, 1.65f, 1.9f, 0.25f, 3.6f, 2.8f, 4.1f),
         gust = floatArrayOf(0.3f, 0.31f, 1.1f, 0.2f, 0.53f, 2.3f),
+        windBoost = 1.2f,
+        wide = 2.6f,
     ),
     RibbonCfg(   // center
-        order = 0, uc = 0.5f, t0 = 0.1f, kappa = 0.55f,
-        fx = 114.81f, fy = 178.47f, h0x = -133.14f, h0y = 12.39f, dinX = -0.8894f, dinY = -0.4572f, h1 = 270.73f, wf = 48.0f,
+        order = 0, uc = 0.5f, t0 = 0.08f, kappa = 0.4f,
+        fx = 114.81f, fy = 178.47f, h0x = -194.78f, h0y = -91.63f, dinX = -0.8495f, dinY = -0.5277f, h1 = 241.84f, wf = 48.0f,
         flutter = floatArrayOf(),
         twist = floatArrayOf(2.2f, 0.9f, 0.5f, 0.0f, 0.6f, 2.0f, 1.0f, 0.4f),
-        omega = 3.692308f, zeta = 0.9f, sW0 = 2.015f, sW1 = 2.535f, sa0 = 1.144f, sa1 = 1.69f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.715f, st1 = 1.235f, kp = 0.24f, taper = 0.22f,
-        eps = 0.2f, spread = 0.0f, twistLag = 0.325f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
+        omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
+        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
         windAmp = 38.0f, windLong = 0.35f, windFlap = 0.8f, windRipple = 0.2f, windShear = 0.18f,
         waves = floatArrayOf(1.0f, 1.2f, 0.9f, 1.0f, 0.55f, 2.0f, 1.6f, 2.6f, 0.25f, 3.7f, 2.7f, 0.3f),
         gust = floatArrayOf(0.3f, 0.33f, 0.6f, 0.2f, 0.49f, 1.7f),
+        windBoost = 1.2f,
+        wide = 3.0f,
     ),
     RibbonCfg(   // right
         order = 1, uc = 0.5f, t0 = 0.0f, kappa = 0.62f,
-        fx = -38.0f, fy = -173.1f, h0x = -93.72f, h0y = 44.41f, dinX = 0.6967f, dinY = 0.7173f, h1 = 41.34f, wf = 46.0f,
+        fx = -45.5f, fy = -179.35f, h0x = -227.58f, h0y = 203.92f, dinX = 0.4365f, dinY = 0.8997f, h1 = 72.68f, wf = 46.0f,
         flutter = floatArrayOf(),
         twist = floatArrayOf(1.9f, 0.8f, -0.35f, 2.1f, 0.5f, 1.9f, -0.8f, 0.7f),
         omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
@@ -153,6 +157,8 @@ private val CHOREO = arrayOf(
         windAmp = 46.0f, windLong = 0.35f, windFlap = 0.9f, windRipple = 0.22f, windShear = 0.2f,
         waves = floatArrayOf(1.0f, 1.1f, 1.0f, 2.0f, 0.55f, 2.2f, 1.7f, 0.4f, 0.25f, 3.5f, 2.9f, 3.0f),
         gust = floatArrayOf(0.3f, 0.29f, 2.0f, 0.2f, 0.57f, 0.4f),
+        windBoost = 1.2f,
+        wide = 3.0f,
     ),
 )
 
@@ -536,6 +542,8 @@ private class RibbonCfg(
     val windAmp: Float = 0f, val windLong: Float = 0f, val windFlap: Float = 0f,
     val windRipple: Float = 0f, val windShear: Float = 0f,
     val waves: FloatArray = FloatArray(0), val gust: FloatArray = FloatArray(0),
+    val windBoost: Float = 0f,   // 카메라 가까이(막 등장)일수록 펄럭임 × (1 + boost·(1 − r)²)
+    val wide: Float = 0f,        // 막 등장할 때 폭 × (1 + wide·(1 − r)^1.5)
 ) {
     // 접근 경로 B(r): F → F+h0 → −din·h1 → 0  (r > 1 이면 착지 방향으로 살짝 지나친다)
     val p1x = fx + h0x; val p1y = fy + h0y
@@ -565,6 +573,7 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
     val fl = FloatArray(nu); val flt = FloatArray(nu)      // 바람: 옆·길이 방향 변위
     val rip = FloatArray(nu); val shr = FloatArray(nu)     // 바람: 폭 출렁임·단면 밀림
     val th = FloatArray(nu)
+    val wm = FloatArray(nu)                        // 폭 배율 (막 등장할 때 넓게)
     val lit = FloatArray(nu)                       // 명암 (+ 빛 / − 그늘)
     private val cx = FloatArray(nu); private val cy = FloatArray(nu)
     private val envF = FloatArray(nu)
@@ -636,7 +645,8 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
                 rr += amp * sin(q2); rs += amp * cos(q2)
                 i += 4
             }
-            val base = ef * gust * (0.2f + 0.8f * w.pow(0.8f))
+            val base = ef * gust * (0.2f + 0.8f * w.pow(0.8f)) * (1f + c.windBoost * m * m)
+            wm[k] = 1f + c.wide * max(m, 0f).pow(1.5f)
             fl[k] = c.windAmp * base * wv
             flt[k] = c.windLong * c.windAmp * base * wv2
             th[k] += c.windFlap * base * wv3           // 면이 기울며 폭 마디가 물결을 따라 흐른다
@@ -688,7 +698,7 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
             smootherstep(c.sa0 + le * (dv - 0.5f), c.sa1 + le * (dv - 0.5f), ip(sec))
         } else ip(alpha)
         val flv = ip(fl); val fltv = ip(flt); val ripv = ip(rip); val shrv = ip(shr)
-        val thv = ip(th); val wfv = ip(wf)
+        val thv = ip(th); val wfv = ip(wf) * ip(wm)
         val vc = v.coerceIn(-0.05f, 1.05f) - 0.5f
         val ct = cos(thv) * (1f + ripv); val st = c.kp * sin(thv) * (1f + ripv) + shrv
         val fx = p.smX(u) + flv * n0X + fltv * t0X + vc * wfv * (ct * nX + st * tX)
@@ -727,6 +737,7 @@ private class SegmentRig(val surface: Surface, val rb: Ribbon, g: SegmentGeom) {
     val cub = FloatArray(8 * n)                             // 이번 프레임의 워프된 3차 조각 (x0 y0 … x3 y3) × n
     val grad = FloatArray(4)                                // 이번 프레임의 그라데이션 시작·끝점
     val gradMatrix = Matrix()
+    private val affMatrix = Matrix()
     val shadeMatrix = Matrix()
     var shadeA0 = 0f; var shadeA1 = 0f; var lightA0 = 0f; var lightA1 = 0f; var landed = 0f
     val lightMatrix = Matrix()
@@ -812,7 +823,11 @@ private class SegmentRig(val surface: Surface, val rb: Ribbon, g: SegmentGeom) {
         val gsx = (sx * m[0] + sy * m[2] + m[4]).toFloat(); val gsy = (sx * m[1] + sy * m[3] + m[5]).toFloat()
         val gex = (ex * m[0] + ey * m[2] + m[4]).toFloat(); val gey = (ex * m[1] + ey * m[3] + m[5]).toFloat()
         grad[0] = gsx; grad[1] = gsy; grad[2] = gex; grad[3] = gey
-        unitSegmentTo(gradMatrix, gsx, gsy, gex, gey)
+        // 셰이더 행렬 = 맞춘 아핀 M ∘ (단위 선분 → 로고 좌표 그라데이션 축). 비틀린 면에서는 등색선도 함께 기운다
+        unitSegmentTo(gradMatrix, sx, sy, ex, ey)
+        affMatrix.setValues(floatArrayOfScratch(m[0].toFloat(), m[2].toFloat(), m[4].toFloat(),
+                                                m[1].toFloat(), m[3].toFloat(), m[5].toFloat()))
+        gradMatrix.postConcat(affMatrix)
         baseShader.setLocalMatrix(gradMatrix)
         // 빛: 세그먼트 양 끝 단면의 명암 → 검정(그늘)·흰색(빛) 덮개 램프. 뒷면은 그늘을 더한다
         val th0 = interpGrid(u0, rb.ug, rb.th); val th1 = interpGrid(u1, rb.ug, rb.th)

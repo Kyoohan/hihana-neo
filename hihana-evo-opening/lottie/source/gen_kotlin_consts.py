@@ -87,6 +87,8 @@ def gen(variant):
               % (f(wd["amp"]), f(wd["long"]), f(wd["flap"]), f(wd["ripple"]), f(wd["shear"])))
             w("        waves = floatArrayOf(%s)," % ", ".join(f(x) for t in wd["waves"] for x in t))
             w("        gust = floatArrayOf(%s)," % ", ".join(f(x) for t in wd["gust"] for x in t))
+            w("        windBoost = %s," % f(wd.get("boost", 0.0)))
+        w("        wide = %s," % f(c.get("wide", 0.0)))
         w("    ),")
     w(")")
     w("")

@@ -37,9 +37,9 @@ KEYFRAMES = [  # (이름, 프레임 결정 함수) — 타임라인에서 계산
     ("00_start", lambda m: m["first_visible"]["left"] + 9),               # 카메라 뒤에서 첫 리본이 스쳐 들어옴
     ("01_close_pass", lambda m: m["first_visible"]["center"] + 14),       # 세 갈래가 눈앞을 크게 스쳐 지나감
     ("02_receding", lambda m: (m["first_visible"]["center"] + m["form_start"]["left"]) // 2 + 6),  # 멀어지며 작아짐
-    ("03_mint_forms", lambda m: m["form_start"]["left"] + 24),            # 민트가 위 끝부터 형태를 잡음
-    ("04_coral_forms", lambda m: m["form_start"]["right"] + 38),          # 코랄이 아래 끝부터, 인디고는 꿰어 들어오는 중
-    ("05_indigo_lands", lambda m: m["land"]["center"] - 28),              # 인디고가 왼쪽 끝부터 다리를 놓음
+    ("03_mint_forms", lambda m: m["form_start"]["left"] + 9),             # 민트가 위 끝부터 형태를 잡음
+    ("04_coral_forms", lambda m: m["form_start"]["right"] + 9),           # 코랄이 아래 끝부터, 인디고는 꿰어 들어오는 중
+    ("05_indigo_lands", lambda m: m["form_start"]["center"] + 14),        # 인디고가 왼쪽 끝부터 다리를 놓음
     ("06_breath_highlight", lambda m: (m["highlight"][0] + m["highlight"][1]) // 2),
     ("07_final", lambda m: m["frames"] - 1),
 ]
@@ -176,7 +176,8 @@ def main():
     # 6) Compose 녹화 → compose.mp4
     cf = os.path.join(H, "out", "final_compose")
     shutil.rmtree(cf, ignore_errors=True)
-    out = run(["./gradlew", ":app:testDebugUnitTest", "--tests", "*RecordFrames*", "-PframesDir=" + cf], cwd=adir)
+    out = run(["./gradlew", ":app:testDebugUnitTest", "--tests", "*RecordFrames*", "-PframesDir=" + cf,
+               "-PendMs=%d" % round(choreo.VARIANTS[v]["duration"] * 1000)], cwd=adir)
     report["compose_log"] = [ln.strip() for ln in out.splitlines() if "[record]" in ln]
     run(["bash", os.path.join(H, "frames_to_mp4.sh"), cf, os.path.join(ROOT, "preview", "compose.mp4"), "60", "16"])
 

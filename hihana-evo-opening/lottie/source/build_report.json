@@ -2,43 +2,43 @@
  "timeline": {
   "variant": "A",
   "title": "A — Weave",
-  "frames": 390,
+  "frames": 360,
   "fps": 60,
   "first_visible": {
    "left": 3,
-   "center": 16,
+   "center": 15,
    "right": 9
   },
   "form_start": {
    "left": 51,
-   "center": 80,
+   "center": 62,
    "right": 57
   },
   "land": {
    "left": 110,
-   "center": 168,
+   "center": 126,
    "right": 116
   },
   "rest": {
    "left": 149,
-   "center": 192,
+   "center": 146,
    "right": 155
   },
   "breath": [
-   171,
-   207,
+   129,
+   165,
    0.022
   ],
   "highlight": [
-   183,
-   237
+   141,
+   195
   ],
-  "complete": 237,
-  "hold_s": 2.55
+  "complete": 195,
+  "hold_s": 2.75
  },
  "lottie": {
-  "bytes": 2633679,
-  "keys": 5412,
+  "bytes": 4605167,
+  "keys": 7273,
   "markers": [
    {
     "tm": 110,
@@ -51,61 +51,61 @@
     "dr": 0
    },
    {
-    "tm": 168,
+    "tm": 126,
     "cm": "land_indigo",
     "dr": 0
    },
    {
-    "tm": 237,
+    "tm": 195,
     "cm": "logo_complete",
     "dr": 0
    }
   ],
-  "frames": 390,
+  "frames": 360,
   "land": {
    "left": 149,
-   "center": 192,
+   "center": 146,
    "right": 155
   },
-  "complete": 237
+  "complete": 195
  },
  "parity": [
-  "worst path 0.2622, grad 0.1577, shade 0.00005 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
+  "worst path 0.8305, grad 0.2038, shade 0.00007 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
  ],
  "lottie_android_log": [
   "[lottie] file=/home/user/hihana-neo/hihana-evo-opening/lottie/opening.json",
-  "[lottie] bounds=1080x2340 fps=60.0 ip=0.0 op=389.99 durationMs=6499.0 layers=14 masksAndMattes=0 hasDashPattern=false",
+  "[lottie] bounds=1080x2340 fps=60.0 ip=0.0 op=359.99 durationMs=5999.0 layers=14 masksAndMattes=0 hasDashPattern=false",
   "[lottie] composition warnings (0):",
   "[lottie] markers (4):",
   "[lottie-marker] name=land_mint startFrame=110.0 durationFrames=0.0",
   "[lottie-marker] name=land_coral startFrame=116.0 durationFrames=0.0",
-  "[lottie-marker] name=land_indigo startFrame=168.0 durationFrames=0.0",
-  "[lottie-marker] name=logo_complete startFrame=237.0 durationFrames=0.0",
-  "[lottie] rendered 390 frames (0..389) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 11.4 s (29.3 ms/frame)"
+  "[lottie-marker] name=land_indigo startFrame=126.0 durationFrames=0.0",
+  "[lottie-marker] name=logo_complete startFrame=195.0 durationFrames=0.0",
+  "[lottie] rendered 360 frames (0..359) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 12.8 s (35.5 ms/frame)"
  ],
  "keyframes": [
   "00_start_f012.png",
-  "01_close_pass_f030.png",
+  "01_close_pass_f029.png",
   "02_receding_f039.png",
-  "03_mint_forms_f075.png",
-  "04_coral_forms_f095.png",
-  "05_indigo_lands_f140.png",
-  "06_breath_highlight_f210.png",
-  "07_final_f389.png"
+  "03_mint_forms_f060.png",
+  "04_coral_forms_f066.png",
+  "05_indigo_lands_f076.png",
+  "06_breath_highlight_f168.png",
+  "07_final_f359.png"
  ],
  "android_vs_web": {
-  "mean_absdiff_max": 1.6936411839189618,
-  "px_over40_max": 3525
+  "mean_absdiff_max": 0.6087377334599556,
+  "px_over40_max": 3
  },
  "android_single_frame_vs_web": {
-  "frame": 39,
-  "px_over40": 0
+  "frame": 75,
+  "px_over40": 3
  },
  "compose_log": [
-  "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..6500.0ms frames=0..390 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
+  "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..6000.0ms frames=0..360 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
   "[record] root capture size=1080x2340",
-  "[record] wrote 391 frames in 23.9 s (61.2 ms/frame; advance 2.9 ms/frame, capture+copy 58.0 ms/frame)",
-  "[record] onFinish called at 6502 ms after the first frame",
+  "[record] wrote 361 frames in 24.0 s (66.5 ms/frame; advance 3.1 ms/frame, capture+copy 63.2 ms/frame)",
+  "[record] onFinish called at 6001 ms after the first frame",
   "[record] decorView=1080x2340",
   "[record] haptics recorded: AndroidComposeView=4 (CLOCK_TICK=4)"
  ]

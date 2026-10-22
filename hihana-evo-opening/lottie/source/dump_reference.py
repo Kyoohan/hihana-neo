@@ -13,11 +13,14 @@ def dump(variant, out, times=(0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0))
     res = {"times": list(times), "frames": []}
     for t in times:
         fr = sc.frame(t)
+        fr2 = sc.frame(t + 1e-4)        # 점마다 속도 → 비교 허용 오차 (카메라 뒤에서 튀어나오는 순간은 초당 수백만 단위로 움직인다)
         segs = []
-        for sid, ss in fr["layers"]:
-            for sg in ss:
+        for (sid, ss), (_, ss2) in zip(fr["layers"], fr2["layers"]):
+            for sg, sg2 in zip(ss, ss2):
+                vel = np.abs(sg2["cubics"] - sg["cubics"]) / 1e-4
                 segs.append(dict(sid=sid, k=int(sg["k"]), n=int(len(sg["cubics"])),
                                  cubics=np.round(sg["cubics"], 4).reshape(-1).tolist(),
+                                 vel=np.round(vel, 1).reshape(-1).tolist(),
                                  grad=np.round(np.concatenate(sg["grad"]), 4).tolist(),
                                  shade=[round(float(x), 5) for x in sg["shade"]],
                                  alpha=round(float(sg["alpha"]), 5)))
