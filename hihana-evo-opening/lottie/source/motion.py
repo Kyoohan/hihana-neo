@@ -111,7 +111,14 @@ class Ribbon:
         for A, k, f, ph in c["twist"]:
             th += A * np.sin(2 * math.pi * (k * u - f * t) + ph)
         th = th * env_t
-        return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, fl=fl, th=th, env_f=env_f)
+        # 원근: 카메라(눈) 바로 앞에서 출발해 로고 평면으로 멀어진다. 배율 ps = 1 + (S0 − 1)·(1 − r)²
+        # (출발 S0 배 → 착지 r = 1 에서 정확히 1). 로고 중심을 소실점으로 위치·폭·흩날림이 함께 줄어든다.
+        S0 = c.get("persp", 1.0)
+        ps = 1 + (S0 - 1) * (1 - r) ** 2
+        if S0 > 1:
+            # 출발 전·직후에는 카메라 뒤(배율 21배)에 있다가 0.18초 동안 화면 안으로 스쳐 들어온다 → 멈춘 큰 조각이 보이지 않게
+            ps = ps * (1 + 20 * (1 - smootherstep(0.0, 0.18, s)))
+        return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, fl=fl, th=th, env_f=env_f, ps=ps)
 
     def X(self, F, u, v):
         """임의의 재료점 (u, v) 위치 (로고 단위)."""
@@ -142,7 +149,9 @@ class Ribbon:
         # 끝 단면이 아주 짧은 곳은 v 가 [0,1] 밖으로 크게 벗어나므로 비행 단면에서는 잘라 쓴다
         vc = np.clip(v, -0.05, 1.05)[..., None]
         flight = Sm + fl * N + (vc - 0.5) * wf * (np.cos(th) * N + k * np.sin(th) * T)
-        return O + (1 - al) * flight + al * self.p.P(u, v)
+        Xf = O + (1 - al) * flight + al * self.p.P(u, v)
+        ps = ip(F["ps"])[..., None]
+        return LOGO_CENTER + ps * (Xf - LOGO_CENTER)
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ package com.skh.hihanaevo
  *
  * 연출: 로고의 세 갈래(민트 · 인디고 · 코랄)가 화면 밖에서 가늘고 긴 실크 리본으로 흩날려 들어와,
  *       자리에 닿는 부분부터 로고 조각의 형태로 감싸지며 완성된다. 민트와 코랄이 먼저, 인디고 다리가 마지막.
+ *       리본은 카메라(눈) 바로 앞을 스치듯 크게 나타났다가 멀어지며 작아져 제자리로 간다 (원근).
  *       완성 후 아주 작은 숨(2.2%) 한 번, 대각선 하이라이트 한 번, 글자 등장, 0.6초 페이드아웃.
  *
  * 구현 요약 (같은 연출의 Lottie 는 lottie/source 의 파이썬 생성기가 이 수식을 그대로 베이크한 것)
@@ -27,6 +28,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
@@ -44,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -64,7 +67,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -82,7 +87,7 @@ import kotlin.math.sqrt
 private const val TWO_PI = (2.0 * PI).toFloat()
 
 // 화면·글자 타이밍
-private const val SKIP_AFTER = 0.6f           // 이 시각 이후 탭하면 바로 끝
+private const val SKIP_AFTER_MS = 600L       // 화면이 뜬 지 이 시간 이후 탭하면 바로 끝
 private const val FADE = 0.6f                 // 마지막 페이드아웃 길이
 private const val TEXT_STAGGER = 0.16f
 private const val TEXT_DUR = 0.5f
@@ -97,10 +102,10 @@ private const val TOTAL = 6.5f            // 전체 길이 (초)
 private const val LOGO_CX = 204.0f; private const val LOGO_CY = 217.0f
 private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)
 /** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */
-private val LAND_MARKS = floatArrayOf(2.383333f, 3.45f, 2.683333f)
-private const val TEXT_T0 = 4.433333f            // 글자 등장 = logo_complete (프레임 266)
-private const val BREATH_T0 = 3.3f; private const val BREATH_T1 = 3.9f; private const val BREATH_AMP = 0.022f
-private const val HL_T0 = 3.52f; private const val HL_T1 = 4.42f; private const val HL_PEAK = 0.3f
+private val LAND_MARKS = floatArrayOf(1.833333f, 2.8f, 1.933333f)
+private const val TEXT_T0 = 3.95f            // 글자 등장 = logo_complete (프레임 237)
+private const val BREATH_T0 = 2.85f; private const val BREATH_T1 = 3.45f; private const val BREATH_AMP = 0.022f
+private const val HL_T0 = 3.05f; private const val HL_T1 = 3.95f; private const val HL_PEAK = 0.3f
 private const val HL_DIR_X = 0.545f; private const val HL_DIR_Y = 0.838f; private const val HL_SPAN = 290.0f; private const val HL_WIDTH = 70.0f
 
 /** 갈래 순서: 0 = 왼쪽(민트), 1 = 가운데(인디고), 2 = 오른쪽(코랄). (길이축 L, 단면 방향 S) */
@@ -113,28 +118,28 @@ private val SEGMENTS = intArrayOf(12, 10, 12)
 
 private val CHOREO = arrayOf(
     RibbonCfg(   // left
-        order = 0, uc = 0.5f, t0 = -0.05f, kappa = 0.7f,
-        fx = -560.0f, fy = 450.0f, h0x = 420.0f, h0y = -30.0f, dinX = 0.35f, dinY = -0.94f, h1 = 430.0f, wf = 58.0f,
-        flutter = floatArrayOf(46.0f, 0.6f, 0.6f, 0.0f, 12.0f, 1.6f, 1.1f, 1.3f),
+        order = 0, uc = 0.5f, t0 = -0.1f, kappa = 0.62f,
+        fx = 77.99f, fy = 197.24f, h0x = 85.15f, h0y = -11.81f, dinX = -0.616f, dinY = -0.7877f, h1 = 153.4f, wf = 46.0f,
+        flutter = floatArrayOf(30.0f, 0.6f, 0.6f, 0.0f, 8.0f, 1.6f, 1.1f, 1.3f),
         twist = floatArrayOf(2.6f, 0.8f, 0.35f, 0.4f, 0.7f, 1.9f, 0.8f, 2.0f),
         omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
-        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 0.0f,
+        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
     ),
     RibbonCfg(   // center
-        order = 0, uc = 0.5f, t0 = 1.2f, kappa = 0.58f,
-        fx = 640.0f, fy = 540.0f, h0x = -50.0f, h0y = -350.0f, dinX = -0.8f, dinY = -0.6f, h1 = 330.0f, wf = 60.0f,
-        flutter = floatArrayOf(28.0f, 0.75f, 0.8f, 1.0f, 8.0f, 1.9f, 1.4f, 0.0f),
+        order = 0, uc = 0.5f, t0 = 0.1f, kappa = 0.55f,
+        fx = 114.81f, fy = 178.47f, h0x = -133.14f, h0y = 12.39f, dinX = -0.8894f, dinY = -0.4572f, h1 = 270.73f, wf = 48.0f,
+        flutter = floatArrayOf(22.0f, 0.75f, 0.8f, 1.0f, 7.0f, 1.9f, 1.4f, 0.0f),
         twist = floatArrayOf(2.2f, 0.9f, 0.5f, 0.0f, 0.6f, 2.0f, 1.0f, 0.4f),
-        omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.35f, sf1 = 0.8f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
-        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 0.0f,
+        omega = 3.692308f, zeta = 0.9f, sW0 = 2.015f, sW1 = 2.535f, sa0 = 1.144f, sa1 = 1.69f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.715f, st1 = 1.235f, kp = 0.24f, taper = 0.22f,
+        eps = 0.2f, spread = 0.0f, twistLag = 0.325f, drape = 0.3f, v0 = 0.0f, persp = 8.0f,
     ),
     RibbonCfg(   // right
-        order = 1, uc = 0.5f, t0 = 0.25f, kappa = 0.7f,
-        fx = 560.0f, fy = -450.0f, h0x = -420.0f, h0y = 30.0f, dinX = -0.35f, dinY = 0.94f, h1 = 430.0f, wf = 58.0f,
-        flutter = floatArrayOf(46.0f, 0.6f, -0.6f, 2.0f, 12.0f, 1.6f, -1.1f, 0.3f),
+        order = 1, uc = 0.5f, t0 = 0.0f, kappa = 0.62f,
+        fx = -38.0f, fy = -173.1f, h0x = -93.72f, h0y = 44.41f, dinX = 0.6967f, dinY = 0.7173f, h1 = 41.34f, wf = 46.0f,
+        flutter = floatArrayOf(30.0f, 0.6f, -0.6f, 2.0f, 8.0f, 1.6f, -1.1f, 0.3f),
         twist = floatArrayOf(2.6f, 0.8f, -0.35f, 2.1f, 0.7f, 1.9f, -0.8f, 0.7f),
         omega = 4.8f, zeta = 0.9f, sW0 = 1.55f, sW1 = 1.95f, sa0 = 0.88f, sa1 = 1.3f, sf0 = 0.45f, sf1 = 1.05f, st0 = 0.55f, st1 = 0.95f, kp = 0.24f, taper = 0.22f,
-        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 1.0f,
+        eps = 0.2f, spread = 0.0f, twistLag = 0.25f, drape = 0.3f, v0 = 1.0f, persp = 8.0f,
     ),
 )
 
@@ -481,12 +486,14 @@ private fun smootherstep(e0: Float, e1: Float, x: Float): Float {
  * 0 → 1 감쇠 스프링 (정지에서 출발).  r(s) = 1 − e^(−ζωs)(cos ω_d s + ζ/√(1−ζ²) sin ω_d s)
  * ζ = 0.87 이면 지나침 ≈ 0.4%. s_w0~s_w1 에서 잔차를 부드럽게 0 으로 접어 유한 시간에 정확히 멈춘다.
  */
-private fun spring(s: Float, c: RibbonCfg): Float {
-    val ss = max(s, 0f)
-    val wd = c.omega * sqrt(1f - c.zeta * c.zeta)
-    val e = exp(-c.zeta * c.omega * ss)
-    val r = 1f - e * (cos(wd * ss) + c.zeta / sqrt(1f - c.zeta * c.zeta) * sin(wd * ss))
-    return 1f - (1f - r) * (1f - smootherstep(c.sW0, c.sW1, ss))
+private fun spring(s: Float, c: RibbonCfg): Double {
+    // 원근으로 크게 확대되는 구간이 있어 double 로 계산한다
+    val ss = max(s, 0f).toDouble()
+    val z = c.zeta.toDouble(); val w = c.omega.toDouble()
+    val wd = w * kotlin.math.sqrt(1.0 - z * z)
+    val e = kotlin.math.exp(-z * w * ss)
+    val r = 1.0 - e * (kotlin.math.cos(wd * ss) + z / kotlin.math.sqrt(1.0 - z * z) * kotlin.math.sin(wd * ss))
+    return 1.0 - (1.0 - r) * (1.0 - smootherstep(c.sW0, c.sW1, ss.toFloat()))
 }
 
 /** 갈래 하나의 연출 값 (choreo.py 와 같은 숫자). 오프셋은 각 섹션의 최종 위치 기준 로고 단위. */
@@ -511,6 +518,7 @@ private class RibbonCfg(
     val twistLag: Float = 0.25f, // 비틀림 풀림을 섹션마다 늦추는 시간 (먼저 닿는 쪽일수록 늦게)
     val drape: Float = 0.30f,    // 바깥 가장자리(v0)부터 안쪽으로 내려앉는 지연
     val v0: Float = 0.5f,
+    val persp: Float = 1f,       // 원근: 출발 배율 (카메라 앞 → 로고 평면 1배)
 ) {
     // 접근 경로 B(r): F → F+h0 → −din·h1 → 0  (r > 1 이면 착지 방향으로 살짝 지나친다)
     val p1x = fx + h0x; val p1y = fy + h0y
@@ -533,6 +541,7 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
     }
     val ox = FloatArray(nu); val oy = FloatArray(nu)
     val sec = FloatArray(nu)                       // 섹션 경과 시간 s
+    val ps = FloatArray(nu)                        // 원근 배율
     val alpha = FloatArray(nu); val tx = FloatArray(nu); val ty = FloatArray(nu)
     val fl = FloatArray(nu); val th = FloatArray(nu)
     private val cx = FloatArray(nu); private val cy = FloatArray(nu)
@@ -552,16 +561,22 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
             val w = order(u)
             val s = t - (c.t0 + c.kappa * w)
             sec[k] = s
-            val r = spring(s, c)
-            val m = 1f - r
+            val rd = spring(s, c)
+            val md = 1.0 - rd
+            val r = rd.toFloat(); val m = md.toFloat()
             // 3차 베지어 B(r) (P3 = 0)
-            ox[k] = m * m * m * c.fx + 3f * m * m * r * c.p1x + 3f * m * r * r * c.p2x
-            oy[k] = m * m * m * c.fy + 3f * m * m * r * c.p1y + 3f * m * r * r * c.p2y
+            ox[k] = (md * md * md * c.fx + 3.0 * md * md * rd * c.p1x + 3.0 * md * rd * rd * c.p2x).toFloat()
+            oy[k] = (md * md * md * c.fy + 3.0 * md * md * rd * c.p1y + 3.0 * md * rd * rd * c.p2y).toFloat()
             if (c.spread != 0f) {
                 // 가운데부터 착지: 양 끝을 길이 방향으로 벌려 접힌 V 대신 열린 호로 (r → 1 이면 0)
                 val g = (m * m * m + 3f * m * m * r) * c.spread * (u - c.uc) * (p.a1 - p.a0)
                 ox[k] += g * p.Lx; oy[k] += g * p.Ly
             }
+            // 원근: 카메라(눈) 바로 앞에서 출발해 로고 평면으로 멀어진다. ps = 1 + (S0 − 1)·(1 − r)²  (r = 1 이면 정확히 1)
+            // 출발 전·직후에는 카메라 뒤(21배)에서 0.18초 동안 화면으로 스쳐 들어온다.
+            var pss = 1.0 + (c.persp - 1.0) * md * md
+            if (c.persp > 1f) pss *= 1.0 + 20.0 * (1.0 - smootherstep(0f, 0.18f, s))
+            ps[k] = pss.toFloat()
             alpha[k] = smootherstep(c.sa0, c.sa1, s)
             val envF = 1f - smootherstep(c.sf0, c.sf1, s)
             val lag = c.twistLag * (1f - w)
@@ -612,8 +627,12 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
         val ct = cos(thv); val st = sin(thv)
         val fx = p.smX(u) + flv * nX + vc * wfv * (ct * nX + c.kp * st * tX)
         val fy = p.smY(u) + flv * nY + vc * wfv * (ct * nY + c.kp * st * tY)
-        out[o] = ip(ox) + (1f - al) * fx + al * p.px(u, v)
-        out[o + 1] = ip(oy) + (1f - al) * fy + al * p.py(u, v)
+        val xf = ip(ox) + (1f - al) * fx + al * p.px(u, v)
+        val yf = ip(oy) + (1f - al) * fy + al * p.py(u, v)
+        // 원근 투영: 로고 중심을 소실점으로 배율 ps
+        val s = ip(ps)
+        out[o] = LOGO_CX + s * (xf - LOGO_CX)
+        out[o + 1] = LOGO_CY + s * (yf - LOGO_CY)
     }
 }
 
@@ -862,7 +881,9 @@ private class EvoScene {
                 c.drawPath(s.finalPath, fill)
                 continue
             }
-            for (sg in rigs[i]) {
+            val rs = rigs[i]
+            for (j in rs.indices) {
+                val sg = rs[j]
                 sg.update()
                 var op = 1f
                 if (s.id == "04_center_fold") {
@@ -922,8 +943,10 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier) {
     val view = LocalView.current
     val context = LocalContext.current
     val latestOnFinish by rememberUpdatedState(onFinish)
-    val scene = remember { EvoScene() }                       // 경로 파싱·분할은 여기서 한 번만
+    // 경로 파싱·분할·표 계산은 한 번만, 메인 스레드 밖에서. 준비되기 전에는 배경만 그린다 (시작 장면도 빈 화면)
+    val scene by produceState<EvoScene?>(null) { value = withContext(Dispatchers.Default) { EvoScene() } }
     val time = remember { Animatable(0f) }
+    val shownAt = remember { SystemClock.uptimeMillis() }
     val finished = remember { BooleanArray(1) }
     val finish = remember { { if (!finished[0]) { finished[0] = true; latestOnFinish() } } }
     // 시스템 '애니메이션 끄기' (애니메이터 길이 배율 0)
@@ -931,7 +954,8 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(scene != null) {
+        if (scene == null) return@LaunchedEffect
         if (reduceMotion) {
             time.snapTo(T_STILL)                               // 완성된 로고 + 글자를 잠깐 보여 주고 끝
             delay(REDUCED_HOLD_MS)
@@ -956,11 +980,13 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier) {
             .fillMaxSize()
             .graphicsLayer { alpha = fadeOut(time.value) }    // 마지막 0.6초 전체 페이드아웃
             .pointerInput(Unit) {
-                detectTapGestures { if (reduceMotion || time.value >= SKIP_AFTER) finish() }
+                // 화면이 뜬 지 0.6초 이후의 탭만 받는다 ('애니메이션 끄기' 여도 같음)
+                detectTapGestures { if (SystemClock.uptimeMillis() - shownAt >= SKIP_AFTER_MS) finish() }
             }
             .drawBehind {
                 drawRect(BACKGROUND)
-                drawIntoCanvas { scene.draw(it.nativeCanvas, time.value, size.width, size.height) }
+                val sc = scene ?: return@drawBehind
+                drawIntoCanvas { sc.draw(it.nativeCanvas, time.value, size.width, size.height) }
             },
     ) {
         Column(
@@ -971,7 +997,8 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier) {
                     val p = measurable.measure(constraints.copy(minHeight = 0))
                     val w = constraints.maxWidth.toFloat(); val h = constraints.maxHeight.toFloat()
                     val unit = 0.5f * min(w, h) / 440f
-                    val top = 0.4f * h + (440f - LOGO_CY) * unit + 28.dp.toPx()
+                    // 가로 화면·큰 글꼴에서도 화면 밖으로 나가지 않게
+                    val top = min(0.4f * h + (440f - LOGO_CY) * unit + 28.dp.toPx(), h - p.height - 8.dp.toPx())
                     layout(constraints.maxWidth, constraints.maxHeight) { p.place(0, top.roundToInt()) }
                 },
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -987,7 +1014,7 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "흩어져 있던 학교생활을 하나로", color = Color.White.copy(alpha = 0.62f), fontSize = 16.sp,
+                "HiHana, 다시 한 번 진화하다", color = Color.White.copy(alpha = 0.62f), fontSize = 20.sp,
                 modifier = Modifier.graphicsLayer { reveal(time.value, TEXT_T0 + TEXT_STAGGER, rise) },
             )
         }

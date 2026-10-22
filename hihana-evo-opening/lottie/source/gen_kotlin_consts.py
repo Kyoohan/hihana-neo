@@ -72,8 +72,9 @@ def gen(variant):
         w("        omega = %s, zeta = %s, sW0 = %s, sW1 = %s, sa0 = %s, sa1 = %s, sf0 = %s, sf1 = %s, st0 = %s, st1 = %s, kp = %s, taper = %s,"
           % (tuple(f(c[k]) for k in ("omega", "zeta", "s_w0", "s_w1", "sa0", "sa1", "sf0", "sf1", "st0", "st1", "kp"))
              + (f(c.get("taper", 0.16)),)))
-        w("        eps = %s, spread = %s, twistLag = %s, drape = %s, v0 = %s,"
-          % (f(c.get("eps", 0.2)), f(c.get("spread", 0.0)), f(c.get("twist_lag", 0.0)), f(c.get("drape", 0.0)), f(c.get("v0", 0.5))))
+        w("        eps = %s, spread = %s, twistLag = %s, drape = %s, v0 = %s, persp = %s,"
+          % (f(c.get("eps", 0.2)), f(c.get("spread", 0.0)), f(c.get("twist_lag", 0.0)), f(c.get("drape", 0.0)), f(c.get("v0", 0.5)),
+             f(c.get("persp", 1.0))))
         w("    ),")
     w(")")
     w("")

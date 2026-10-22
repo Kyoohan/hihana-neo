@@ -93,7 +93,7 @@ def hex_rgb(h):
 def grad_colors(stops):
     out = []
     for o, c in stops:
-        out += [o] + [round(x, 4) for x in hex_rgb(c)]
+        out += [o] + hex_rgb(c)      # 반올림하지 않는다 (lottie-android 는 (int)(v·255) 로 잘라 1단계 어두워짐)
     return out
 
 
@@ -247,12 +247,13 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
             ko = simplify_keys(np.array(op)[:, None], 0.8, dc)
             F_ = lambda ks_: [fs[q] for q in ks_]
             items = [{"ty": "sh", "nm": "path", "ks": animated_shape(F_(kp), [shape_of(cubs[q], nd) for q in kp])}]
+            o = animated(F_(ko), [round(op[q], 1) for q in ko]) if sid == "04_center_fold" else None
             if ov_g.max() > 0.003:
+                # 접힘(04)의 음영도 접힘과 같은 불투명도 → 접힘이 숨은 동안 음영만 보이지 않게
                 items.append(gfill("shade",
                                    animated(F_(k_sh), [[0, 0, 0, 0, 1, 0, 0, 0, 0, round(ov_g[q][0], 3), 1, round(ov_g[q][1], 3)] for q in k_sh]),
                                    animated(F_(k_sh), [rnd(ov_s[q], nd) for q in k_sh]),
-                                   animated(F_(k_sh), [rnd(ov_e[q], nd) for q in k_sh]), np_=2))
-            o = animated(F_(ko), [round(op[q], 1) for q in ko]) if sid == "04_center_fold" else None
+                                   animated(F_(k_sh), [rnd(ov_e[q], nd) for q in k_sh]), o=o, np_=2))
             items.append(gfill("fill", static(grad_colors(s["stops"])),
                                animated(F_(kg), [rnd(gs[q], nd) for q in kg]),
                                animated(F_(kg), [rnd(ge[q], nd) for q in kg]),

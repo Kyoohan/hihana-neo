@@ -34,12 +34,12 @@ import motion  # noqa: E402
 from motion import FPS, ARTBOARD, UNIT, LOGO_CENTER, SCREEN_CENTER  # noqa: E402
 
 KEYFRAMES = [  # (이름, 프레임 결정 함수) — 타임라인에서 계산
-    ("00_start", lambda m: m["first_visible"]["left"] + 10),             # 민트 머리가 화면에 들어옴
-    ("01_ribbons_fly", lambda m: m["first_visible"]["right"] + 22),      # 민트·코랄 실크 리본 비행 (비틀림)
-    ("02_mint_forms", lambda m: m["form_start"]["left"] + 24),           # 민트가 위 끝부터 형태를 잡음
-    ("03_coral_forms", lambda m: m["form_start"]["right"] + 30),         # 코랄이 아래 끝부터, 인디고 진입
-    ("04_indigo_weaves", lambda m: m["first_visible"]["center"] + 45),   # 인디고가 코랄 앞·뒷면 사이로
-    ("05_indigo_lands", lambda m: m["land"]["center"] - 30),             # 인디고가 왼쪽 끝부터 다리로
+    ("00_start", lambda m: m["first_visible"]["left"] + 9),               # 카메라 뒤에서 첫 리본이 스쳐 들어옴
+    ("01_close_pass", lambda m: m["first_visible"]["center"] + 14),       # 세 갈래가 눈앞을 크게 스쳐 지나감
+    ("02_receding", lambda m: (m["first_visible"]["center"] + m["form_start"]["left"]) // 2 + 6),  # 멀어지며 작아짐
+    ("03_mint_forms", lambda m: m["form_start"]["left"] + 24),            # 민트가 위 끝부터 형태를 잡음
+    ("04_coral_forms", lambda m: m["form_start"]["right"] + 38),          # 코랄이 아래 끝부터, 인디고는 꿰어 들어오는 중
+    ("05_indigo_lands", lambda m: m["land"]["center"] - 28),              # 인디고가 왼쪽 끝부터 다리를 놓음
     ("06_breath_highlight", lambda m: (m["highlight"][0] + m["highlight"][1]) // 2),
     ("07_final", lambda m: m["frames"] - 1),
 ]

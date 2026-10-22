@@ -83,6 +83,9 @@ class RecordFramesTest {
             hostView = activity.window.decorView
         }
         compose.waitForIdle()
+        // EvoOpening 은 장면(경로 표)을 Dispatchers.Default 에서 준비한 뒤 시간을 돌린다 → 준비가 끝날 때까지 기다려
+        // 녹화의 t = 0 이 애니메이션 시작과 맞도록 한다.
+        repeat(20) { Thread.sleep(50); compose.waitForIdle() }
         // Fire the first frame: this is where animations started by LaunchedEffect get their start time (t = 0).
         compose.mainClock.advanceTimeBy(frameDelayMs, ignoreFrameDuration = true)
         val base = compose.mainClock.currentTime
