@@ -214,7 +214,7 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
         ind += 1
         groups = []
         for j, rg in enumerate(rigs):
-            cubs, gs, ge, ov_s, ov_e, ov_g, op = [], [], [], [], [], [], []
+            cubs, gs, ge, ov_s, ov_e, ov_g, li_g, op = [], [], [], [], [], [], [], []
             for f in fs:
                 sg = frames_cache[f]["layers"]
                 seg = [x for (lid, segs) in sg if lid == sid for x in segs][j]
@@ -228,6 +228,7 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
                 ov_s.append(p0)
                 ov_e.append(p1)
                 ov_g.append([a0, a1])
+                li_g.append(list(seg["light"]))
                 if sid == "04_center_fold":
                     x = float(np.clip((seg["alpha"] - 0.85) / 0.15, 0, 1))
                     op.append(100 * x * x * (3 - 2 * x))
@@ -237,21 +238,30 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
             nfk = len(fs)
             dc = np.array([offscreen(*screen_bbox(c)) for c in cubs])
             ov_g = np.array(ov_g)
+            li_g = np.array(li_g)
             # 속성마다 따로 단순화 (느린 속성은 키가 적다)
             kp = simplify_keys(cubs.reshape(nfk, -1), tol_path, dc, path_check=True)
             kg = simplify_keys(np.hstack([gs, ge]), 1.5, dc)
-            shade_off = dc | (ov_g.max(axis=1) < 0.004)
-            ka = simplify_keys(ov_g, 0.012, dc)
+            shade_off = dc | (np.maximum(ov_g.max(axis=1), li_g.max(axis=1)) < 0.004)
+            ka = sorted(set(simplify_keys(ov_g, 0.012, dc)) | set(simplify_keys(li_g, 0.012, dc)))
             ks = simplify_keys(np.hstack([ov_s, ov_e]), 2.0, shade_off)
             k_sh = sorted(set(ka) | set(ks))
             ko = simplify_keys(np.array(op)[:, None], 0.8, dc)
             F_ = lambda ks_: [fs[q] for q in ks_]
             items = [{"ty": "sh", "nm": "path", "ks": animated_shape(F_(kp), [shape_of(cubs[q], nd) for q in kp])}]
             o = animated(F_(ko), [round(op[q], 1) for q in ko]) if sid == "04_center_fold" else None
-            if ov_g.max() > 0.003:
-                # 접힘(04)의 음영도 접힘과 같은 불투명도 → 접힘이 숨은 동안 음영만 보이지 않게
+            if max(ov_g.max(), li_g.max()) > 0.003:
+                # 빛(+)·그늘(−) 을 덮개 하나로: 각 끝의 색 = 흰/검정, 불투명도 = |빛 − 그늘|.
+                # 부호가 바뀌는 순간은 불투명도가 0 근처라 색이 바뀌어도 보이지 않는다. (채움 수를 줄여 재생기 차이를 피함)
+                def ov(q):
+                    out = []
+                    for e in (0, 1):
+                        net = float(li_g[q][e] - ov_g[q][e])
+                        out.append(([1, 1, 1] if net > 0 else [0, 0, 0], round(abs(net), 3)))
+                    (c0, a0), (c1, a1) = out
+                    return [0] + c0 + [1] + c1 + [0, a0, 1, a1]
                 items.append(gfill("shade",
-                                   animated(F_(k_sh), [[0, 0, 0, 0, 1, 0, 0, 0, 0, round(ov_g[q][0], 3), 1, round(ov_g[q][1], 3)] for q in k_sh]),
+                                   animated(F_(k_sh), [ov(q) for q in k_sh]),
                                    animated(F_(k_sh), [rnd(ov_s[q], nd) for q in k_sh]),
                                    animated(F_(k_sh), [rnd(ov_e[q], nd) for q in k_sh]), o=o, np_=2))
             items.append(gfill("fill", static(grad_colors(s["stops"])),

@@ -67,15 +67,15 @@ class Renderer:
                 pos = [o for o, _ in sg["stops"]]
                 sh = skia.GradientShader.MakeLinear([skia.Point(*gs), skia.Point(*ge)], cols, pos)
                 canvas.drawPath(path, skia.Paint(AntiAlias=True, Shader=sh, Alphaf=op))
-                a0, a1 = sg["shade"]
-                if max(a0, a1) > 0.003:
-                    p0, p1 = sg["shade_pts"]
-                    if np.linalg.norm(p1 - p0) < 1e-3:
-                        p1 = p0 + np.array([1e-3, 0])
-                    ramp = skia.GradientShader.MakeLinear(
-                        [skia.Point(*p0), skia.Point(*p1)],
-                        [skia.Color4f(0, 0, 0, a0).toColor(), skia.Color4f(0, 0, 0, a1).toColor()])
-                    canvas.drawPath(path, skia.Paint(AntiAlias=True, Shader=ramp, Alphaf=op))
+                p0, p1 = sg["shade_pts"]
+                if np.linalg.norm(p1 - p0) < 1e-3:
+                    p1 = p0 + np.array([1e-3, 0])
+                for (a0, a1), rgb in ((sg["shade"], (0, 0, 0)), (sg["light"], (1, 1, 1))):
+                    if max(a0, a1) > 0.003:
+                        ramp = skia.GradientShader.MakeLinear(
+                            [skia.Point(*p0), skia.Point(*p1)],
+                            [skia.Color4f(*rgb, a0).toColor(), skia.Color4f(*rgb, a1).toColor()])
+                        canvas.drawPath(path, skia.Paint(AntiAlias=True, Shader=ramp, Alphaf=op))
         hl = fr["hl"]
         if hl is not None:
             w = skia.Color4f(1, 1, 1, 0).toColor()

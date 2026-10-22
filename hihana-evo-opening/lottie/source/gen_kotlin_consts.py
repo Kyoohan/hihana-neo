@@ -41,6 +41,12 @@ def gen(variant):
     w("/** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */")
     w("private val LAND_MARKS = floatArrayOf(%s)" % ", ".join(f(x / fps) for x in land_fr))
     w("private const val TEXT_T0 = %s            // 글자 등장 = logo_complete (프레임 %d)" % (f(complete / fps), complete))
+    w("// 조명 (왼쪽 위 앞쪽) — motion.LIGHT / HALF / K_DIFF / K_SPEC / SPEC_P / DIFF_REF")
+    L, Hh = motion.LIGHT, motion.HALF
+    w("private const val LIGHT_X = %s; private const val LIGHT_Y = %s; private const val LIGHT_Z = %s" % (f(L[0]), f(L[1]), f(L[2])))
+    w("private const val HALF_X = %s; private const val HALF_Y = %s; private const val HALF_Z = %s" % (f(Hh[0]), f(Hh[1]), f(Hh[2])))
+    w("private const val K_DIFF = %s; private const val K_SPEC = %s; private const val SPEC_P = %s; private const val DIFF_REF = %s"
+      % (f(motion.K_DIFF), f(motion.K_SPEC), f(motion.SPEC_P), f(motion.DIFF_REF)))
     b, h = cfg["breath"], cfg["highlight"]
     w("private const val BREATH_T0 = %s; private const val BREATH_T1 = %s; private const val BREATH_AMP = %s"
       % (f(b["t0"]), f(b["t1"]), f(b["amp"])))

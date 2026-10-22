@@ -104,6 +104,10 @@ private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)
 /** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */
 private val LAND_MARKS = floatArrayOf(1.833333f, 2.8f, 1.933333f)
 private const val TEXT_T0 = 3.95f            // 글자 등장 = logo_complete (프레임 237)
+// 조명 (왼쪽 위 앞쪽) — motion.LIGHT / HALF / K_DIFF / K_SPEC / SPEC_P / DIFF_REF
+private const val LIGHT_X = -0.451129f; private const val LIGHT_Y = -0.55138f; private const val LIGHT_Z = 0.701757f
+private const val HALF_X = -0.244533f; private const val HALF_Y = -0.298874f; private const val HALF_Z = 0.922431f
+private const val K_DIFF = 0.45f; private const val K_SPEC = 0.5f; private const val SPEC_P = 8.0f; private const val DIFF_REF = 0.55f
 private const val BREATH_T0 = 2.85f; private const val BREATH_T1 = 3.45f; private const val BREATH_AMP = 0.022f
 private const val HL_T0 = 3.05f; private const val HL_T1 = 3.95f; private const val HL_PEAK = 0.3f
 private const val HL_DIR_X = 0.545f; private const val HL_DIR_Y = 0.838f; private const val HL_SPAN = 290.0f; private const val HL_WIDTH = 70.0f
@@ -561,6 +565,7 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
     val fl = FloatArray(nu); val flt = FloatArray(nu)      // 바람: 옆·길이 방향 변위
     val rip = FloatArray(nu); val shr = FloatArray(nu)     // 바람: 폭 출렁임·단면 밀림
     val th = FloatArray(nu)
+    val lit = FloatArray(nu)                       // 명암 (+ 빛 / − 그늘)
     private val cx = FloatArray(nu); private val cy = FloatArray(nu)
     private val envF = FloatArray(nu)
 
@@ -650,6 +655,15 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
             cx[k] += fl[k] * nX + flt[k] * t0x[k]; cy[k] += fl[k] * nY + flt[k] * t0y[k]
         }
         tangents(cx, cy, tx, ty)
+        // 빛: 천 면의 법선 n = cosθ·ẑ − sinθ·N, 보이는 면 n_vis = sign(cosθ)·n
+        //   명암 = K_DIFF·(n_vis·L − DIFF_REF) + K_SPEC·(max(0, n_vis·H)^p − H_z^p),  × (1 − α) → 착지하면 0
+        for (k in 0 until nu) {
+            val ct = cos(th[k]); val st = sin(th[k]); val sg = if (ct >= 0f) 1f else -1f
+            val nX = ty[k]; val nY = -tx[k]
+            val ndl = sg * (ct * LIGHT_Z - st * (nX * LIGHT_X + nY * LIGHT_Y))
+            val ndh = sg * (ct * HALF_Z - st * (nX * HALF_X + nY * HALF_Y))
+            lit[k] = (K_DIFF * (ndl - DIFF_REF) + K_SPEC * (max(ndh, 0f).pow(SPEC_P) - HALF_Z.pow(SPEC_P))) * (1f - alpha[k])
+        }
     }
 
     /**
@@ -714,9 +728,12 @@ private class SegmentRig(val surface: Surface, val rb: Ribbon, g: SegmentGeom) {
     val grad = FloatArray(4)                                // 이번 프레임의 그라데이션 시작·끝점
     val gradMatrix = Matrix()
     val shadeMatrix = Matrix()
-    var shadeA0 = 0f; var shadeA1 = 0f; var landed = 0f
+    var shadeA0 = 0f; var shadeA1 = 0f; var lightA0 = 0f; var lightA1 = 0f; var landed = 0f
+    val lightMatrix = Matrix()
+    private val ends = FloatArray(12)
     val baseShader = LinearGradient(0f, 0f, 1f, 0f, surface.colors, surface.stops, Shader.TileMode.CLAMP)
     val shadeShader = LinearGradient(0f, 0f, 1f, 0f, 0x00000000, 0xFF000000.toInt(), Shader.TileMode.CLAMP)
+    val lightShader = LinearGradient(0f, 0f, 1f, 0f, 0x00FFFFFF, 0xFFFFFFFF.toInt(), Shader.TileMode.CLAMP)
 
     init {
         val p = rb.p
@@ -797,20 +814,35 @@ private class SegmentRig(val surface: Surface, val rb: Ribbon, g: SegmentGeom) {
         grad[0] = gsx; grad[1] = gsy; grad[2] = gex; grad[3] = gey
         unitSegmentTo(gradMatrix, gsx, gsy, gex, gey)
         baseShader.setLocalMatrix(gradMatrix)
-        // 비틀림 음영: 세그먼트 양 끝 단면의 cosθ → 검정 덮개 불투명도 (선형 램프)
-        shadeA0 = shadeOf(interpGrid(u0, rb.ug, rb.th)); shadeA1 = shadeOf(interpGrid(u1, rb.ug, rb.th))
+        // 빛: 세그먼트 양 끝 단면의 명암 → 검정(그늘)·흰색(빛) 덮개 램프. 뒷면은 그늘을 더한다
+        val th0 = interpGrid(u0, rb.ug, rb.th); val th1 = interpGrid(u1, rb.ug, rb.th)
+        val l0 = interpGrid(u0, rb.ug, rb.lit); val l1 = interpGrid(u1, rb.ug, rb.lit)
+        shadeA0 = min(0.45f, shadeOf(th0) + max(0f, -l0)); shadeA1 = min(0.45f, shadeOf(th1) + max(0f, -l1))
+        lightA0 = min(0.5f, max(0f, l0)); lightA1 = min(0.5f, max(0f, l1))
         landed = interpGrid(0.5f * (u0 + u1), rb.ug, rb.alpha)
-        if (max(shadeA0, shadeA1) > 0.003f) {
-            rb.x(u0, 0.5f, fx, 0); val p0x = fx[0]; val p0y = fx[1]
-            rb.x(u1, 0.5f, fx, 0); var p1x = fx[0]; val p1y = fx[1]
-            if (hypot(p1x - p0x, p1y - p0y) < 0.05f) p1x = p0x + 0.05f
+        if (max(max(shadeA0, shadeA1), max(lightA0, lightA1)) > 0.003f) {
+            // 램프 축: 두 단면선(경계)의 평균 방향에 수직 → 등명암선이 경계와 나란해 이웃 세그먼트와 이어진다
+            rb.x(u0, 0f, ends, 0); rb.x(u0, 1f, ends, 2); rb.x(u1, 0f, ends, 4); rb.x(u1, 1f, ends, 6)
+            rb.x(u0, 0.5f, ends, 8); rb.x(u1, 0.5f, ends, 10)
+            val dx = (ends[2] - ends[0]) + (ends[6] - ends[4]); val dy = (ends[3] - ends[1]) + (ends[7] - ends[5])
+            val nrm = hypot(dx, dy)
+            val p0x = ends[8]; val p0y = ends[9]
+            var p1x: Float; var p1y: Float
+            if (nrm > 1e-6f) {
+                val axX = dy / nrm; val axY = -dx / nrm
+                val d = (ends[10] - p0x) * axX + (ends[11] - p0y) * axY
+                p1x = p0x + axX * d; p1y = p0y + axY * d
+            } else { p1x = ends[10]; p1y = ends[11] }
+            if (hypot(p1x - p0x, p1y - p0y) < 0.05f) { p1x = p0x + 0.05f; p1y = p0y }
             rampTo(shadeMatrix, p0x, p0y, p1x, p1y, shadeA0, shadeA1)
             shadeShader.setLocalMatrix(shadeMatrix)
+            rampTo(lightMatrix, p0x, p0y, p1x, p1y, lightA0, lightA1)
+            lightShader.setLocalMatrix(lightMatrix)
         }
     }
 }
 
-/** 비틀림 각 → 검정 덮개 불투명도. 앞면 0, 옆면 0.16, 뒷면 0.28 ('조금 어둡게'). */
+/** 비틀림 각 → 검정 덮개 불투명도 (뒷면 그늘). 앞면 0, 옆면 0.16, 뒷면 0.28 ('조금 어둡게'). */
 private fun shadeOf(theta: Float): Float {
     val c = cos(theta)
     return if (c >= 0f) 0.16f * (1f - c).pow(1.4f) else 0.16f + 0.12f * (-c).pow(0.8f)
@@ -948,6 +980,10 @@ private class EvoScene {
                 c.drawPath(sg.path, fill)
                 if (max(sg.shadeA0, sg.shadeA1) > 0.003f) {
                     fill.shader = sg.shadeShader
+                    c.drawPath(sg.path, fill)
+                }
+                if (max(sg.lightA0, sg.lightA1) > 0.003f) {
+                    fill.shader = sg.lightShader
                     c.drawPath(sg.path, fill)
                 }
             }

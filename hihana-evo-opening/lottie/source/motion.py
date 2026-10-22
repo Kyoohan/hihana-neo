@@ -149,8 +149,9 @@ class Ribbon:
         if S0 > 1:
             # 출발 전·직후에는 카메라 뒤(배율 21배)에 있다가 0.18초 동안 화면 안으로 스쳐 들어온다 → 멈춘 큰 조각이 보이지 않게
             ps = ps * (1 + 20 * (1 - smootherstep(0.0, 0.18, s)))
+        lit = lighting(th, N, alpha)
         return dict(s=s, r=r, O=O, alpha=alpha, T=T, N=N, T0=T0, fl=fl, flt=flt, rip=rip, shr=shr,
-                    th=th, env_f=env_f, ps=ps)
+                    th=th, env_f=env_f, ps=ps, lit=lit)
 
     def X(self, F, u, v):
         """임의의 재료점 (u, v) 위치 (로고 단위)."""
@@ -263,13 +264,49 @@ class SegmentRig:
         M = np.vstack([Mlin, M[2]])
         gs = np.append(self.start, 1) @ M
         ge = np.append(self.end, 1) @ M
-        # 비틀림 음영: 세그먼트 양 끝 단면의 cosθ → 검정 덮개 불투명도
-        th0 = np.interp(self.u0, ribbon.ug, F["th"])
-        th1 = np.interp(self.u1, ribbon.ug, F["th"])
-        c0 = ribbon.X(F, np.array([self.u0, self.u1]), np.array([0.5, 0.5]))
-        al = np.interp(0.5 * (self.u0 + self.u1), ribbon.ug, F["alpha"])
+        # 빛: 세그먼트 양 끝 단면의 명암 → 검정(그늘)·흰색(빛) 덮개 램프
+        ip = lambda arr, x: float(np.interp(x, ribbon.ug, arr))
+        um = 0.5 * (self.u0 + self.u1)
+        sh, li = [], []
+        for uu in (self.u0, self.u1):
+            th_, lt = ip(F["th"], uu), ip(F["lit"], uu)
+            sh.append(min(0.45, shade_of(th_) + max(0.0, -lt)))
+            li.append(min(0.5, max(0.0, lt)))
+        # 램프 축: 두 단면선(세그먼트 경계)의 평균 방향에 수직 → 등명암선이 경계선과 나란해 이웃 세그먼트와 이어진다
+        e = ribbon.X(F, np.array([self.u0, self.u0, self.u1, self.u1, self.u0, self.u1]),
+                     np.array([0.0, 1.0, 0.0, 1.0, 0.5, 0.5]))
+        dcut = (e[1] - e[0]) + (e[3] - e[2])
+        nrm = np.linalg.norm(dcut)
+        p0 = e[4]
+        if nrm > 1e-6:
+            ax = np.array([dcut[1], -dcut[0]]) / nrm
+            p1 = p0 + ax * float(np.dot(e[5] - p0, ax))
+        else:
+            p1 = e[5]
+        al = ip(F["alpha"], um)
         return dict(sid=self.sid, k=self.k, cubics=cub, grad=(gs, ge), stops=self.stops,
-                    shade=(shade_of(th0), shade_of(th1)), shade_pts=(c0[0], c0[1]), alpha=al)
+                    shade=tuple(sh), light=tuple(li), shade_pts=(p0, p1), alpha=al)
+
+
+# 조명: 왼쪽 위 앞쪽에서 오는 빛 (화면 x 오른쪽, y 아래, z 보는 사람 쪽)
+LIGHT = np.array([-0.45, -0.55, 0.70]) / np.linalg.norm([-0.45, -0.55, 0.70])
+HALF = (LIGHT + np.array([0, 0, 1.0])) / np.linalg.norm(LIGHT + np.array([0, 0, 1.0]))
+K_DIFF, K_SPEC, SPEC_P = 0.45, 0.50, 8
+DIFF_REF = 0.55                       # 명암 기준 (n·L 의 대략 평균) → 비행 중 평균 밝기가 로고 색과 비슷하게
+
+
+def lighting(th, N, alpha):
+    """단면 u 의 명암 (+ 흰 빛 / − 그늘).
+
+    천 면의 법선 n = cosθ·ẑ − sinθ·N (θ = 단면의 회전, N = 화면 안 법선), 보이는 면 n_vis = sign(cosθ)·n.
+    명암 = K_DIFF·(n_vis·L − 0.55) + K_SPEC·(max(0, n_vis·H)^p − H_z^p)   (L 조명, H 반사 반각 벡터)
+    → 휘는 곳·물결의 마루에 부드러운 하이라이트, 비스듬히 돌아선 곳은 그늘. (1 − α) 로 착지하면 0."""
+    c, s = np.cos(th), np.sin(th)
+    sg = np.where(c >= 0, 1.0, -1.0)
+    ndl = sg * (c * LIGHT[2] - s * (N[:, 0] * LIGHT[0] + N[:, 1] * LIGHT[1]))
+    ndh = sg * (c * HALF[2] - s * (N[:, 0] * HALF[0] + N[:, 1] * HALF[1]))
+    lit = K_DIFF * (ndl - DIFF_REF) + K_SPEC * (np.maximum(ndh, 0) ** SPEC_P - HALF[2] ** SPEC_P)
+    return lit * (1 - alpha)
 
 
 def shade_of(theta):

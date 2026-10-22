@@ -142,6 +142,8 @@ def main():
     # 4) lottie-android 프레임 → lottie.mp4 + 키프레임
     la = os.path.join(H, "out", "final_lottie_android")
     shutil.rmtree(la, ignore_errors=True)
+    # lottie-android (기기 기본과 같은 캔버스 직접 그리기). 프레임을 순서대로 그려야 실제 재생과 같다
+    # (lottie-android 는 그라데이션 셰이더를 32ms 단위로 캐시 → 60fps 에서 두 프레임마다 직전 그라데이션을 재사용)
     out = run(["./gradlew", ":app:testDebugUnitTest", "--tests", "*LottieRender*", "-PlottieJson=" + lj,
                "-PlottieOut=" + la, "-PlottieBg=#0B0B1A"], cwd=adir)
     report["lottie_android_log"] = [ln.strip() for ln in out.splitlines() if "[lottie" in ln]
@@ -161,6 +163,15 @@ def main():
         d = np.abs(x - y).max(axis=2)
         diffs.append((float(d.mean()), int((d > 40).sum())))
     report["android_vs_web"] = dict(mean_absdiff_max=max(d[0] for d in diffs), px_over40_max=max(d[1] for d in diffs))
+    # 같은 프레임을 하나씩 따로 그리면(캐시 없음) 웹과 일치하는지 — 차이가 캐시 때문인지 확인
+    worst = max(range(len(diffs)), key=lambda i: diffs[i][1]) * 3
+    one = os.path.join(H, "out", "final_lottie_android_single")
+    shutil.rmtree(one, ignore_errors=True)
+    run(["./gradlew", ":app:testDebugUnitTest", "--tests", "*LottieRender*", "-PlottieJson=" + lj, "-PlottieOut=" + one,
+         "-PlottieBg=#0B0B1A", "-PlottieStartFrame=%d" % worst, "-PlottieEndFrame=%d" % worst], cwd=adir)
+    x = np.asarray(Image.open(os.path.join(one, "frame_%05d.png" % worst)).convert("RGB"), dtype=np.int16)
+    y = np.asarray(Image.open(os.path.join(lw, "frame_%05d.png" % worst)).convert("RGB"), dtype=np.int16)
+    report["android_single_frame_vs_web"] = dict(frame=worst, px_over40=int((np.abs(x - y).max(axis=2) > 40).sum()))
 
     # 6) Compose 녹화 → compose.mp4
     cf = os.path.join(H, "out", "final_compose")
