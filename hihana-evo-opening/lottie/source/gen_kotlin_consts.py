@@ -29,6 +29,7 @@ def gen(variant):
     w = out.append
     w("// ── BEGIN 생성된 상수 (lottie/source/gen_kotlin_consts.py, 시안 %s) — Lottie 와 같은 숫자. 손으로 고치지 말 것 ──" % variant)
     w("private const val TOTAL = %s            // 전체 길이 (초)" % f(cfg["duration"]))
+    w("private const val TIME_SCALE = %s       // 리본 운동 시간 배율: 실제 시각 = 운동 시간 × TIME_SCALE" % f(cfg.get("time_scale", 1.0)))
     w("private const val LOGO_CX = %s; private const val LOGO_CY = %s" % (f(motion.LOGO_CENTER[0]), f(motion.LOGO_CENTER[1])))
     w("private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)")
     sc = motion.Scene(cfg)

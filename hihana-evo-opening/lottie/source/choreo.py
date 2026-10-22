@@ -60,10 +60,14 @@ def screen_path(ribbon, waypoints, persp, power=2.0, rs=(0.3, 0.6)):
 #   경유점: 화면 오프셋 (로고 중심 기준, 로고 단위; 화면은 x ±440, y −763 … +1144)
 # ---------------------------------------------------------------------------
 PERSP = 8.0
+# 리본 운동의 시간 배율: 아래 시각·주파수는 모두 '운동 시간' 기준이고, 실제 시각 = 운동 시간 × TIME_SCALE
+# (수정 5회차: 의뢰인 요청으로 1.8배 느리게. 바람·비틀림·스프링이 모두 같은 비율로 느려진다)
+TIME_SCALE = 1.8
 ROUGH_A = dict(
     name="A_weave",
     title="A — Weave",
-    duration=6.0,
+    duration=7.0,
+    time_scale=TIME_SCALE,
     K={"left": 20, "center": 16, "right": 20},
     ribbons=dict(
         left=rib(order="head", T0=-0.10, kappa=0.62, v0=0.0, wide=2.6,
@@ -88,8 +92,10 @@ ROUGH_A = dict(
                              gust=[(0.30, 0.33, 0.6), (0.20, 0.49, 1.7)]),
                    twist=[(2.2, 0.9, 0.5, 0.0), (0.6, 2.0, 1.0, 0.4)]),
     ),
-    breath=dict(t0=2.15, t1=2.75, amp=0.022),
-    highlight=dict(t0=2.35, t1=3.25, dir=(0.545, 0.838), span=290, width=70, peak=0.30),
+    # 숨쉬기·하이라이트는 실제 시각(초). 리본처럼 1.8배를 그대로 걸면 완성 후 정지가 1.5초를 못 채워(브리프 6–7초)
+    # 각각 1.67배·1.33배로만 늘리고 인디고 착지(3.77초) 직후에 겹쳐 시작한다
+    breath=dict(t0=3.85, t1=4.85, amp=0.022),
+    highlight=dict(t0=4.00, t1=5.20, dir=(0.545, 0.838), span=290, width=70, peak=0.30),
 )
 
 VARIANTS = {"A": ROUGH_A}   # 러프 B (Breeze) 는 시안 비교 후 폐기

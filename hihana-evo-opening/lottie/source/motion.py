@@ -48,8 +48,9 @@ def cubic(p0, p1, p2, p3, r):
 class Ribbon:
     """갈래 하나의 운동."""
 
-    def __init__(self, name, param, cfg, nu=257):
+    def __init__(self, name, param, cfg, nu=257, time_scale=1.0):
         self.name, self.p, self.c = name, param, cfg
+        self.ts = time_scale             # 실제 시각 = 운동 시간 × ts (ts > 1 이면 그만큼 느리게)
         self.ug = np.linspace(0, 1, nu)
         self.Sm = param.spine_smooth(self.ug)
         F = np.array(cfg["F"], float)
@@ -75,15 +76,18 @@ class Ribbon:
         return (np.sqrt(d * d + e * e) - e) / (math.sqrt(1 + e * e) - e)
 
     def section_time(self, u, t):
+        """t 는 운동 시간."""
         c = self.c
         return t - (c["T0"] + c["kappa"] * self.order(u))
 
     def land_time(self):
-        """마지막 섹션까지 완전히 멈추는 시각 (= 스프링 창 끝)."""
+        """마지막 섹션까지 완전히 멈추는 실제 시각 (= 스프링 창 끝)."""
         c = self.c
-        return c["T0"] + c["kappa"] + c["s_w1"]
+        return (c["T0"] + c["kappa"] + c["s_w1"]) * self.ts
 
     def fields(self, t):
+        """t 는 실제 시각(초). 아래 수식은 모두 운동 시간 t / ts 로 계산한다."""
+        t = t / self.ts
         c, u = self.c, self.ug
         w = self.order(u)
         s = self.section_time(u, t)
@@ -330,7 +334,7 @@ class Scene:
         for r in ("left", "center", "right"):
             ss = [s for s in self.surf.values() if s["ribbon"] == r]
             self.params[r] = geom.RibbonParam(r, ss)
-            self.ribbons[r] = Ribbon(r, self.params[r], cfg["ribbons"][r])
+            self.ribbons[r] = Ribbon(r, self.params[r], cfg["ribbons"][r], time_scale=cfg.get("time_scale", 1.0))
         K = K or cfg["K"]
         self.rigs = []
         for sid in geom.LAYER_ORDER:
@@ -377,7 +381,7 @@ class Scene:
         out = {}
         uu = np.linspace(0, 1, 129)
         for r, rb in self.ribbons.items():
-            t = rb.c["T0"]
+            t = rb.c["T0"] * rb.ts
             t_end = rb.land_time()
             last_bad = t
             while t <= t_end:

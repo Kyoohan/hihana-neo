@@ -9,7 +9,10 @@ import motion
 
 
 def dump(variant, out, times=(0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0)):
-    sc = motion.Scene(choreo.VARIANTS[variant])
+    """times 는 운동 시간 — 실제 시각은 × time_scale."""
+    cfg = choreo.VARIANTS[variant]
+    times = tuple(round(x * cfg.get("time_scale", 1.0), 4) for x in times)
+    sc = motion.Scene(cfg)
     res = {"times": list(times), "frames": []}
     for t in times:
         fr = sc.frame(t)

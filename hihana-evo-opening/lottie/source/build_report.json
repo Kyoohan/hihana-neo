@@ -2,110 +2,110 @@
  "timeline": {
   "variant": "A",
   "title": "A — Weave",
-  "frames": 360,
+  "frames": 420,
   "fps": 60,
   "first_visible": {
-   "left": 3,
-   "center": 15,
-   "right": 9
+   "left": 5,
+   "center": 26,
+   "right": 15
   },
   "form_start": {
-   "left": 51,
-   "center": 62,
-   "right": 57
+   "left": 91,
+   "center": 110,
+   "right": 102
   },
   "land": {
-   "left": 110,
-   "center": 126,
-   "right": 116
+   "left": 198,
+   "center": 227,
+   "right": 208
   },
   "rest": {
-   "left": 149,
-   "center": 146,
-   "right": 155
+   "left": 267,
+   "center": 263,
+   "right": 278
   },
   "breath": [
-   129,
-   165,
+   231,
+   291,
    0.022
   ],
   "highlight": [
-   141,
-   195
+   240,
+   312
   ],
-  "complete": 195,
-  "hold_s": 2.75
+  "complete": 312,
+  "hold_s": 1.8
  },
  "lottie": {
-  "bytes": 4605167,
-  "keys": 7273,
+  "bytes": 8265504,
+  "keys": 11052,
   "markers": [
    {
-    "tm": 110,
+    "tm": 198,
     "cm": "land_mint",
     "dr": 0
    },
    {
-    "tm": 116,
+    "tm": 208,
     "cm": "land_coral",
     "dr": 0
    },
    {
-    "tm": 126,
+    "tm": 227,
     "cm": "land_indigo",
     "dr": 0
    },
    {
-    "tm": 195,
+    "tm": 312,
     "cm": "logo_complete",
     "dr": 0
    }
   ],
-  "frames": 360,
+  "frames": 420,
   "land": {
-   "left": 149,
-   "center": 146,
-   "right": 155
+   "left": 267,
+   "center": 263,
+   "right": 278
   },
-  "complete": 195
+  "complete": 312
  },
  "parity": [
-  "worst path 0.8305, grad 0.2038, shade 0.00007 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
+  "worst path 0.8350, grad 0.2038, shade 0.00008 (logo units; 좌표가 1000 을 넘으면 1000 단위당)"
  ],
  "lottie_android_log": [
   "[lottie] file=/home/user/hihana-neo/hihana-evo-opening/lottie/opening.json",
-  "[lottie] bounds=1080x2340 fps=60.0 ip=0.0 op=359.99 durationMs=5999.0 layers=14 masksAndMattes=0 hasDashPattern=false",
+  "[lottie] bounds=1080x2340 fps=60.0 ip=0.0 op=419.99 durationMs=6999.0 layers=14 masksAndMattes=0 hasDashPattern=false",
   "[lottie] composition warnings (0):",
   "[lottie] markers (4):",
-  "[lottie-marker] name=land_mint startFrame=110.0 durationFrames=0.0",
-  "[lottie-marker] name=land_coral startFrame=116.0 durationFrames=0.0",
-  "[lottie-marker] name=land_indigo startFrame=126.0 durationFrames=0.0",
-  "[lottie-marker] name=logo_complete startFrame=195.0 durationFrames=0.0",
-  "[lottie] rendered 360 frames (0..359) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 12.8 s (35.5 ms/frame)"
+  "[lottie-marker] name=land_mint startFrame=198.0 durationFrames=0.0",
+  "[lottie-marker] name=land_coral startFrame=208.0 durationFrames=0.0",
+  "[lottie-marker] name=land_indigo startFrame=227.0 durationFrames=0.0",
+  "[lottie-marker] name=logo_complete startFrame=312.0 durationFrames=0.0",
+  "[lottie] rendered 420 frames (0..419) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 13.6 s (32.3 ms/frame)"
  ],
  "keyframes": [
-  "00_start_f012.png",
-  "01_close_pass_f029.png",
-  "02_receding_f039.png",
-  "03_mint_forms_f060.png",
-  "04_coral_forms_f066.png",
-  "05_indigo_lands_f076.png",
-  "06_breath_highlight_f168.png",
-  "07_final_f359.png"
+  "00_start_f021.png",
+  "01_close_pass_f051.png",
+  "02_receding_f069.png",
+  "03_mint_forms_f107.png",
+  "04_coral_forms_f118.png",
+  "05_indigo_lands_f135.png",
+  "06_breath_highlight_f276.png",
+  "07_final_f419.png"
  ],
  "android_vs_web": {
-  "mean_absdiff_max": 0.6087377334599556,
-  "px_over40_max": 3
+  "mean_absdiff_max": 4.101550332383666,
+  "px_over40_max": 71539
  },
  "android_single_frame_vs_web": {
-  "frame": 75,
-  "px_over40": 3
+  "frame": 33,
+  "px_over40": 0
  },
  "compose_log": [
-  "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..6000.0ms frames=0..360 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
+  "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..7000.0ms frames=0..420 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
   "[record] root capture size=1080x2340",
-  "[record] wrote 361 frames in 24.0 s (66.5 ms/frame; advance 3.1 ms/frame, capture+copy 63.2 ms/frame)",
-  "[record] onFinish called at 6001 ms after the first frame",
+  "[record] wrote 421 frames in 26.9 s (63.8 ms/frame; advance 2.5 ms/frame, capture+copy 61.1 ms/frame)",
+  "[record] onFinish called at 7001 ms after the first frame",
   "[record] decorView=1080x2340",
   "[record] haptics recorded: AndroidComposeView=4 (CLOCK_TICK=4)"
  ]

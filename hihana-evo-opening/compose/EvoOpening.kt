@@ -91,25 +91,25 @@ private const val SKIP_AFTER_MS = 600L       // 화면이 뜬 지 이 시간 이
 private const val FADE = 0.6f                 // 마지막 페이드아웃 길이
 private const val TEXT_STAGGER = 0.16f
 private const val TEXT_DUR = 0.5f
-private const val T_STILL = 4.5f              // '애니메이션 끄기' 일 때 보여 줄 정지 장면 시각 (완성 로고 + 글자)
 private const val REDUCED_HOLD_MS = 1400L
 
 private val BACKGROUND = Brush.verticalGradient(listOf(Color(0xFF090A1C), Color(0xFF11102B), Color(0xFF0A0A18)))
 private val EVO_BRUSH = Brush.linearGradient(listOf(Color(0xFF38EAA8), Color(0xFF8C6BFF), Color(0xFFFF5A97)))
 
 // ── BEGIN 생성된 상수 (lottie/source/gen_kotlin_consts.py, 시안 A) — Lottie 와 같은 숫자. 손으로 고치지 말 것 ──
-private const val TOTAL = 6.0f            // 전체 길이 (초)
+private const val TOTAL = 7.0f            // 전체 길이 (초)
+private const val TIME_SCALE = 1.8f       // 리본 운동 시간 배율: 실제 시각 = 운동 시간 × TIME_SCALE
 private const val LOGO_CX = 204.0f; private const val LOGO_CY = 217.0f
 private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)
 /** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */
-private val LAND_MARKS = floatArrayOf(1.833333f, 2.1f, 1.933333f)
-private const val TEXT_T0 = 3.25f            // 글자 등장 = logo_complete (프레임 195)
+private val LAND_MARKS = floatArrayOf(3.3f, 3.783333f, 3.466667f)
+private const val TEXT_T0 = 5.2f            // 글자 등장 = logo_complete (프레임 312)
 // 조명 (왼쪽 위 앞쪽) — motion.LIGHT / HALF / K_DIFF / K_SPEC / SPEC_P / DIFF_REF
 private const val LIGHT_X = -0.451129f; private const val LIGHT_Y = -0.55138f; private const val LIGHT_Z = 0.701757f
 private const val HALF_X = -0.244533f; private const val HALF_Y = -0.298874f; private const val HALF_Z = 0.922431f
 private const val K_DIFF = 0.45f; private const val K_SPEC = 0.5f; private const val SPEC_P = 8.0f; private const val DIFF_REF = 0.55f
-private const val BREATH_T0 = 2.15f; private const val BREATH_T1 = 2.75f; private const val BREATH_AMP = 0.022f
-private const val HL_T0 = 2.35f; private const val HL_T1 = 3.25f; private const val HL_PEAK = 0.3f
+private const val BREATH_T0 = 3.85f; private const val BREATH_T1 = 4.85f; private const val BREATH_AMP = 0.022f
+private const val HL_T0 = 4.0f; private const val HL_T1 = 5.2f; private const val HL_PEAK = 0.3f
 private const val HL_DIR_X = 0.545f; private const val HL_DIR_Y = 0.838f; private const val HL_SPAN = 290.0f; private const val HL_WIDTH = 70.0f
 
 /** 갈래 순서: 0 = 왼쪽(민트), 1 = 가운데(인디고), 2 = 오른쪽(코랄). (길이축 L, 단면 방향 S) */
@@ -210,6 +210,8 @@ private val SURFACES = listOf(
 private const val SILHOUETTE =
     "M164 0 C186 0 198 14 198 40 L198 66 C198 104 180 127 150 147 L266 176.810056 L266 125 C266 100 277 82 296 69 L387 13 C400 5 408 12 408 28 L408 271 C408 308 389 337 357 357 C314 386 264 419 242 430 C218 440 202 424 202 399 L202 362 C202 338 215 318 235 302 L251 292 L138 262.904192 L138 312 C138 340 122 355 100 370 L27 409 C10 421 0 412 0 396 L0 157 C0 116 21 87 52 70 L143 10 C151 5 158 0 164 0 Z"
 // ── END 생성된 상수 ──
+// '애니메이션 끄기' 일 때 보여 줄 정지 장면 시각 (완성 로고 + 글자, 페이드 직전). 생성 상수 TOTAL 뒤에 둬야 한다
+private const val T_STILL = TOTAL - FADE - 0.2f
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. 로고 기하 — 경로 파싱, 갈래별 재료 좌표 (u, v), 세그먼트 분할  (처음 한 번만 계산)
@@ -552,7 +554,7 @@ private class RibbonCfg(
         val n = sqrt(dinX * dinX + dinY * dinY)
         p2x = -dinX / n * h1; p2y = -dinY / n * h1
     }
-    val landTime get() = t0 + kappa + sW1
+    val landTime get() = (t0 + kappa + sW1) * TIME_SCALE   // 실제 시각 (초)
 }
 
 /** 매 프레임 u 격자 위에서 계산하는 갈래 상태 (배열은 재사용). */
@@ -597,7 +599,9 @@ private class Ribbon(val p: RibbonParam, val c: RibbonCfg, val nu: Int = 257) {
         }
     }
 
-    fun update(t: Float) {
+    /** [tReal] 실제 시각(초). 아래 수식은 모두 운동 시간 t = tReal / TIME_SCALE 로 계산한다. */
+    fun update(tReal: Float) {
+        val t = tReal / TIME_SCALE
         // 돌풍: 바람 세기가 시간에 따라 불규칙하게 출렁인다
         var gust = 1f
         var gi = 0

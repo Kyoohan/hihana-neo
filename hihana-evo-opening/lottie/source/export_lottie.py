@@ -108,6 +108,60 @@ def offscreen(lo, hi, margin=24):
     return hi[0] < -margin or lo[0] > ARTBOARD[0] + margin or hi[1] < -margin or lo[1] > ARTBOARD[1] + margin
 
 
+SCREEN_GRID = np.stack(np.meshgrid(np.linspace(0, ARTBOARD[0], 13), np.linspace(0, ARTBOARD[1], 27)), -1).reshape(-1, 2)
+
+
+def _inside(poly, pts):
+    """짝홀 규칙 다각형 내부 판정 (벡터화)."""
+    x, y = pts[:, 0][:, None], pts[:, 1][:, None]
+    x0, y0 = poly[:, 0][None], poly[:, 1][None]
+    x1, y1 = np.roll(poly[:, 0], -1)[None], np.roll(poly[:, 1], -1)[None]
+    cross = ((y0 > y) != (y1 > y)) & (x < (x1 - x0) * (y - y0) / np.where(y1 == y0, 1e-12, y1 - y0) + x0)
+    return cross.sum(1) % 2 == 1
+
+
+def ramp_track(q0, q1, dec, ov_s, ov_e, ov_g, li_g, cubs, tol=0.02, pad=2):
+    """명암 램프의 로컬 끝점 트랙.
+
+    엔진 램프는 화면 공간 선형: 값 = (X − p0)·d / |d|²  (d = p1 − p0).  로컬 X = A·l + t 로 바꾸면
+    값 = (l − l0)·g,  l0 = A⁻¹(p0 − t),  g = Aᵀd / |d|²  → 로컬 끝점 s = l0, e = l0 + g / |g|² 이면 정확히 같다.
+    (A⁻¹(p1 − t) 를 끝점으로 쓰면 A 가 닮음이 아닐 때 등명암선이 기울어 틀린다.)
+    고정 축(q0→q1)과의 명암 차가 화면에 보이는 부분에서 tol 을 넘는 프레임(± pad)에만 정확한 끝점을 쓴다."""
+    n = len(dec)
+    ex_s, ex_e = np.zeros((n, 2)), np.zeros((n, 2))
+    need = np.zeros(n, bool)
+    dq = q1 - q0
+    for q, (t_, phi, s1, s2, th) in enumerate(dec):
+        A, tt = affine_of(t_, phi, s1, s2, th)
+        d = ov_e[q] - ov_s[q]
+        dd = max(float(d @ d), 1e-12)
+        l0 = np.linalg.solve(A, ov_s[q] - tt)
+        g = A.T @ d / dd
+        ex_s[q], ex_e[q] = l0, l0 + g / max(float(g @ g), 1e-18)
+        contrast = max(abs(ov_g[q, 1] - ov_g[q, 0]), abs(li_g[q, 1] - li_g[q, 0]))
+        if contrast < tol:
+            continue
+        # 화면에 보이는 표본점: 세그먼트 안의 화면 격자점 + 화면 안의 앵커
+        anc = cubs[q][:, 0]
+        px = (anc - LOGO_CENTER) * UNIT + SCREEN_CENTER
+        pts = np.concatenate([SCREEN_GRID[_inside(px, SCREEN_GRID)],
+                              px[(px[:, 0] >= 0) & (px[:, 0] <= ARTBOARD[0]) & (px[:, 1] >= 0) & (px[:, 1] <= ARTBOARD[1])]])
+        if not len(pts):
+            continue
+        X = (pts - SCREEN_CENTER) / UNIT + LOGO_CENTER
+        x_ex = np.clip((X - ov_s[q]) @ d / dd, 0, 1)
+        loc = np.linalg.solve(A, (X - tt).T).T
+        x_st = np.clip((loc - q0) @ dq / float(dq @ dq), 0, 1)
+        need[q] = float(np.abs(x_ex - x_st).max()) * contrast > tol
+    use = need.copy()
+    for k in range(1, pad + 1):
+        use[k:] |= need[:-k]
+        use[:-k] |= need[k:]
+    rs = np.where(use[:, None], ex_s, q0[None])
+    re = np.where(use[:, None], ex_e, q1[None])
+    return rs, re
+
+
 def simplify_keys(track, tol, dont_care, path_check=False):
     """시간축 선형 보간 단순화 (트랙 하나): 허용 오차 안에서 가장 먼 다음 키를 고른다.
     dont_care 프레임(화면 밖)은 오차를 따지지 않는다. path_check 면 보간된 경로도 화면 밖이어야 허용."""
@@ -194,7 +248,7 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
     # 섹션별 움직임 시작 프레임 (그 전엔 화면 밖 대기 위치에서 정지)
     def start_frame(rname):
         c = cfg["ribbons"][rname]
-        return max(0, int(math.floor(c["T0"] * FPS)))
+        return max(0, int(math.floor(c["T0"] * cfg.get("time_scale", 1.0) * FPS)))
 
     # 키 시각 목록 (리본별): 시작 ~ 정지, step 간격 + 끝 프레임 포함
     key_frames = {}
@@ -314,6 +368,13 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
                 q0, q1 = c0, c0 + ax * float(np.dot(c1 - c0, ax))
                 if np.linalg.norm(q1 - q0) < 0.05:
                     q1 = q0 + ax * 0.05
+                # 램프 축은 평소엔 고정(q0→q1)이라 lottie-android 그라데이션 캐시에 걸리지 않는다. 다만 카메라 바로 앞처럼
+                # 그룹 아핀이 크게 찌그러진 프레임에서는 고정 축의 명암이 엔진(화면 공간 램프)과 크게 달라지므로,
+                # 그런 프레임에만 엔진 램프와 정확히 같아지는 로컬 끝점으로 움직인다(캐시로 끝점이 한 프레임 늦을 수 있음).
+                rs_, re_ = ramp_track(q0, q1, dec, ov_s, ov_e, ov_g, li_g, cubs)
+                rk = simplify_keys(np.hstack([rs_, re_]), 0.5 / s1s, shade_off)
+                ramp_s = animated(F_(rk), [rnd(rs_[q], 3) for q in rk])
+                ramp_e = animated(F_(rk), [rnd(re_[q], 3) for q in rk])
                 opf = np.array(op) / 100.0
                 for nm_, col, vals in (("light", [1, 1, 1], li_g), ("shade", [0, 0, 0], ov_g)):
                     for e, ramp in ((0, [0, 1, 1, 0]), (1, [0, 0, 1, 1])):
@@ -323,7 +384,7 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
                         kk_ = simplify_keys(track[:, None], 1.2, dc_any)
                         items.append(gfill("%s%d" % (nm_, e),
                                            static([0] + col + [1] + col + ramp),
-                                           static(rnd(q0, 3)), static(rnd(q1, 3)),
+                                           ramp_s, ramp_e,
                                            o=animated(F_(kk_), [round(float(track[q]), 1) for q in kk_]), np_=2))
             # 바탕: 부록 그라데이션 그대로 (정적) — 로컬 좌표 ≈ 로고 좌표
             items.append(gfill("fill", static(grad_colors(s["stops"])), static(rnd(s["start"], 6)), static(rnd(s["end"], 6)),
