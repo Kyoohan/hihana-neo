@@ -27,10 +27,20 @@ def gen(variant):
     g, surf = geom.load()
     out = []
     w = out.append
-    w("// ── 생성된 상수 (lottie/source/gen_kotlin_consts.py, 시안 %s) — Lottie 와 같은 숫자 ──" % variant)
+    w("// ── BEGIN 생성된 상수 (lottie/source/gen_kotlin_consts.py, 시안 %s) — Lottie 와 같은 숫자. 손으로 고치지 말 것 ──" % variant)
     w("private const val TOTAL = %s            // 전체 길이 (초)" % f(cfg["duration"]))
     w("private const val LOGO_CX = %s; private const val LOGO_CY = %s" % (f(motion.LOGO_CENTER[0]), f(motion.LOGO_CENTER[1])))
     w("private const val OVERLAP = 0.004f        // 세그먼트 겹침 (u)")
+    sc = motion.Scene(cfg)
+    marks = sc.land_marks()
+    fps = motion.FPS
+    import math
+    land_fr = [int(math.ceil(marks[r] * fps - 1e-6)) for r in RIB]
+    hl0, hl1 = cfg["highlight"]["t0"], cfg["highlight"]["t1"]
+    complete = max(math.ceil(hl1 * fps), math.ceil(cfg["breath"]["t1"] * fps))
+    w("/** 각 갈래가 눈에 멈추는 시각 (Lottie 마커 land_mint / land_indigo / land_coral 과 같은 프레임) → 햅틱 틱 */")
+    w("private val LAND_MARKS = floatArrayOf(%s)" % ", ".join(f(x / fps) for x in land_fr))
+    w("private const val TEXT_T0 = %s            // 글자 등장 = logo_complete (프레임 %d)" % (f(complete / fps), complete))
     b, h = cfg["breath"], cfg["highlight"]
     w("private const val BREATH_T0 = %s; private const val BREATH_T1 = %s; private const val BREATH_AMP = %s"
       % (f(b["t0"]), f(b["t1"]), f(b["amp"])))
@@ -45,7 +55,7 @@ def gen(variant):
         (lx, ly), (sx, sy) = geom.RIBBON_FRAME[r]
         w("    floatArrayOf(%s, %s, %s, %s),   // %s" % (f(lx), f(ly), f(sx), f(sy), r))
     w(")")
-    K = cfg.get("K", {"left": 12, "center": 10, "right": 12})
+    K = cfg["K"]
     w("private val SEGMENTS = intArrayOf(%s)" % ", ".join(str(K[r]) for r in RIB))
     w("")
     w("private val CHOREO = arrayOf(")
@@ -62,6 +72,8 @@ def gen(variant):
         w("        omega = %s, zeta = %s, sW0 = %s, sW1 = %s, sa0 = %s, sa1 = %s, sf0 = %s, sf1 = %s, st0 = %s, st1 = %s, kp = %s, taper = %s,"
           % (tuple(f(c[k]) for k in ("omega", "zeta", "s_w0", "s_w1", "sa0", "sa1", "sf0", "sf1", "st0", "st1", "kp"))
              + (f(c.get("taper", 0.16)),)))
+        w("        eps = %s, spread = %s, twistLag = %s, drape = %s, v0 = %s,"
+          % (f(c.get("eps", 0.2)), f(c.get("spread", 0.0)), f(c.get("twist_lag", 0.0)), f(c.get("drape", 0.0)), f(c.get("v0", 0.5))))
         w("    ),")
     w(")")
     w("")
@@ -79,8 +91,24 @@ def gen(variant):
     w(")")
     w("private const val SILHOUETTE =")
     w("    \"%s\"" % g["silhouette"])
+    w("// ── END 생성된 상수 ──")
     return "\n".join(out)
 
 
+def splice(variant, kt_path):
+    """EvoOpening.kt 의 BEGIN~END 생성 블록만 바꿔 쓴다."""
+    src = open(kt_path, encoding="utf-8").read()
+    b = src.index("// ── BEGIN 생성된 상수")
+    e = src.index("// ── END 생성된 상수 ──") + len("// ── END 생성된 상수 ──")
+    new = src[:b] + gen(variant) + src[e:]
+    open(kt_path, "w", encoding="utf-8").write(new)
+    return new != src
+
+
 if __name__ == "__main__":
-    print(gen(sys.argv[1] if len(sys.argv) > 1 else "A"))
+    # python3 gen_kotlin_consts.py A [../../compose/EvoOpening.kt]  — 파일을 주면 생성 블록을 바꿔 쓴다
+    v = sys.argv[1] if len(sys.argv) > 1 else "A"
+    if len(sys.argv) > 2:
+        print("changed" if splice(v, sys.argv[2]) else "unchanged")
+    else:
+        print(gen(v))

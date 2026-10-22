@@ -22,8 +22,8 @@ import geom
 import motion
 from motion import FPS, ARTBOARD, LOGO_CENTER, SCREEN_CENTER, UNIT
 
-LIN_O = {"x": [0], "y": [0]}
-LIN_I = {"x": [1], "y": [1]}
+LIN_O = {"x": 0, "y": 0}
+LIN_I = {"x": 1, "y": 1}
 
 
 def rnd(a, nd=1):
@@ -156,8 +156,10 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
     sc = motion.Scene(cfg)
     dur = cfg["duration"]
     nfr = int(round(dur * FPS))
-    lands = sc.land_times()
+    lands = sc.land_times()                       # 완전 정지 → 원본 벡터 레이어로 교체
     land_fr = {r: int(math.ceil(lands[r] * FPS - 1e-6)) for r in lands}
+    marks = sc.land_marks()                       # 눈에 멈춘 시각 → 마커
+    mark_fr = {r: int(math.ceil(marks[r] * FPS - 1e-6)) for r in marks}
 
     # 섹션별 움직임 시작 프레임 (그 전엔 화면 밖 대기 위치에서 정지)
     def start_frame(rname):
@@ -227,7 +229,7 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
                 ov_e.append(p1)
                 ov_g.append([a0, a1])
                 if sid == "04_center_fold":
-                    x = float(np.clip((seg["alpha"] - 0.55) / 0.45, 0, 1))
+                    x = float(np.clip((seg["alpha"] - 0.85) / 0.15, 0, 1))
                     op.append(100 * x * x * (3 - 2 * x))
                 else:
                     op.append(100.0)
@@ -287,9 +289,9 @@ def export(variant, out, step=1, nd=1, tol_path=0.25):
 
     complete = max(h1, b1)
     markers = [
-        {"tm": land_fr["left"], "cm": "land_mint", "dr": 0},
-        {"tm": land_fr["right"], "cm": "land_coral", "dr": 0},
-        {"tm": land_fr["center"], "cm": "land_indigo", "dr": 0},
+        {"tm": mark_fr["left"], "cm": "land_mint", "dr": 0},
+        {"tm": mark_fr["right"], "cm": "land_coral", "dr": 0},
+        {"tm": mark_fr["center"], "cm": "land_indigo", "dr": 0},
         {"tm": complete, "cm": "logo_complete", "dr": 0},
     ]
     doc = {"v": "5.7.4", "fr": FPS, "ip": 0, "op": nfr, "w": ARTBOARD[0], "h": ARTBOARD[1],

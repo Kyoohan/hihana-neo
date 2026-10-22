@@ -1,0 +1,108 @@
+{
+ "timeline": {
+  "variant": "A",
+  "title": "Rough A — Weave",
+  "frames": 390,
+  "fps": 60,
+  "first_visible": {
+   "left": 7,
+   "center": 84,
+   "right": 25
+  },
+  "form_start": {
+   "left": 54,
+   "center": 129,
+   "right": 72
+  },
+  "land": {
+   "left": 143,
+   "center": 207,
+   "right": 161
+  },
+  "rest": {
+   "left": 156,
+   "center": 224,
+   "right": 174
+  },
+  "breath": [
+   198,
+   234,
+   0.022
+  ],
+  "highlight": [
+   211,
+   266
+  ],
+  "complete": 266,
+  "hold_s": 2.066666666666667
+ },
+ "lottie": {
+  "bytes": 1253797,
+  "keys": 2885,
+  "markers": [
+   {
+    "tm": 143,
+    "cm": "land_mint",
+    "dr": 0
+   },
+   {
+    "tm": 161,
+    "cm": "land_coral",
+    "dr": 0
+   },
+   {
+    "tm": 207,
+    "cm": "land_indigo",
+    "dr": 0
+   },
+   {
+    "tm": 266,
+    "cm": "logo_complete",
+    "dr": 0
+   }
+  ],
+  "frames": 390,
+  "land": {
+   "left": 156,
+   "center": 224,
+   "right": 174
+  },
+  "complete": 266
+ },
+ "parity": [
+  "worst path 0.0175, grad 0.0065, shade 0.00000 (logo units)"
+ ],
+ "lottie_android_log": [
+  "[lottie] file=/home/user/hihana-neo/hihana-evo-opening/lottie/opening.json",
+  "[lottie] bounds=1080x2340 fps=60.0 ip=0.0 op=389.99 durationMs=6499.0 layers=14 masksAndMattes=0 hasDashPattern=false",
+  "[lottie] composition warnings (0):",
+  "[lottie] markers (4):",
+  "[lottie-marker] name=land_mint startFrame=143.0 durationFrames=0.0",
+  "[lottie-marker] name=land_coral startFrame=161.0 durationFrames=0.0",
+  "[lottie-marker] name=land_indigo startFrame=207.0 durationFrames=0.0",
+  "[lottie-marker] name=logo_complete startFrame=266.0 durationFrames=0.0",
+  "[lottie] rendered 390 frames (0..389) at 1080x2340 renderMode=HARDWARE into /tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_lottie_android in 10.9 s (27.9 ms/frame)"
+ ],
+ "keyframes": [
+  "00_start_f017.png",
+  "01_ribbons_fly_f047.png",
+  "02_mint_forms_f078.png",
+  "03_coral_forms_f102.png",
+  "04_indigo_weaves_f129.png",
+  "05_indigo_lands_f177.png",
+  "06_breath_highlight_f238.png",
+  "07_final_f389.png"
+ ],
+ "android_vs_web": {
+  "mean_absdiff_max": 0.5025063311174423,
+  "px_over40_max": 0
+ },
+ "compose_log": [
+  "[record] out=/tmp/claude-0/-home-user-hihana-neo/403d47f6-47aa-521c-ae91-e73db07a9bff/scratchpad/harness/out/final_compose fps=60.0 window=0.0..6500.0ms frames=0..390 exactTiming=true qualifiers=en-rUS-ldltr-sw360dp-w360dp-h780dp-normal-long-notround-nowidecg-lowdr-port-notnight-xxhdpi-finger-keyssoft-nokeys-navhidden-nonav-2340x1080",
+  "[record] root capture size=1080x2340",
+  "[record] wrote 391 frames in 21.5 s (54.9 ms/frame; advance 3.0 ms/frame, capture+copy 51.7 ms/frame)",
+  "[record] onFinish called at 6501 ms after the first frame",
+  "[record] decorView=1080x2340",
+  "[record] haptics recorded: AndroidComposeView=4 (CLOCK_TICK=4)"
+ ]
+}

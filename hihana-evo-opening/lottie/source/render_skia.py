@@ -57,7 +57,7 @@ class Renderer:
             for sg in segs:
                 op = 1.0
                 if sid == "04_center_fold":
-                    op = float(np.clip((sg["alpha"] - 0.55) / 0.45, 0, 1))
+                    op = float(np.clip((sg["alpha"] - 0.85) / 0.15, 0, 1))
                     op = op * op * (3 - 2 * op)
                     if op <= 0.001:
                         continue

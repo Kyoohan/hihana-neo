@@ -1,0 +1,6 @@
+# build_deliverables.py 가 compose/EvoOpening.kt 를 (테스트용 internal 가시성으로) 복사해 넣는다
+app/src/main/java/com/skh/hihanaevo/EvoOpening.kt
+local.properties
+build/
+.gradle/
+.kotlin/

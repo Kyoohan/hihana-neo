@@ -215,9 +215,8 @@ def _u_roots(c, gx, gy, g0, level):
     out = []
     for k in range(64):
         t0, t1, f0, f1 = ts[k], ts[k + 1], fs[k], fs[k + 1]
-        if f0 == 0 and 1e-6 < t0 < 1 - 1e-6:
-            out.append(t0)
-        elif f0 * f1 < 0:
+        # 반열린 구간 [t0, t1): 표본점이 정확히 0 이어도 한 번만, float/double 어느 쪽이든 같은 근
+        if (f0 <= 0 < f1) or (f0 >= 0 > f1):
             lo, hi, flo = t0, t1, f0
             for _ in range(40):
                 mid = 0.5 * (lo + hi)
@@ -235,6 +234,7 @@ def _u_roots(c, gx, gy, g0, level):
 def subdivide(cubics, param, levels, max_len=36.0):
     """외곽 베지어를 u 경계(levels)와 최대 길이로 잘게 나눈다 (원래 곡선과 정확히 같은 모양)."""
     gx, gy, g0 = param.u_of_xy_linear(None)
+    levels = [lv for lv in levels if 0 < lv < 1]      # 띠 양 끝(u=0,1)은 외곽선이 접할 뿐이라 나누지 않는다
     out = []
     for c in cubics:
         ts = set()
@@ -300,17 +300,16 @@ def _clip_half(pieces, param, level, keep_below):
     return out
 
 
-def segment_surface(surface, param, cuts, overlap):
+def segment_surface(surface, param, cuts, overlap, max_len=36.0):
     """면을 u 띠 [cut_k - overlap, cut_{k+1}] 로 나눈 세그먼트 리스트.
-    반환: [dict(k, u0, u1, pieces)] — 비어 있는 띠는 건너뛴다."""
-    levels = sorted(set(list(cuts) + [c - overlap for c in cuts[1:-1]]))
-    fine = subdivide(surface["cubics"], param, levels)
+    세그먼트마다 자기 경계에서만 외곽선을 나눠 정점 수를 줄인다. 빈 띠는 건너뛴다."""
     segs = []
     for k in range(len(cuts) - 1):
         lo = cuts[k] - (overlap if k > 0 else 0.0)
         hi = cuts[k + 1]
         lo_c = lo if k > 0 else -1.0
         hi_c = hi if k < len(cuts) - 2 else 2.0
+        fine = subdivide(surface["cubics"], param, [lo, hi], max_len)
         p = _clip_half(fine, param, hi_c, True)
         p = _clip_half(p, param, lo_c, False) if p else []
         if not p:

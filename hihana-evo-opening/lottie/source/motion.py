@@ -59,7 +59,7 @@ class Ribbon:
         u = self.ug
         tp = cfg.get("taper", 0.16)
         self.wf = cfg["wf"] * np.clip(np.minimum(u, 1 - u) / tp, 0.0, 1.0) ** 0.75
-        self.wf = np.maximum(self.wf, cfg["wf"] * 0.08)
+        self.wf = np.maximum(self.wf, cfg["wf"] * 0.02)
 
     # 착지 순서 w(u) ∈ [0, 1]
     def order(self, u):
@@ -68,8 +68,11 @@ class Ribbon:
             return u
         if o == "tail":
             return 1 - u
+        # 가운데부터: 매끈한 |d| (꼭짓점에서 리본이 V 로 꺾이지 않게)
         uc = self.c.get("uc", 0.5)
-        return np.abs(u - uc) / max(uc, 1 - uc)
+        e = self.c.get("eps", 0.2)
+        d = (u - uc) / max(uc, 1 - uc)
+        return (np.sqrt(d * d + e * e) - e) / (math.sqrt(1 + e * e) - e)
 
     def section_time(self, u, t):
         c = self.c
@@ -82,12 +85,20 @@ class Ribbon:
 
     def fields(self, t):
         c, u = self.c, self.ug
+        w = self.order(u)
         s = self.section_time(u, t)
         r = spring(s, c["omega"], c["zeta"], c["s_w0"], c["s_w1"])
         O = cubic(*self.bz, r)
+        g = c.get("spread", 0.0)
+        if g:
+            # 가운데부터 착지하는 리본: 양 끝을 길이 방향으로 벌려 접힌 V 대신 열린 호로 들어오게 (r→1 이면 0)
+            mr = 1 - r
+            O = O + ((mr ** 3 + 3 * mr * mr * r) * g * (u - c.get("uc", 0.5)))[:, None] * (self.p.L * self.p.length)
         alpha = smootherstep(c["sa0"], c["sa1"], s)
         env_f = 1 - smootherstep(c["sf0"], c["sf1"], s)
-        env_t = 1 - smootherstep(c["st0"], c["st1"], s)
+        # 비틀림 풀림 시점을 섹션마다 늦춰(먼저 착지하는 쪽일수록 늦게) 풀림이 리본을 따라 거꾸로 번지게
+        lag = c.get("twist_lag", 0.0) * (1 - w)
+        env_t = 1 - smootherstep(c["st0"] + lag, c["st1"] + lag, s)
         C = self.Sm + O
         T = np.gradient(C, u, axis=0)
         T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-9)
@@ -112,7 +123,17 @@ class Ribbon:
         T = np.stack([ip(F["T"][:, 0]), ip(F["T"][:, 1])], -1)
         T /= np.maximum(np.linalg.norm(T, axis=-1, keepdims=True), 1e-9)
         N = np.stack([T[..., 1], -T[..., 0]], -1)
-        al = ip(F["alpha"])[..., None]
+        lam = self.c.get("drape", 0.0)
+        if lam:
+            # 바깥 가장자리(v0)부터 안쪽으로 내려앉는다: α 를 v 에 따라 조금씩 늦춘다 (끝 단면 근처는 약하게)
+            c = self.c
+            v0 = c.get("v0", 0.5)
+            dv = np.abs(np.clip(v, 0, 1) - v0) / max(v0, 1 - v0)
+            le = lam * smootherstep(0.05, 0.18, np.minimum(u, 1 - u))
+            s = ip(F["s"])
+            al = smootherstep(c["sa0"] + le * (dv - 0.5), c["sa1"] + le * (dv - 0.5), s)[..., None]
+        else:
+            al = ip(F["alpha"])[..., None]
         fl = ip(F["fl"])[..., None]
         th = ip(F["th"])[..., None]
         wf = ip(self.wf)[..., None]
@@ -152,7 +173,9 @@ class SegmentRig:
         n = len(A)
         self.n = n
         # 그라데이션 맞춤용 표본점
-        uu, vv = np.meshgrid(np.linspace(self.u0, self.u1, 5), np.linspace(0.0, 1.0, 4))
+        # 이웃 세그먼트와 표본을 반씩 겹쳐 맞춘다 → 이음선에서 색이 이어진다
+        du = 0.5 * (self.u1 - self.u0)
+        uu, vv = np.meshgrid(np.linspace(max(self.u0 - du, 0.0), min(self.u1 + du, 1.0), 5), np.linspace(0.0, 1.0, 4))
         self.fit_uv = (uu.ravel(), vv.ravel())
         self.fit_P = p.P(*self.fit_uv)
         self.start = surface["start"]
@@ -172,6 +195,14 @@ class SegmentRig:
         ho = self.hout + (Da - D0) / (3 * DT)
         hi = self.hin - (D0[nxt] - Db) / (3 * DT)
         A1 = A[nxt]
+        # 비행 중 끝 단면처럼 크게 눌린 곳은 보정 핸들이 현보다 길어져 '부리'가 생긴다 →
+        # 현 길이의 0.4배로 제한하되 착지(α→1)할수록 제한을 풀어 원본 핸들로 돌아간다
+        al = float(np.interp(0.5 * (self.u0 + self.u1), ribbon.ug, F["alpha"]))
+        ch = np.linalg.norm(A1 - A, axis=1, keepdims=True)
+        for h in (ho, hi):
+            ln = np.linalg.norm(h, axis=1, keepdims=True)
+            sc = np.minimum(1.0, 0.4 * ch / np.maximum(ln, 1e-9))
+            h *= al + (1 - al) * sc
         cub = np.stack([A, A + ho, A1 + hi, A1], axis=1)
         # 그라데이션: 최소제곱 아핀 맞춤 → 시작·끝점 매핑
         Xf = ribbon.X(F, *self.fit_uv)
@@ -194,11 +225,11 @@ class SegmentRig:
 
 
 def shade_of(theta):
-    """비틀림 각 → 검정 덮개 불투명도. 앞면 0, 옆면 0.16, 뒷면 0.42."""
+    """비틀림 각 → 검정 덮개 불투명도. 앞면 0, 옆면 0.16, 뒷면 0.28 ('조금 어둡게')."""
     c = math.cos(theta)
     if c >= 0:
         return 0.16 * (1 - c) ** 1.4
-    return 0.16 + 0.26 * (-c) ** 0.8
+    return 0.16 + 0.12 * (-c) ** 0.8
 
 
 class Scene:
@@ -211,7 +242,7 @@ class Scene:
             ss = [s for s in self.surf.values() if s["ribbon"] == r]
             self.params[r] = geom.RibbonParam(r, ss)
             self.ribbons[r] = Ribbon(r, self.params[r], cfg["ribbons"][r])
-        K = K or cfg.get("K", {"left": 12, "center": 10, "right": 12})
+        K = K or cfg["K"]
         self.rigs = []
         for sid in geom.LAYER_ORDER:
             s = self.surf[sid]
@@ -249,4 +280,26 @@ class Scene:
         return dict(s=c - d * w, e=c + d * w, peak=h["peak"])
 
     def land_times(self):
+        """완전 정지(원본 벡터로 교체 가능) 시각."""
         return {r: rb.land_time() for r, rb in self.ribbons.items()}
+
+    def land_marks(self, tol_px=1.0):
+        """눈에 '멈춘' 시각 = 모든 섹션이 제자리에서 tol_px 안에 들어오고 형태가 완성된 첫 시각 (마커·햅틱)."""
+        out = {}
+        uu = np.linspace(0, 1, 129)
+        for r, rb in self.ribbons.items():
+            t = rb.c["T0"]
+            t_end = rb.land_time()
+            last_bad = t
+            while t <= t_end:
+                F = rb.fields(t)
+                P = rb.p.P(uu, np.full_like(uu, 0.5))
+                X = rb.X(F, uu, np.full_like(uu, 0.5))
+                Xe = rb.X(F, np.concatenate([uu, uu]), np.concatenate([np.zeros_like(uu), np.ones_like(uu)]))
+                Pe = rb.p.P(np.concatenate([uu, uu]), np.concatenate([np.zeros_like(uu), np.ones_like(uu)]))
+                err = max(np.abs(X - P).max(), np.abs(Xe - Pe).max()) * UNIT
+                if err >= tol_px:
+                    last_bad = t
+                t += 1.0 / 240
+            out[r] = last_bad + 1.0 / 240
+        return out
