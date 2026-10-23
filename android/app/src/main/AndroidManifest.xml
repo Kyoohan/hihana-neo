@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 실시간 업데이트(Now Bar·상태 바 칩) — 일반 권한이라 설치 시 부여됩니다 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 삼성 One UI 의 Now Bar 는 이 feature 를 선언한 앱만 "실시간 정보" 목록에 올리고 Now Bar·상태 바 칩에 보여줍니다
+         (Perplexity 등 Now Bar 를 지원하는 서드파티 앱의 매니페스트에서 확인). required=false 라 다른 기기엔 영향 없음 -->
+    <uses-feature android:name="com.samsung.feature.nowbar" android:required="false" />
+    <!-- 위젯 블록 전환을 정확한 시각에 다시 그리기 위한 exact alarm (13+ 에서는 사용자가 설정에서 허용) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 앱 내 업데이트: 받은 APK 를 설치기로 넘기기 위해 필요 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 클래스룸 글 링크를 클래스룸 앱으로 바로 열려면 그 앱이 보여야 합니다(안 보이면 기본 브라우저가 가로챔). -->
+    <queries>
+        <package android:name="com.google.android.apps.classroom" />
+    </queries>
+
+    <application
+        android:name=".HiHanaEvoApplication"
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.HiHanaEvo">
+
+        <!-- 삼성 Now Bar "실시간 정보(Ongoing Activity)" 지원 선언 — 스타벅스·카카오 T 등 Now Bar 에 뜨는 서드파티 앱이
+             모두 갖고 있는 메타데이터. 이게 있어야 알림 설정에 allowOngoingActivity 가 붙어 실시간 알림이 Now Bar 로 갑니다. -->
+        <meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="uiMode"
+            android:theme="@style/Theme.HiHanaEvo" />
+
+        <!-- 앱 아이콘 — 하이하나 Neo 때의 실행 화면 이름(com.yhjang.timetable.MainActivity)을 별칭으로 남깁니다. 런처는 홈 화면
+             아이콘을 이 이름으로 기억해, 이름이 바뀌면 Neo 에서 업데이트한 사람의 아이콘이 사라졌습니다. -->
+        <activity-alias
+            android:name="com.yhjang.timetable.MainActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 클래스룸 연결 웹 앱의 '앱으로 돌아가기'가 여는 자리 — 화면 없이 메인의 클래스룸 칸으로 (GoogleClassroom.kt). -->
+        <activity
+            android:name=".ClassroomLinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="hihananeo" android:host="classroom" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.HiHanaEvo">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name="com.yhjang.timetable.widget.TimeTableWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/evo_widget_info" />
+        </receiver>
+
+        <!-- 진행 막대를 1분 간격으로 다시 그리는 틱(자기 자신을 재예약) + 블록 전환 시각의 exact alarm -->
+        <receiver
+            android:name=".widget.WidgetTickReceiver"
+            android:exported="false" />
+
+        <!-- 실시간 일정(Now Bar) 알림의 1분 틱·구간 경계 알람, 부팅 후 복구 -->
+        <receiver
+            android:name=".LiveActivityReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 게시판 새 글 5분 확인 알람, 부팅 후 다시 걸기 (BoardWatch.kt) -->
+        <receiver
+            android:name=".BoardWatchReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 아침 브리핑 알람(평일 7:00·주말 8:30), 부팅 후 다시 걸기 (MorningBrief.kt) -->
+        <receiver
+            android:name=".MorningBriefReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 앱 내 업데이트로 받은 APK 를 패키지 설치기에 넘기는 content URI 제공자 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

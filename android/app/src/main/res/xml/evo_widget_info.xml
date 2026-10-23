@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  app:widgetStyle · app:widgetSize — 삼성 One UI 7+ 홈이 읽는 표시(문서화되지 않음). 이게 있고 위젯 바탕 뷰(@android:id/background,
+  Glance 의 appWidgetBackground)가 반투명이면, 런처가 그 뒤 배경화면을 직접 흐려 아크릴 판처럼 그립니다. 다른 런처는 무시합니다.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:minWidth="180dp"
+    android:minHeight="115dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="1"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="115dp"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_loading"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:configure="com.skh.hihanaevo.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
+    android:description="@string/app_name"
+    app:widgetStyle="colorful"
+    app:widgetSize="small|wideSmall|medium|large" />

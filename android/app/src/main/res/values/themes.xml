@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Compose One UI 테마의 배경과 같은 톤을 창 배경에도 적용해 첫 프레임 깜빡임을 막습니다 -->
+    <style name="Theme.HiHanaEvo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <!-- Android 12+ 시작 화면 — HiHana Evo 로고(240dp 캔버스, 지름 160dp 안)를 창 배경 위에 바로. -->
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/hihana_splash_icon</item>
+    </style>
+</resources>

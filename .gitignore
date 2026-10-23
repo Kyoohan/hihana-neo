@@ -1,12 +1,13 @@
 # Android / Gradle
-TimeTableAndroid/.gradle/
-TimeTableAndroid/build/
-TimeTableAndroid/*/build/
-TimeTableAndroid/local.properties
-TimeTableAndroid/.idea/
-TimeTableAndroid/.kotlin/
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.idea/
+android/.kotlin/
 *.apk
 *.aab
 
 # macOS
 .DS_Store
+android/app/src/debug/assets/students.bin

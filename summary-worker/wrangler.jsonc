@@ -8,5 +8,7 @@
   "workers_dev": true,
   "ai": { "binding": "AI" },
   "kv_namespaces": [{ "binding": "SUMMARIES", "id": "035d5e8deb934d1abda5dacfff23a839" }],
+  // 클래스룸 중계 암호문 (src/bridge.ts) — 15분마다 쓰기가 많아 KV 대신 D1.
+  "d1_databases": [{ "binding": "BRIDGE", "database_name": "hihana-bridge", "database_id": "5029d8ba-7182-4c72-850e-26dc44886dfd" }],
   "observability": { "enabled": true }
 }

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  개발 빌드(com.skh.hihanaevo.dev)는 Evo 로 바꾼 뒤의 이름을 그대로 씁니다 — 아이콘은 메인 화면에, 위젯은 Evo 수신기에.
+  출시 빌드만 하이하나 Neo 때 이름(별칭·위젯 수신기)을 남겨 둡니다(main 매니페스트). 개발 앱의 홈 화면 아이콘과
+  위젯도 이름으로 기억되어, 같이 바꾸면 폰에 놓아 둔 dev 아이콘·위젯이 깨졌을 것입니다.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!-- 개발 빌드도 디버그 불가로(build.gradle.kts) 빌드하되, 성능 측정(Perfetto·앱 트레이스)은 되게. -->
+        <profileable android:shell="true" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="com.yhjang.timetable.MainActivity"
+            tools:node="remove" />
+
+        <receiver
+            android:name="com.yhjang.timetable.widget.TimeTableWidgetReceiver"
+            tools:node="remove" />
+
+        <receiver
+            android:name=".widget.HiHanaEvoWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/evo_widget_info" />
+        </receiver>
+    </application>
+</manifest>
