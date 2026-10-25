@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -108,7 +107,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skh.hihanaevo.ui.PerformanceMode
-import com.skh.hihanaevo.ui.isDark
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -305,6 +303,8 @@ private object OrbLens {
 @Composable
 internal fun GlassWelcome(
     reveal: () -> Float,
+    /** 밤하늘로 — 앱이 어두운 테마일 때. 투어 자체는 늘 어두운 남색이라 테마를 따로 받습니다. */
+    night: Boolean,
     skipIntro: Boolean,
     onContinue: () -> Unit,
     onLogoBox: (Rect) -> Unit,
@@ -314,7 +314,7 @@ internal fun GlassWelcome(
     val view = LocalView.current
     val density = LocalDensity.current
     val dp = density.density
-    val colors = if (MaterialTheme.colorScheme.isDark) DarkWelcome else LightWelcome
+    val colors = if (night) DarkWelcome else LightWelcome
     val reduceMotion = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
@@ -595,7 +595,8 @@ internal fun GlassWelcome(
     }
 }
 
-private val HeadlineStyle = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Normal, letterSpacing = (-0.3).sp, textAlign = TextAlign.Center)
+/** 헤드라인 — 오프닝 부제와 같은 Pretendard SemiBold(굵고 반듯한 요즘 글꼴), 한글·영문이 한 글꼴. */
+private val HeadlineStyle = TextStyle(fontFamily = PRETENDARD, fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp, textAlign = TextAlign.Center)
 
 /** 타자 치는 글자 — 아직 안 친 글자는 자리만 차지하고(투명) 보이지 않아, 글자를 쳐도 줄이 흔들리지 않습니다. */
 private fun typedText(text: String, count: Int, color: Color) = buildAnnotatedString {
@@ -652,7 +653,7 @@ private fun DrawScope.drawStrike(ink: Color, progress: Float, l: TextLayoutResul
     val y = l.getLineBaseline(0) - HeadlineStyle.fontSize.toPx() * 0.38f
     val over = 1.dp.toPx()
     val x0 = first.left - over
-    drawLine(ink, Offset(x0, y), Offset(x0 + (last.right + over - x0) * progress, y), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
+    drawLine(ink, Offset(x0, y), Offset(x0 + (last.right + over - x0) * progress, y), strokeWidth = 2.2.dp.toPx(), cap = StrokeCap.Round)
 }
 
 /** 아래 주 버튼 — 진한 알약 하나(폭은 화면의 72%, 넓은 화면에선 360dp 까지). 누르는 순간(손 닿자마자) 0.97 로 줄어듭니다. */
@@ -670,7 +671,7 @@ private fun WelcomeButton(text: String, colors: WelcomeColors, width: Dp, onClic
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = colors.ctaText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
+        Text(text, color = colors.ctaText, fontFamily = PRETENDARD, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp)
     }
 }
 

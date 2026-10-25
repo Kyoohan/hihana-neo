@@ -185,6 +185,26 @@ fun OnboardingTour(
     /** 테마·강조색·배경화면 장 — 설정과 같은 값·동작. 고르는 즉시 앱(투어 포함) 색이 바뀝니다. */
     appearance: TourAppearance? = null,
 ) {
+    // 환영 화면의 하늘(낮·밤)은 앱 테마를 따릅니다 — 투어를 오프닝 결(어두운 남색)로 바꾸기 전에 읽어 둡니다.
+    val appDark = MaterialTheme.colorScheme.isDark
+    if (kind == TourKind.WELCOME) {
+        // 처음 설치 투어는 오프닝 애니메이션과 같은 결 — 남색 바탕·로고 세 갈래 색·Pretendard 제목·흰 알약 버튼(EvoTourStyle).
+        EvoTourTheme(accentArgb = appearance?.accentArgb ?: PlanStore.AUTO_ACCENT_COLOR) {
+            CompositionLocalProvider(LocalEvoTour provides true) { TourContent(kind, onFinish, onAccountLinked, appearance, appDark) }
+        }
+    } else {
+        TourContent(kind, onFinish, onAccountLinked, appearance, appDark)
+    }
+}
+
+@Composable
+private fun TourContent(
+    kind: TourKind,
+    onFinish: () -> Unit,
+    onAccountLinked: () -> Unit,
+    appearance: TourAppearance?,
+    appDark: Boolean,
+) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     // 투어를 여는 순간 한 번만 정합니다 — 권한 장에서 허용하자마자 그 장이 사라져 페이지가 밀리지 않게.
@@ -304,8 +324,9 @@ fun OnboardingTour(
         val pagerTopPx = with(density) { (statusTop + 52.dp).toPx() }
         val page = pages[pagerState.currentPage]
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            Box(Modifier.fillMaxSize().then(if (frostedPage) Modifier else Modifier.oneUiPageBackground()), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().then(if (frostedPage || welcome) Modifier else Modifier.oneUiPageBackground()), contentAlignment = Alignment.TopCenter) {
             if (frostedPage) com.skh.hihanaevo.ui.OneUiFrostedPageBackdrop()
+            if (welcome) EvoTourBackdrop(pagePosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction })
             // 태블릿에서는 투어를 손에 쥔 폰 화면 폭 정도로 가운데에 (폰은 그대로 전체 폭).
             Column(
                 Modifier
@@ -416,6 +437,7 @@ fun OnboardingTour(
         // 뒤로 돌아와 다시 보일 땐 처음 연출 없이 끝 장면으로.
         if (welcome && (welcoming || welcomeShown > 0f)) GlassWelcome(
             reveal = { handoff.progress() },
+            night = appDark,
             skipIntro = welcomeSeen,
             onContinue = { welcomeSeen = true; welcoming = false },
             onLogoBox = { handoff.target = it },
@@ -478,9 +500,13 @@ private fun TourDots(count: Int, current: Int) {
                 Modifier
                     .size(width = width, height = 6.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (i == current) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+                    .then(
+                        // 처음 설치 투어는 지금 장 점을 'Evo' 그라데이션으로.
+                        if (i == current && LocalEvoTour.current) Modifier.background(EvoTourBrush)
+                        else Modifier.background(
+                            if (i == current) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+                        ),
                     ),
             )
         }
@@ -489,22 +515,26 @@ private fun TourDots(count: Int, current: Int) {
 
 @Composable
 private fun TourButton(text: String, enabled: Boolean, busy: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // 처음 설치 투어는 남색 위의 흰 알약(오프닝 결), 업데이트 투어는 예전 파란 알약.
+    val evo = LocalEvoTour.current
+    val fill = if (evo) EvoButtonFill else TourBlue
+    val ink = if (evo) EvoButtonText else Color.White
     Row(
         modifier
             .fillMaxWidth()
             .height(54.dp)
             .alpha(if (enabled) 1f else 0.5f)
             .clip(CircleShape)
-            .background(TourBlue)
+            .background(fill)
             .clickable(enabled = enabled && !busy, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (busy) {
-            OneUiLoading(size = 16.dp, stroke = 2.dp, color = Color.White)
+            OneUiLoading(size = 16.dp, stroke = 2.dp, color = ink)
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ink)
     }
 }
 
@@ -514,7 +544,9 @@ private fun TourButton(text: String, enabled: Boolean, busy: Boolean, onClick: (
 private fun ColumnScope.PageHead(eyebrow: String, title: String, desc: String? = null, isNew: Boolean = false) {
     Spacer(Modifier.height(28.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(eyebrow, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        // 처음 설치 투어의 머리말은 'Evo' 그라데이션 글자.
+        if (LocalEvoTour.current) Text(eyebrow, style = evoEyebrowStyle(MaterialTheme.typography.labelLarge))
+        else Text(eyebrow, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
         if (isNew) {
             Spacer(Modifier.width(6.dp))
             Text(
@@ -579,12 +611,14 @@ private fun GrantChip(granted: Boolean, label: String, onClick: () -> Unit) {
             Text("허용됨", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF8FDC6B))
         }
     } else {
+        // 처음 설치 투어는 주 버튼과 같은 흰 알약(남색 위), 업데이트 투어는 파란 알약.
+        val evo = LocalEvoTour.current
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.clip(shape).background(TourBlue).clickable(onClick = onClick).padding(horizontal = 13.dp, vertical = 7.dp),
+            color = if (evo) EvoButtonText else Color.White,
+            modifier = Modifier.clip(shape).background(if (evo) EvoButtonFill else TourBlue).clickable(onClick = onClick).padding(horizontal = 13.dp, vertical = 7.dp),
         )
     }
 }
@@ -1511,6 +1545,8 @@ private fun ColumnScope.ClassroomLinkPage() {
             text = if (pending) "브라우저 다시 열기" else "클래스룸 연결하기",
             onClick = { if (!ClassroomBridge.beginSignIn(context)) android.widget.Toast.makeText(context, "브라우저를 열 수 없습니다", android.widget.Toast.LENGTH_SHORT).show() },
             modifier = Modifier.fillMaxWidth(),
+            // 처음 설치 투어는 아래 흰 주 버튼과 겹치지 않게 남색 위의 옅은 알약으로.
+            style = if (LocalEvoTour.current) com.skh.hihanaevo.ui.OneUiButtonStyle.Neutral else com.skh.hihanaevo.ui.OneUiButtonStyle.Filled,
         )
     }
 }
