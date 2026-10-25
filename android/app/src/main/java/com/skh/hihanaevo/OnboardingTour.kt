@@ -223,8 +223,19 @@ fun OnboardingTour(
     val scope = rememberCoroutineScope()
     var showingPrivacy by remember { mutableStateOf(false) }
     var opening by remember { mutableStateOf(true) }
-    // 두 투어 모두 첫 장이 오프닝 끝 장면을 그대로 그리므로(EvoFinalFrame) 아무것도 옮기지 않고 어두운 바탕만 걷힙니다.
-    val handoff = remember(kind) { EvoHandoff(exact = true, stay = true) }
+    // 처음 투어는 오프닝 다음에 환영 화면(GlassWelcome) — 오프닝의 완성 로고가 유리 구슬 속 표식 자리로 날아가 앉고, 어두운
+    // 바탕이 걷히며 환영 화면이 드러납니다. 업데이트 투어는 예전대로 첫 장이 오프닝 끝 장면을 그대로 그려(EvoFinalFrame)
+    // 아무것도 옮기지 않고 어두운 바탕만 걷힙니다.
+    val welcome = kind == TourKind.WELCOME
+    val handoff = remember(kind) { if (welcome) EvoHandoff(exact = true) else EvoHandoff(exact = true, stay = true) }
+    var welcoming by remember { mutableStateOf(welcome) }
+    var welcomeSeen by remember { mutableStateOf(false) }
+    // 환영 화면 ↔ 투어 첫 장 — 들어올 땐 300ms, 나갈 땐 더 빨리(220ms).
+    val welcomeShown by androidx.compose.animation.core.animateFloatAsState(
+        if (welcoming) 1f else 0f,
+        androidx.compose.animation.core.tween(if (welcoming) 300 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
+        label = "welcome",
+    )
     // 첫 장 — 처음 투어는 앱 전체 개요, 업데이트 투어는 새 기능.
     val evoPage = if (kind == TourKind.UPDATE) TourPage.UPDATE_EVO else TourPage.OVERVIEW
     // 장마다 스크롤 — '다음'은 아직 끝까지 내리지 않았으면 먼저 끝까지 내리고, 한 번 더 눌러야 넘어갑니다.
@@ -255,7 +266,6 @@ fun OnboardingTour(
     // 불투명 서리 바탕을 깔고 글자는 보통 테마색으로. 처음 투어는 늘 기본 배경 — 화면 장에서 사진을 골라도 투어는 그대로
     // (사진 위에선 설명·연습 글이 묻혔습니다). 고른 사진은 투어를 마치면 앱에 보입니다.
     val frostedPage = kind == TourKind.UPDATE
-    val welcome = kind == TourKind.WELCOME
     // 투어는 다른 창이라 카드가 메인 화면의 배경 Haze 를 비출 수 없습니다 — 반투명 색으로.
     CompositionLocalProvider(
         com.skh.hihanaevo.ui.LocalMaterialHazeState provides null,
@@ -267,8 +277,11 @@ fun OnboardingTour(
     Dialog(
         // 다이얼로그 창의 뒤로 가기는 여기로만 옵니다(안쪽 BackHandler 는 액티비티 쪽에 걸려 받지 못했습니다).
         // 앞 장으로만 가고, 첫 장에서는 닫히지 않습니다 — 건너뛸 수 없으니까요 (dev 빌드는 확인하기 편하게 닫힘).
+        // 처음 투어는 환영 화면이 첫 장 앞의 한 장 — 첫 장에서 뒤로 가면 환영 화면으로(연출 없이 끝 장면).
         onDismissRequest = {
-            if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+            if (welcoming) { if (BuildConfig.DEV) onFinish() }
+            else if (pagerState.currentPage > 0) scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+            else if (welcome) welcoming = true
             else if (BuildConfig.DEV) onFinish()
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
@@ -399,6 +412,15 @@ fun OnboardingTour(
             }
             }
         }
+        // 처음 투어의 환영 화면 — 투어 위에 덮여 있다가 '가 볼까요'를 누르면 걷히며 첫 장이 드러납니다.
+        // 뒤로 돌아와 다시 보일 땐 처음 연출 없이 끝 장면으로.
+        if (welcome && (welcoming || welcomeShown > 0f)) GlassWelcome(
+            reveal = { handoff.progress() },
+            skipIntro = welcomeSeen,
+            onContinue = { welcomeSeen = true; welcoming = false },
+            onLogoBox = { handoff.target = it },
+            modifier = Modifier.graphicsLayer { alpha = welcomeShown },
+        )
         if (showingPrivacy) PrivacyScreen(onDismiss = { showingPrivacy = false })
         // 투어 첫 장면 — 리본이 로고로 펼쳐지는 오프닝이 끝나면(또는 누르면) 투어가 드러납니다.
         if (opening) EvoOpening(onFinish = { opening = false }, handoff = handoff)
@@ -432,7 +454,7 @@ fun OnboardingTour(
                         kotlin.math.abs(offset) >= 1f || (opening && handoff.progress() <= 0f) -> 0f
                         c != null && p >= 1f -> ((c.top + c.height * 0.4f - pagerTopPx) / (c.height * 0.4f)).coerceIn(0f, 1f)
                         else -> 1f
-                    }
+                    } * (1f - welcomeShown)   // 환영 화면이 덮여 있는 동안은 첫 장 로고도 숨깁니다(로고는 환영 화면 구슬 속에).
                 },
             )
         }
