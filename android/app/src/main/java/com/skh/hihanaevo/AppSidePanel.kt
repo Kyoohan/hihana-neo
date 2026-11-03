@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -106,6 +107,11 @@ fun AppSidePanel(
     alimUnread: Int,
     onOpenAlim: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** 통합 검색 — 알리미·설정과 같은 아래 묶음 맨 위에. */
+    onOpenSearch: () -> Unit,
+    /** 타임라인 — 홈 바로 아래. 탭이 아니라 콘텐츠 위에 덮이는 화면이라 따로 고른 상태를 받습니다. */
+    timelineSelected: Boolean,
+    onOpenTimeline: () -> Unit,
     showDev: Boolean,
     modifier: Modifier = Modifier,
     opaque: Boolean = false,
@@ -156,8 +162,15 @@ fun AppSidePanel(
         }
         Spacer(Modifier.height(if (compact) 4.dp else 8.dp))
         labels.forEachIndexed { index, label ->
-            PanelItem(label = label, selected = index == selected, labelAlpha = labelAlpha, compact = compact, onClick = { onSelect(index) }) {
-                NavIcon(index, if (index == selected) MaterialTheme.colorScheme.onSurface else onPageVariantColor(), selected = index == selected)
+            val on = index == selected && !timelineSelected
+            PanelItem(label = label, selected = on, labelAlpha = labelAlpha, compact = compact, onClick = { onSelect(index) }) {
+                NavIcon(index, if (on) MaterialTheme.colorScheme.onSurface else onPageVariantColor(), selected = on)
+            }
+            if (index == 0) {
+                PanelItem(label = "타임라인", selected = timelineSelected, labelAlpha = labelAlpha, compact = compact, onClick = onOpenTimeline) {
+                    com.skh.hihanaevo.ui.TabIconFor(com.skh.hihanaevo.ui.EVO_NAV_SLOTS[1], com.skh.hihanaevo.ui.IconStyleStore.style,
+                        if (timelineSelected) MaterialTheme.colorScheme.onSurface else onPageVariantColor(), timelineSelected)
+                }
             }
         }
         if (compact) return@OneUiCard
@@ -167,6 +180,9 @@ fun AppSidePanel(
             thickness = 0.8.dp,
             color = MaterialTheme.colorScheme.outlineVariant,
         )
+        PanelItem(label = "통합 검색", selected = false, labelAlpha = labelAlpha, onClick = onOpenSearch) {
+            Icon(Icons.Default.Search, contentDescription = "통합 검색", tint = onPageVariantColor())
+        }
         PanelItem(label = "알리미", selected = false, labelAlpha = labelAlpha, onClick = onOpenAlim) {
             BadgedBox(badge = {
                 if (alimUnread > 0) {

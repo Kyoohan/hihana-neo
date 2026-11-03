@@ -339,7 +339,7 @@ private fun ScheduleRow(entry: HanaScheduleEntry, times: List<String> = listOfNo
  * 탭하면 그 글(또는 과제)을 엽니다.
  */
 @Composable
-private fun AgendaRow(item: AgendaItem, onOpen: (AgendaItem) -> Unit) {
+internal fun AgendaRow(item: AgendaItem, onOpen: (AgendaItem) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -385,7 +385,7 @@ internal fun scheduleTitle(entry: HanaScheduleEntry): String {
 }
 
 @Composable
-private fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit, selected: Boolean = false) {
+internal fun BoardRow(post: HanaBoardPost, onOpenPost: (HanaBoardPost) -> Unit, selected: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -622,7 +622,7 @@ private fun AlimListBody(
 }
 
 @Composable
-private fun AlimRow(alim: HanaAlim, selected: Boolean = false, maxLines: Int = Int.MAX_VALUE, onMarkRead: () -> Unit = {}, onClick: () -> Unit) {
+internal fun AlimRow(alim: HanaAlim, selected: Boolean = false, maxLines: Int = Int.MAX_VALUE, onMarkRead: () -> Unit = {}, onClick: () -> Unit) {
     val unread = !alim.read
     Row(
         modifier = Modifier

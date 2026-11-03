@@ -34,6 +34,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -228,6 +231,10 @@ internal fun AppInfoScreen(
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) { EvoOpening(onFinish = { easterEgg = null }, handoff = handoff) }
     }
+    // 받는 동안 업데이트 창 — 뒤로 가기로 숨기면 이번 받기 동안은 다시 띄우지 않습니다.
+    var updaterHidden by remember { mutableStateOf(false) }
+    if (updateState !is UpdateState.Downloading) updaterHidden = false
+    (updateState as? UpdateState.Downloading)?.let { if (!updaterHidden) UpdaterWindow(it) { updaterHidden = true } }
     if (showChangelog) {
         ChangelogScreen(
             pending = (updateState as? UpdateState.Available)?.info
@@ -263,6 +270,9 @@ private fun UpdateStatusLine(state: UpdateState) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = color, textAlign = TextAlign.Center)
 }
 
+/** 업데이트 창·버튼의 Evo 리본 세 빛깔(오프닝과 같은 색). */
+private val EVO_RIBBON = listOf(Color(0xFF38EAA8), Color(0xFF5B8CFF), Color(0xFF8C6BFF), Color(0xFFFF5A97))
+
 /** 파란 알약 — 새 버전이 있으면 '업데이트', 아니면 '업데이트 확인'. 확인/다운로드 중엔 스피너와 함께 비활성. */
 @Composable
 private fun UpdateActionButton(state: UpdateState, onCheck: () -> Unit, onInstall: () -> Unit) {
@@ -291,6 +301,101 @@ private fun UpdateActionButton(state: UpdateState, onCheck: () -> Unit, onInstal
             Spacer(Modifier.width(8.dp))
         }
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = scheme.onPrimary)
+    }
+}
+
+/**
+ * 업데이트 창 — 받는 동안 화면 위에 뜨는 유리 카드. 남색 그라데이션 바탕에 이번 버전 로고, 리본 빛깔의 진행 막대(크기를 모를 땐
+ * 빛이 흘러가는 막대), 퍼센트. 뒤로 가기로 숨겨도 받기는 계속되고, 다 받으면 시스템 설치 화면이 열립니다.
+ */
+@Composable
+internal fun UpdaterWindow(state: UpdateState.Downloading, onHide: () -> Unit) {
+    Dialog(onDismissRequest = onHide, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        (androidx.compose.ui.platform.LocalView.current.parent as? DialogWindowProvider)?.window?.setDimAmount(0f)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xE6090A1C), Color(0xE611102B), Color(0xF20A0A18))))
+                .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color(0x558C6BFF), Color.Transparent), radius = 900f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            val shape = androidx.compose.foundation.shape.RoundedCornerShape(32.dp)
+            Column(
+                Modifier
+                    .padding(horizontal = 28.dp)
+                    .widthIn(max = 420.dp)
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.14f), Color.Transparent)))
+                    .border(1.dp, androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.06f))), shape)
+                    .padding(horizontal = 26.dp, vertical = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                VersionLogo(76.dp)
+                Spacer(Modifier.height(18.dp))
+                Text("업데이트 받는 중", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                Spacer(Modifier.height(4.dp))
+                Text("HiHana Evo ${state.info.versionName}", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f))
+                Spacer(Modifier.height(24.dp))
+                RibbonProgress(state.progress)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (state.progress < 0f) "준비하는 중…" else "${(state.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.85f),
+                )
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "다 받으면 설치 화면이 열려요. 뒤로 가기로 이 창을 닫아도 계속 받습니다.",
+                    style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.55f), textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+/** 리본 빛깔 진행 막대 — 유리 홈 안에서 차오르고, 진행을 모를 땐 빛 조각이 왼쪽에서 오른쪽으로 흐릅니다. */
+@Composable
+private fun RibbonProgress(progress: Float) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        progress.coerceIn(0f, 1f), androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 120f), label = "updateProgress",
+    )
+    val sweep = androidx.compose.animation.core.rememberInfiniteTransition(label = "updateSweep")
+    val phase by sweep.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween<Float>(1400, easing = androidx.compose.animation.core.FastOutSlowInEasing)),
+        label = "updateSweepPhase",
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(10.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.12f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.18f), CircleShape),
+    ) {
+        if (progress < 0f) {
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                val w = maxWidth * 0.35f
+                Box(
+                    Modifier
+                        .width(w)
+                        .fillMaxHeight()
+                        .graphicsLayer { translationX = (phase * 1.35f - 0.35f) * this@BoxWithConstraints.maxWidth.toPx() }
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Brush.horizontalGradient(EVO_RIBBON)),
+                )
+            }
+        } else {
+            Box(
+                Modifier
+                    .fillMaxWidth(shown.coerceAtLeast(0.02f))
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(EVO_RIBBON))
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent))),
+            )
+        }
     }
 }
 

@@ -167,7 +167,7 @@ internal fun highlighted(html: String, accent: androidx.compose.ui.graphics.Colo
  * '전체'는 게시판마다 앞의 몇 건씩, 게시판 칩을 고르면 그 게시판의 결과를 20건씩 더 받아 봅니다. 글을 누르면 앱의 게시글 화면.
  */
 @Composable
-fun PortalSearchScreen(onDismiss: () -> Unit, onOpenPost: (url: String, title: String) -> Unit) {
+fun PortalSearchScreen(onDismiss: () -> Unit, onOpenPost: (url: String, title: String) -> Unit, initialQuery: String? = null) {
     val context = LocalContextCompat()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
@@ -233,7 +233,8 @@ fun PortalSearchScreen(onDismiss: () -> Unit, onOpenPost: (url: String, title: S
         }
     }
 
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // 통합 검색에서 검색어를 들고 왔으면 바로 찾고, 아니면 입력을 기다립니다.
+    LaunchedEffect(Unit) { if (initialQuery != null) search(initialQuery) else runCatching { focus.requestFocus() } }
     // 정렬을 바꾸면 고른 게시판(또는 전체의 모든 게시판)의 첫 페이지를 그 정렬로 받습니다.
     LaunchedEffect(order, board, overview) {
         val o = overview ?: return@LaunchedEffect

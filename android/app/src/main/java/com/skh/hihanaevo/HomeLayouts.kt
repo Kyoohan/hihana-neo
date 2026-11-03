@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -182,10 +183,16 @@ internal fun BentoHome(
     onOpenBoardList: () -> Unit,
     onOpenClassroom: () -> Unit,
     onOpenClassroomPost: (ClassroomPost) -> Unit,
+    /**
+     * 넓은 화면(태블릿) — 아이패드 홈과 같게 왼쪽 기둥에 [top]·지금·날씨|시험·[bottom], 오른쪽에 두 기둥. 폰은 한 줄로 위에서부터.
+     */
+    wide: Boolean = false,
+    /** 맨 위 — 아직 안 본 데일리 브리핑. 폰은 호출부가 이 칸 위에 직접 둡니다. */
+    top: @Composable () -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
-    val gap = 12.dp
-    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+    val gap = if (wide) 16.dp else 12.dp
+    val nowSection: @Composable () -> Unit = {
         // 1) 지금
         val block = currentBlock
         if (showRing && block != null && !block.isBlank) {
@@ -201,7 +208,8 @@ internal fun BentoHome(
                 remaining = remainingMinutes?.let(::shortRemaining) ?: "",
             )
         } else fallbackNow(Modifier)
-
+    }
+    val columnsSection: @Composable () -> Unit = {
         // 2) 두 기둥 — 왼쪽 급식·게시판, 오른쪽 클래스룸·오늘 일정. 기둥 안의 위아래만 지금 챙길 것에 따라 바뀝니다([bentoOrder]).
         //    급식·오늘 일정은 둘 중 큰 쪽 높이로, 게시판·클래스룸도 둘 중 큰 쪽 높이로 맞춥니다 — 예전엔 목록 칸이 남는 높이를
         //    따로 채워, 급식 사진이 길면 게시판만 짧아지고 칸 경계가 좌우로 어긋났습니다.
@@ -215,12 +223,29 @@ internal fun BentoHome(
                 BentoSlot.TODAY -> TodayTile(today, todayAgenda, schedule, studentGrade, agendaExtras, onOpenAgenda, onOpenSchedule, Modifier.fillMaxSize())
             }
         }
-
+    }
+    val weatherExam: @Composable () -> Unit = {
         // 3) 날씨 | 시험까지(같은 높이), 그 아래 이미 본 데일리 브리핑. 남은 일정은 타임라인이 보여 주므로 홈에 두지 않습니다.
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
             weather(Modifier.weight(1f).fillMaxHeight())
             ExamTile(today, schedule, Modifier.weight(1f).fillMaxHeight(), onOpenSchedule)
         }
+    }
+    if (wide) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            Column(Modifier.weight(0.42f).widthIn(min = 320.dp, max = 460.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+                top()
+                nowSection()
+                weatherExam()
+                bottom()
+            }
+            Column(Modifier.weight(0.58f)) { columnsSection() }
+        }
+    } else Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+        top()
+        nowSection()
+        columnsSection()
+        weatherExam()
         bottom()
     }
 }
@@ -299,7 +324,7 @@ private fun BentoColumns(left: List<BentoSlot>, right: List<BentoSlot>, gap: Dp,
     }
 }
 
-/** 오늘 일정 — 마감이 있으면 '오늘 마감'과 큰 숫자, 아니면 오늘 일정 수. 오늘이 비면 다음 일정 하나. */
+/** 오늘 일정 — 일반 일정 수와 마감 수를 나란히, 그 아래 둘을 섞은 목록. 오늘이 비면 다음 일정 하나. */
 @Composable
 private fun TodayTile(
     today: LocalDate,
@@ -324,8 +349,12 @@ private fun TodayTile(
         }
         return
     }
-    BentoTile(if (deadlines > 0) "오늘 마감" else "오늘 일정", accent, modifier, onOpenSchedule) {
-        Text("${if (deadlines > 0) deadlines else todayAgenda.size}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.ExtraBold)
+    BentoTile("오늘 일정", accent, modifier, onOpenSchedule) {
+        // 숫자 둘 — 일반 일정과 마감을 따로. 아래 목록은 둘 다 섞어서.
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            TodayCount(todayAgenda.size - deadlines, "일정", null)
+            TodayCount(deadlines, "마감", if (deadlines > 0) Color(0xFFFF6B6B) else null)
+        }
         // 면학감독은 가장 덜 중요해 맨 아래로, 나머지는 마감 먼저·짧은 일정부터.
         todayAgenda.sortedWith(compareBy<AgendaItem> { it.academic?.code == SUPERVISION_CODE }.thenByDescending { it.deadline }.thenBy { it.spanDays }).take(3).forEach { item ->
             Text(
@@ -336,6 +365,17 @@ private fun TodayTile(
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { if (item.academic != null) onOpenSchedule() else onOpenAgenda(item) },
             )
         }
+    }
+}
+
+/** 오늘 일정 칸의 숫자 하나 — 큰 숫자 뒤 같은 줄(글자 바닥선)에 작은 이름. */
+@Composable
+private fun TodayCount(value: Int, label: String, color: Color?) {
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("$value", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.ExtraBold, color = color ?: Color.Unspecified,
+            modifier = Modifier.alignByBaseline())
+        Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = color ?: onPageVariantColor(),
+            modifier = Modifier.alignByBaseline())
     }
 }
 

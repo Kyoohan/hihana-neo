@@ -58,7 +58,9 @@ object MorningBrief {
     private const val KEY_NOTIFIED = "notified_day"
     private const val KEY_SEEN = "seen_day"
     private const val CHANNEL_ID = "morning_brief"
-    private const val NOTIFICATION_ID = 7401
+    // 알림 번호는 실시간 일정(Now Bar, LiveActivity 7401)과 달라야 서로 덮어쓰지 않습니다. 아침 알람의 요청 번호는 그대로(이미 걸린 알람과 같게).
+    private const val NOTIFICATION_ID = 7411
+    private const val REQUEST_ALARM = 7401
     /** 같은 날 일정이 바뀌어도 이보다 자주 AI 로 다시 만들지 않습니다(바뀐 재료는 다음 기회에). */
     private const val MIN_REMAKE_MS = 20 * 60_000L
     private const val MAX_ITEMS = 30
@@ -237,7 +239,8 @@ object MorningBrief {
         }
         val useAi = aiEnabled(app)
         val now = System.currentTimeMillis()
-        if (old != null) {
+        // 형식 예시의 꺾쇠까지 따라 쓴 AI 답(<제목>, 중요 줄 버려짐)으로 만든 것은 다시 만듭니다.
+        if (old != null && !(old.ai && isWrapped(old.headline))) {
             val sameKind = old.ai == useAi
             if (sameKind && old.inputKey == input.key) return@withLock old
             if (sameKind && old.ai && now - old.madeAt < MIN_REMAKE_MS) return@withLock old
@@ -268,12 +271,19 @@ object MorningBrief {
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw IllegalStateException("brief ${response.code}: ${raw.take(200)}")
             val o = JSONObject(raw)
-            val headline = o.optString("headline").trim()
-            val text = o.optString("body").trim()
+            val headline = unwrap(o.optString("headline"))
+            val text = unwrap(o.optString("body"))
             if (headline.isEmpty() || text.isEmpty()) throw IllegalStateException("brief empty")
-            return Brief(today, headline, text, highlights(o.optJSONArray("highlights")), ai = true, inputKey = input.key, madeAt = System.currentTimeMillis())
+            // AI 가 중요 줄을 못 지켰으면(형식이 어긋나 서버가 버림) 기기에서 추린 중요 일정으로 채웁니다.
+            val hl = highlights(o.optJSONArray("highlights")).ifEmpty { local(today, input).highlights }
+            return Brief(today, headline, text, hl, ai = true, inputKey = input.key, madeAt = System.currentTimeMillis())
         }
     }
+
+    private fun isWrapped(s: String): Boolean = s.trim().let { it.startsWith("<") && it.endsWith(">") }
+
+    /** 형식 예시의 꺾쇠까지 따라 쓴 답 — 양끝의 <> 를 벗깁니다. */
+    private fun unwrap(s: String): String = s.trim().let { if (isWrapped(it)) it.substring(1, it.length - 1).trim() else it }
 
     /** AI 없이 — 시험·수행평가 → 마감 → 오늘 일정 → 휴업 순으로 넷까지, 머리는 그중 첫째. */
     private fun local(today: LocalDate, input: Input): Brief {
@@ -320,7 +330,7 @@ object MorningBrief {
         val app = context.applicationContext
         val alarm = app.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pending = PendingIntent.getBroadcast(
-            app, NOTIFICATION_ID, Intent(app, MorningBriefReceiver::class.java),
+            app, REQUEST_ALARM, Intent(app, MorningBriefReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         if (!notifyEnabled(app)) {

@@ -603,9 +603,11 @@ const BRIEF_MAX_ITEMS = 30;
 const BRIEF_SYSTEM = `너는 한국 기숙형 고등학교 학생에게 아침 브리핑을 써 주는 도우미다. 오늘 날짜, 오늘 수업, 오늘부터 7일 동안의 일정 목록을 받는다.
 반드시 아래 형식 그대로, 한국어로만 답한다.
 
-제목: <오늘 아침 가장 먼저 알아야 할 것 하나, 공백 포함 24자 이내>
-브리핑: <두세 문장. 오늘 하루에 무엇이 있는지와, 이번 주에 미리 챙길 것을 이어서 설명>
-중요: <YYYY-MM-DD> | <일정 이름, 20자 이내> | <왜 중요한지 또는 해야 할 일, 28자 이내>
+제목: (오늘 아침 가장 먼저 알아야 할 것 하나, 공백 포함 24자 이내)
+브리핑: (두세 문장. 오늘 하루에 무엇이 있는지와, 이번 주에 미리 챙길 것을 이어서 설명)
+중요: (YYYY-MM-DD) | (일정 이름, 20자 이내) | (왜 중요한지 또는 해야 할 일, 28자 이내)
+
+괄호 안은 쓸 내용의 설명이다 — 괄호·꺾쇠 없이 내용만 쓴다. 예: 중요: 2026-10-27 | 미적분 수행평가 | 3단원 범위 복습
 
 규칙:
 - 중요 줄은 최대 4개, 날짜순이 아니라 중요한 순서로 쓴다: ① 종류가 '시험·수행평가'인 것(며칠 뒤여도 맨 앞) ② 과제 제출·신청 마감
@@ -706,6 +708,12 @@ ${lines.length ? lines.join("\n") : "(없음)"}`;
 
 /** "제목: …", "브리핑: …"(다음 줄까지 이어질 수 있음), "중요: 날짜 | 이름 | 설명" 을 뽑습니다. 7일 밖의 날짜는 버립니다. */
 function parseBrief(raw: string, today: string): { headline: string; body: string; highlights: BriefHighlight[] } | null {
+  // 형식 예시의 꺾쇠·괄호까지 따라 쓴 답(<제목>, <2026-10-25>) — 양끝 감싼 것을 벗깁니다.
+  const unwrap = (v: string) => {
+    const t = v.trim();
+    const m = t.match(/^<\s*([^<>]*?)\s*>$/) ?? t.match(/^\[\s*([^\[\]]*?)\s*\]$/) ?? t.match(/^\(\s*([^()]*?)\s*\)$/);
+    return (m ? m[1] : t).trim();
+  };
   let headline = "";
   const body: string[] = [];
   const highlights: BriefHighlight[] = [];
@@ -716,26 +724,26 @@ function parseBrief(raw: string, today: string): { headline: string; body: strin
     if (!l) continue;
     const head = l.match(/^제목\s*[:：]\s*(.+)$/);
     if (head) {
-      headline = head[1].trim();
+      headline = unwrap(head[1]);
       inBody = false;
       continue;
     }
     const b = l.match(/^브리핑\s*[:：]\s*(.*)$/);
     if (b) {
-      if (b[1].trim()) body.push(b[1].trim());
+      if (unwrap(b[1])) body.push(unwrap(b[1]));
       inBody = true;
       continue;
     }
     const h = l.match(/^(?:[-*•·]\s*)?중요\s*[:：]\s*(.+)$/);
     if (h) {
       inBody = false;
-      const [date, title, ...note] = h[1].split("|").map((c) => c.trim());
+      const [date, title, ...note] = h[1].split("|").map(unwrap);
       if (DATE.test(date ?? "") && date >= today && date <= last && title && highlights.length < 4) {
         highlights.push({ date, title: title.slice(0, 40), note: note.join(" ").slice(0, 60) });
       }
       continue;
     }
-    if (inBody) body.push(l);
+    if (inBody) body.push(unwrap(l));
   }
   if (!headline || body.length === 0) return null;
   return { headline: headline.slice(0, 60), body: body.join(" ").slice(0, 400), highlights };

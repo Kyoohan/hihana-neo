@@ -119,9 +119,15 @@ object ClassroomBridge {
         val p = prefs(context)
         val secret = p.getString(KEY_SECRET, null) ?: randomSecret().also { p.edit().putString(KEY_SECRET, it).apply() }
         pending.value = !p.getBoolean(KEY_CONFIRMED, false)
-        val uri = Uri.parse(SCRIPT_URL).buildUpon()
+        val script = Uri.parse(SCRIPT_URL).buildUpon()
             .appendQueryParameter("k", secret)
             .appendQueryParameter("p", context.packageName)
+            .build()
+        // 브라우저에 학교 계정 로그인이 없으면(개인 계정만 있거나 아무것도 없으면) 웹 앱이 열리지 않았습니다 — Google 계정 고르기를
+        // 거쳐 학교 도메인(hd) 로그인 화면부터 띄운 뒤 웹 앱으로 이어 가게 합니다.
+        val uri = Uri.parse("https://accounts.google.com/AccountChooser").buildUpon()
+            .appendQueryParameter("continue", script.toString())
+            .appendQueryParameter("hd", "hana.hs.kr")
             .build()
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             // androidx.browser 없이 커스텀 탭으로 — 이 extra 가 있으면 크롬이 앱 안의 탭처럼 엽니다(세션 바인더는 없어도 됨).
@@ -277,8 +283,32 @@ data class ClassroomSnapshot(
     val courses: List<ClassroomCourse>,
     val posts: List<ClassroomPost>,
     val fetchedAt: Long,
+    /** 스크립트가 이 내용을 올린 시각(payload 의 at) — 중계 서버에서 받아 온 것만, 샘플·옛 캐시는 null. */
+    val syncedAt: Long? = null,
 ) {
     fun course(id: String): ClassroomCourse? = courses.find { it.id == id }
+
+    /**
+     * 스크립트가 멈춘 듯한지 — 내용이 그대로여도 2시간마다 다시 올리므로(Code.gs REUPLOAD_MS) 그보다 한참 지났으면 이 기기가
+     * 기기 목록에서 밀려났거나 트리거가 사라진 것. 앱은 중계 서버의 옛 사본을 계속 받아 와서 그냥 봐서는 알 수 없습니다.
+     */
+    val stale: Boolean get() = syncedAt != null && System.currentTimeMillis() - syncedAt > STALE_MS
+
+    /** "12분 전 동기화" · "3시간 전 동기화" · "10월 24일 동기화" — 설정의 연결 상태 줄에. */
+    fun syncedLabel(now: Long = System.currentTimeMillis()): String? {
+        val at = syncedAt ?: return null
+        val minutes = (now - at) / 60_000
+        return when {
+            minutes < 1 -> "방금 동기화"
+            minutes < 60 -> "${minutes}분 전 동기화"
+            minutes < 24 * 60 -> "${minutes / 60}시간 전 동기화"
+            else -> java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let { "${it.monthValue}월 ${it.dayOfMonth}일 동기화" }
+        }
+    }
+
+    companion object {
+        const val STALE_MS = 3 * 3_600_000L
+    }
 
     /** 숨긴 수업([ClassroomCourseStore])을 뺀 스냅샷 — 클래스룸 탭 목록·배지·홈 일정이 모두 이걸 씁니다. */
     fun visible(hidden: Set<String>): ClassroomSnapshot =
@@ -349,7 +379,7 @@ object ClassroomApi {
                 attachments = p.optJSONArray("att").objects().mapNotNull { a -> a.optStr("u")?.let { ClassroomAttachment(a.optString("t").ifBlank { it }, it) } },
             )
         }
-        return ClassroomSnapshot(courses, posts.sortedByDescending { it.updated }, System.currentTimeMillis())
+        return ClassroomSnapshot(courses, posts.sortedByDescending { it.updated }, System.currentTimeMillis(), o.optLong("at").takeIf { it > 0 })
     }
 
     /**
@@ -456,6 +486,7 @@ object ClassroomStore {
 
     private fun encode(s: ClassroomSnapshot): String = JSONObject()
         .put("fetchedAt", s.fetchedAt)
+        .put("syncedAt", s.syncedAt ?: JSONObject.NULL)
         .put("courses", JSONArray(s.courses.map { c ->
             JSONObject().put("id", c.id).put("name", c.name).put("section", c.section ?: JSONObject.NULL).put("link", c.link ?: JSONObject.NULL)
         }))
@@ -488,7 +519,7 @@ object ClassroomStore {
                 attachments = if (att == null) emptyList() else (0 until att.length()).map { att.getJSONObject(it) }.map { ClassroomAttachment(it.optString("title"), it.optString("url")) },
             )
         }
-        return ClassroomSnapshot(courses, posts, o.optLong("fetchedAt"))
+        return ClassroomSnapshot(courses, posts, o.optLong("fetchedAt"), o.optLong("syncedAt").takeIf { it > 0 })
     }
 }
 

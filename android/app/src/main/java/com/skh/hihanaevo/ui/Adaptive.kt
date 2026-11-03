@@ -43,13 +43,18 @@ fun centeredSidePadding(maxContent: Dp, minimum: Dp = OneUi.PagePadding): Dp {
 }
 
 /**
- * 840dp 이상(안드로이드 'expanded' 창) — 가로 태블릿·큰 폴드. 이 폭부터는 폰 화면을 늘리지 않고 큰 화면 틀을 씁니다:
+ * 600dp 이상 — 세로 태블릿·펼친 폴드·가로 태블릿. 이 폭부터는 폰 화면을 늘리지 않고 큰 화면 틀을 씁니다(아이패드처럼 세로도):
  * 왼쪽 내비게이션 패널(삼성 시계·캘린더·내 파일과 같은 떠 있는 둥근 패널, 접으면 아이콘 레일), 접히지 않는 헤더,
- * 하단 바·버튼 섬 없음. 세로 태블릿(600~840dp)은 아직 폰 틀입니다.
+ * 하단 바·버튼 섬 없음. 목록 | 본문 두 칸처럼 더 넓어야 하는 것은 따로 폭을 봅니다([isLargeWindow]·contentArea).
  */
 @Composable
 @ReadOnlyComposable
-fun isExpandedWindow(): Boolean = LocalConfiguration.current.screenWidthDp >= 840
+fun isExpandedWindow(): Boolean = LocalConfiguration.current.screenWidthDp >= 600
+
+/** 840dp 이상(안드로이드 'expanded' 창) — 가로 태블릿·큰 폴드. 좌석 배치도를 나란히 펼치는 것처럼 넓어야 하는 곳. */
+@Composable
+@ReadOnlyComposable
+fun isLargeWindow(): Boolean = LocalConfiguration.current.screenWidthDp >= 840
 
 /** [area] 폭 안에서 [maxContent] 폭의 콘텐츠를 가운데 두는 좌우 여백 — 최소 [minimum]. */
 fun sidePaddingIn(area: Dp, maxContent: Dp, minimum: Dp): Dp = maxOf(minimum, (area - maxContent) / 2)

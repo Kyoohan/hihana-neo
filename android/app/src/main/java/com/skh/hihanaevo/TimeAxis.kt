@@ -2,6 +2,7 @@ package com.skh.hihanaevo
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -376,12 +378,22 @@ internal fun TimeAxisScreen(
             }
             Box(Modifier.weight(1f)) {
                 when (scale) {
-                    AxisScale.HOUR -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                        items(days, key = { it.toString() }) { date ->
-                            val (left, right) = dayEntries(date)
-                            HourDay(date, today, now, left, right, allDay(date), onOpenAgenda, onOpenSchedule)
+                    AxisScale.HOUR -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                        if (maxWidth >= 600.dp) {
+                            // 태블릿 가로처럼 넓으면 캘린더의 '여러 날'처럼 날을 나란히 — 시각 눈금 한 줄, 날짜 머리는 위에 고정.
+                            MultiDayHours(
+                                width = maxWidth, today = today, now = now, focusDay = focusDay, resetTick = resetTick, bottom = bottom,
+                                entries = { dayEntries(it) }, allDay = { allDay(it) }, onOpenAgenda = onOpenAgenda, onOpenSchedule = onOpenSchedule,
+                            )
+                        } else {
+                            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                                items(days, key = { it.toString() }) { date ->
+                                    val (left, right) = dayEntries(date)
+                                    HourDay(date, today, now, left, right, allDay(date), onOpenAgenda, onOpenSchedule)
+                                }
+                                item { Spacer(Modifier.height(120.dp + bottom)) }
+                            }
                         }
-                        item { Spacer(Modifier.height(120.dp + bottom)) }
                     }
                     AxisScale.DAY -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items((0..13).map { today.plusDays(it.toLong()) }, key = { it.toString() }) { date ->
@@ -404,7 +416,140 @@ internal fun TimeAxisScreen(
     }
 }
 
-/** 시간 배율의 하루 — 머리(날짜·종일 일정 칩)와 06:30~24:00 축. */
+/** 여러 날 보기에서 날짜 머리(날짜 + 하루 종일 일정 한두 줄)의 고정 높이 — 칸끼리 시각 줄이 맞게. */
+private val DAY_HEADER_DP = 76.dp
+
+/**
+ * 넓은 화면의 시간 배율 — 왼쪽 시각 눈금 한 줄, 오른쪽에 날을 여러 칸(폭에 맞춰 2~5칸) 나란히. 옆으로 밀면 한 칸씩 넘어가고
+ * 위아래는 모든 칸이 함께 스크롤됩니다. 날짜 머리는 위에 고정돼 어느 칸이 무슨 날인지 늘 보입니다.
+ */
+@Composable
+private fun MultiDayHours(
+    width: Dp,
+    today: LocalDate,
+    now: LocalDateTime,
+    focusDay: LocalDate,
+    resetTick: Int,
+    bottom: Dp,
+    entries: (LocalDate) -> Pair<List<AxisEntry>, List<AxisEntry>>,
+    allDay: (LocalDate) -> List<AgendaItem>,
+    onOpenAgenda: (AgendaItem) -> Unit,
+    onOpenSchedule: () -> Unit,
+) {
+    val columns = ((width - GUTTER) / 300.dp).toInt().coerceIn(2, 5)
+    val colW = (width - GUTTER) / columns
+    val days = remember(today) { (-1..13).map { today.plusDays(it.toLong()) } }
+    val rowState = rememberLazyListState(initialFirstVisibleItemIndex = days.indexOf(today).coerceAtLeast(0))
+    val vScroll = androidx.compose.foundation.rememberScrollState()
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    // 처음·'지금으로'·다른 날 고르기 — 그 날을 맨 왼쪽에, 위아래는 지금 시각(오늘) 또는 8시 근처로.
+    LaunchedEffect(focusDay, resetTick) {
+        rowState.scrollToItem(days.indexOf(focusDay).coerceAtLeast(0))
+        val hour = if (focusDay == today) now.hour + now.minute / 60f else 8f
+        vScroll.scrollTo(with(density) { (HOUR_DP * (hour - DAY_START).coerceAtLeast(0f) - 140.dp).roundToPx() }.coerceAtLeast(0))
+    }
+    val first = days.getOrElse(rowState.firstVisibleItemIndex) { today }
+    // 넘기기는 하루씩만 — 놓으면 가까운 날 경계로, 세게 밀어도 한 칸만 더 갑니다(어중간한 자리에 멈추지 않게).
+    val colPx = with(density) { colW.toPx() }
+    val oneDayFling = remember(rowState, colPx) {
+        object : androidx.compose.foundation.gestures.FlingBehavior {
+            override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
+                val index = rowState.firstVisibleItemIndex
+                val offset = rowState.firstVisibleItemScrollOffset.toFloat()
+                val target = when {
+                    initialVelocity > 400f -> index + 1
+                    initialVelocity < -400f -> index
+                    offset > colPx / 2 -> index + 1
+                    else -> index
+                }.coerceIn(0, (days.size - columns).coerceAtLeast(0))
+                val delta = (target - index) * colPx - offset
+                var done = 0f
+                androidx.compose.animation.core.animate(0f, delta, initialVelocity, androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 500f)) { v, _ ->
+                    done += scrollBy(v - done)
+                }
+                return 0f
+            }
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        // 날짜 머리는 아래 칸과 같이 움직이게 — 넘기는 동안 머리가 먼저 바뀌어 어긋나 보이지 않도록 한 칸 더 그려 밀어 둡니다.
+        Row(Modifier.fillMaxWidth().height(DAY_HEADER_DP)) {
+            Spacer(Modifier.width(GUTTER))
+            Box(Modifier.width(width - GUTTER).fillMaxHeight().clipToBounds()) {
+                Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).graphicsLayer { translationX = -rowState.firstVisibleItemScrollOffset.toFloat() }) {
+                    (0..columns).forEach { i ->
+                        val date = first.plusDays(i.toLong())
+                        DayColumnHeader(date, today, allDay(date), onOpenAgenda, onOpenSchedule, Modifier.width(colW))
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().weight(1f).verticalScroll(vScroll)) {
+            MultiDayGutter(now)
+            androidx.compose.foundation.lazy.LazyRow(
+                state = rowState,
+                flingBehavior = oneDayFling,
+                modifier = Modifier.width(width - GUTTER),
+            ) {
+                items(days, key = { it.toString() }) { date ->
+                    val (left, right) = entries(date)
+                    Box(Modifier.width(colW)) {
+                        HourDay(date, today, now, left, right, emptyList(), onOpenAgenda, onOpenSchedule, columnMode = true)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(bottom))
+    }
+}
+
+/** 여러 날 보기 위에 고정된 날짜 머리 한 칸. */
+@Composable
+private fun DayColumnHeader(
+    date: LocalDate, today: LocalDate, allDay: List<AgendaItem>,
+    onOpenAgenda: (AgendaItem) -> Unit, onOpenSchedule: () -> Unit, modifier: Modifier,
+) {
+    val dark = MaterialTheme.colorScheme.isDark
+    Column(modifier.fillMaxHeight().padding(horizontal = 10.dp, vertical = 6.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(dayLabel(date, today), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold,
+            color = if (date == today) pageAccent() else pageInk(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            allDay.take(4).forEach { item ->
+                val color = item.academic?.let { scheduleColor(it.code) } ?: if (item.deadline) Color(0xFFFF6B6B) else item.source.color
+                Text(
+                    agendaTitle(item), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clip(ItemShape).tintFill(color, if (dark) 0.16f else 0.12f)
+                        .clickable { if (item.academic != null) onOpenSchedule() else onOpenAgenda(item) }
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 여러 날 보기의 왼쪽 시각 눈금 — 7:00~23:00 과 지금 시각 알약. */
+@Composable
+private fun MultiDayGutter(now: LocalDateTime) {
+    val scheme = MaterialTheme.colorScheme
+    val hourInk = com.skh.hihanaevo.ui.onPageVariantColor()
+    Box(Modifier.width(GUTTER).height(HOUR_DP * (DAY_END - DAY_START))) {
+        for (h in 7..23) {
+            Text("$h:00", style = MaterialTheme.typography.labelSmall, color = hourInk,
+                modifier = Modifier.offset(x = 4.dp, y = HOUR_DP * (h - DAY_START) - 8.dp).width(GUTTER - 6.dp))
+        }
+        val m = now.hour + now.minute / 60f
+        if (m >= DAY_START) {
+            Text(
+                now.format(hm), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, color = scheme.onPrimary, maxLines = 1, softWrap = false,
+                modifier = Modifier.offset(x = 2.dp, y = HOUR_DP * (m - DAY_START) - 9.dp).clip(RoundedCornerShape(8.dp)).background(scheme.primary).padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
+}
+
+/** 시간 배율의 하루 — 머리(날짜·종일 일정 칩)와 06:30~24:00 축. [columnMode] 면 여러 날 보기의 한 칸(머리·시각 눈금 없이). */
 @Composable
 private fun HourDay(
     date: LocalDate,
@@ -415,13 +560,15 @@ private fun HourDay(
     allDay: List<AgendaItem>,
     onOpenAgenda: (AgendaItem) -> Unit,
     onOpenSchedule: () -> Unit,
+    columnMode: Boolean = false,
 ) {
+    val GUTTER = if (columnMode) 0.dp else GUTTER
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.isDark
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val density = LocalDensity.current
     Column(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!columnMode) Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(dayLabel(date, today), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if (date == today) pageAccent() else pageInk())
             if (allDay.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 allDay.take(6).forEach { item ->
@@ -456,7 +603,7 @@ private fun HourDay(
             val lineInk = pageInk()
             for (h in 7..23) {
                 val yy = HOUR_DP * (h - DAY_START)
-                Text("$h:00", style = MaterialTheme.typography.labelSmall, color = hourInk, modifier = Modifier.offset(x = 4.dp, y = yy - 8.dp).width(GUTTER - 6.dp))
+                if (!columnMode) Text("$h:00", style = MaterialTheme.typography.labelSmall, color = hourInk, modifier = Modifier.offset(x = 4.dp, y = yy - 8.dp).width(GUTTER - 6.dp))
                 Box(Modifier.offset(x = GUTTER, y = yy).width(maxWidth - GUTTER - 4.dp).height(1.dp).background(lineInk.copy(alpha = 0.08f)))
             }
             Box(Modifier.offset(x = GUTTER).width(2.dp).fillMaxSize().background(lineInk.copy(alpha = 0.14f)))
@@ -539,7 +686,7 @@ private fun HourDay(
                 val yy = y(now)
                 Box(Modifier.offset(x = GUTTER - 4.dp, y = yy - 1.dp).width(maxWidth - GUTTER - 4.dp).height(2.dp).background(scheme.primary))
                 Box(Modifier.offset(x = GUTTER - 4.dp, y = yy - 5.dp).size(10.dp).clip(CircleShape).background(scheme.primary))
-                Text(
+                if (!columnMode) Text(
                     now.format(hm),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.ExtraBold,
@@ -690,6 +837,8 @@ internal fun AxisPanel(
     onOpenAlim: () -> Unit,
     onOpenWeather: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** 머리의 돋보기 — 통합 검색. */
+    onOpenSearch: () -> Unit,
     /** 여덟 블록 아래 '바로 가기'로 고를 수 있는 곳 전부 — 무엇을 어떤 순서로 둘지는 [QuickLinkStore]. */
     quickLinks: List<QuickLink> = emptyList(),
 ) {
@@ -707,6 +856,9 @@ internal fun AxisPanel(
         onClosed = onClose,
         photo = true,
         actions = {
+            Box(Modifier.size(40.dp).clip(CircleShape).clickable { go(onOpenSearch) }, contentAlignment = Alignment.Center) {
+                androidx.compose.material3.Icon(AppIcons.Search, contentDescription = "통합 검색", tint = pageInk())
+            }
             Box(Modifier.size(40.dp).clip(CircleShape).clickable { go(onOpenSettings) }, contentAlignment = Alignment.Center) {
                 androidx.compose.material3.Icon(AppIcons.Settings, contentDescription = "설정", tint = pageInk())
             }

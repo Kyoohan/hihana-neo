@@ -306,6 +306,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 폰은 세로로만, 태블릿·펼친 폴드(가장 짧은 변 600dp 이상)는 가로·세로 모두 — 접고 펴면 액티비티가 다시 만들어져 여기서 다시 정합니다.
+        requestedOrientation = if (resources.configuration.smallestScreenWidthDp < 600) {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
         PerformanceMode.load(this)
         NavBarLabels.load(this)
         IconStyleStore.load(this)
@@ -502,6 +508,9 @@ private fun HiHanaEvoAppContent(
     var editingHomeOrder by remember { mutableStateOf(false) }
     var showingPortalSearch by remember { mutableStateOf(false) }
     var showingClassroomSearch by remember { mutableStateOf(false) }
+    var showingUnifiedSearch by remember { mutableStateOf(false) }
+    // 통합 검색에서 '하이하나 전체 글에서 찾기'로 넘긴 검색어 — 하이하나 검색 화면이 열리며 바로 찾습니다.
+    var portalSearchQuery by remember { mutableStateOf<String?>(null) }
     var showingAppInfo by remember { mutableStateOf(false) }
     // 앱 내 업데이트 상태 — 실행 시 한 번(6시간 캐시) 조용히 확인하고, 정보 화면에서 수동 확인/설치합니다.
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -655,6 +664,8 @@ private fun HiHanaEvoAppContent(
         val grade = PlanStore.studentGrade(context)
         // 귀가 기간도 캐시된 학사일정과 지금 학년으로 다시 계산합니다(학년을 바꿨을 때 등).
         HomeStaySchedule.refresh(context)
+        // 외출·외박도 — 그동안의 일과 대신 외출 블록이 홈·위젯에.
+        OutingSchedule.refresh(context)
         weekday1Supervisor = weekday1SupervisionTeachers(
             HanaAcademicRepository.cachedSchedule(context),
             today,
@@ -1275,7 +1286,7 @@ private fun HiHanaEvoAppContent(
     // 상태를 구분하기 위한 값 — 이게 없으면 로딩 중에도 "오늘 일정이 모두 끝났습니다"라는
     // 잘못된 문구가 떠서, 앱이 멈춘 것처럼(화면이 빈 것처럼) 보이는 원인이 됐습니다.
     val hasTimetable = remember(timetableRevision) { Timetable.fetchedWeek() != null }
-    val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision, HomeStaySchedule.revision) {
+    val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision, HomeStaySchedule.revision, OutingSchedule.revision) {
         Timetable.blocks(today) { places[it] }
     }
     // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 밤 9시 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
@@ -1332,6 +1343,8 @@ private fun HiHanaEvoAppContent(
     // 늘 아이콘 레일이고, ≡ 로 펼친 패널은 콘텐츠를 밀지 않고 위에 겹쳐 떴다가 항목을 고르거나 바깥을 누르면 접힙니다
     // (펼친 채 밀면 콘텐츠가 700dp 남짓으로 좁아졌습니다 — 삼성 기본 앱의 세로 화면과 같은 동작).
     val large = isExpandedWindow()
+    // 큰 화면의 타임라인 — 왼쪽 패널 '타임라인'으로 콘텐츠 자리를 덮어 엽니다(폰은 하단 바의 칸).
+    var largeTimeline by rememberSaveable { mutableStateOf(false) }
     // 가로로 눕힌 폰처럼 넓지만 낮은 창 — 왼쪽 패널에 알리미·설정까지 다 들어가지 않으므로 둘은 헤더 버튼 줄로 옮깁니다.
     val shortLarge = large && LocalConfiguration.current.screenHeightDp < 600
     val windowWidth = LocalConfiguration.current.screenWidthDp.dp
@@ -1418,12 +1431,7 @@ private fun HiHanaEvoAppContent(
         }
         val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
         when (target) {
-            // 벤토 홈(폰)은 칸 순서가 정해져 있어 순서 편집을 두지 않습니다.
-            // 홈 카드 순서 편집은 큰 화면(카드 격자)만 — 폰 홈은 칸 자리가 정해져 있습니다.
-            TabIndex.HOME -> if (large) TabButton("카드 순서", { editingHomeOrder = !editingHomeOrder }) {
-                if (editingHomeOrder) Icon(AppIcons.Check, contentDescription = "순서 편집 끝내기")
-                else Icon(AppIcons.Edit, contentDescription = "홈 카드 순서 편집")
-            }
+            // 홈은 폰·태블릿 모두 칸 자리가 정해진 벤토라 순서 편집을 두지 않습니다.
             TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
                 if (editingApplyOrder) Icon(AppIcons.Check, contentDescription = "순서 편집 끝내기")
                 else Icon(AppIcons.Edit, contentDescription = "블록 순서 편집")
@@ -1671,6 +1679,9 @@ private fun HiHanaEvoAppContent(
                     }
                     if (shortLarge) {
                         OneUiActionDivider(gap = 4.dp)
+                        OneUiActionButton(onClick = { showingUnifiedSearch = true }) {
+                            Icon(AppIcons.Search, contentDescription = "통합 검색")
+                        }
                         OneUiActionButton(onClick = { openAlimScreen() }) {
                             BadgedBox(badge = {
                                 if (alimUnread > 0) {
@@ -2171,11 +2182,46 @@ private fun HiHanaEvoAppContent(
     }
     // 큰 화면 왼쪽 패널 — 헤더보다 위 층에 둬야 세로 화면에서 겹쳐 뜬 패널 위로 제목이 비치지 않습니다.
     if (large) {
+        if (largeTimeline) {
+            androidx.activity.compose.BackHandler { largeTimeline = false }
+            Box(Modifier.fillMaxSize().padding(start = panelSpace)) {
+                TimeAxisScreen(
+                    resetTick = timelineReset,
+                    today = today,
+                    now = now,
+                    kindColors = remember(widgetKindColors) { WidgetKindColors.resolve(widgetKindColors) },
+                    mealDays = mealDays,
+                    schedule = scheduleEntries,
+                    studentGrade = studentGrade,
+                    agendaExtras = agendaExtras,
+                    boardPosts = homeBoardPosts,
+                    classroom = classroomSnapshot.takeIf { classroomConnected },
+                    onOpenTab = { target ->
+                        largeTimeline = false
+                        if (target == AXIS_ACADEMIC) { scheduleSubTab = 1; tab = TabIndex.SCHEDULE } else tab = target
+                    },
+                    onOpenPost = { openBoardPost(it) },
+                    onOpenClassroomPost = { openClassroomPost(it, pane = false) },
+                    onOpenAgenda = { openAgenda(it) },
+                    onOpenSchedule = {
+                        largeTimeline = false
+                        scheduleSubTab = 1
+                        tab = TabIndex.SCHEDULE
+                    },
+                )
+            }
+        }
         // 겹쳐 뜬 패널 바깥 — 옅게 가리고, 누르면 접힙니다.
         if (overlayPanel) SidePanelScrim(open = panelOpen, onClose = { panelOpen = false })
         AppSidePanel(
             selected = tab,
+            timelineSelected = largeTimeline,
+            onOpenTimeline = {
+                largeTimeline = true
+                if (overlayPanel) panelOpen = false
+            },
             onSelect = {
+                largeTimeline = false
                 tab = it
                 // 새 탭을 먼저 한 번 그린 뒤에 접습니다 — 무거운 첫 프레임이 접히는 애니메이션 한가운데 끼면 끊겨 보였습니다.
                 if (overlayPanel) scope.launch {
@@ -2192,6 +2238,7 @@ private fun HiHanaEvoAppContent(
             alimUnread = alimUnread,
             onOpenAlim = { if (overlayPanel) panelOpen = false; openAlimScreen() },
             onOpenSettings = { if (overlayPanel) panelOpen = false; settingsStartPage = null; showingSettings = true },
+            onOpenSearch = { if (overlayPanel) panelOpen = false; showingUnifiedSearch = true },
             showDev = false,
             // 콘텐츠 위에 겹쳐 뜰 땐 뒤 글자가 비치지 않게 불투명하게.
             opaque = overlayPanel,
@@ -2202,7 +2249,7 @@ private fun HiHanaEvoAppContent(
     // 오른쪽 위 버튼 섬 하나 — [알리미 · 새로고침 · 설정], 새로고침이 가운데. 헤더가 펼쳐져 있을 땐 배경 없이,
     // 접히면 콘텐츠 위에 뜬 글래스 알약이 됩니다. 학사시스템 연동(계정)은 설정 → 계정·학년으로 옮겼습니다.
     // 타임라인 칸은 자기 머리(날짜·배율)가 있어 홈의 섬을 숨깁니다.
-    // 폰 홈의 버튼 섬 — [알리미 · 설정] 만 오른쪽 끝에. 새로고침은 끌어내리기 하나로만 합니다(버튼이 없으니 날짜가 제목 옆에 들어감).
+    // 폰 홈의 버튼 섬 — [검색 · 알리미 · 설정] 만 오른쪽 끝에. 새로고침은 끌어내리기 하나로만 합니다(버튼이 없으니 날짜가 제목 옆에 들어감).
     if (!large) OneUiActionPill(
         pillAlpha = { ((headerState.fraction - 0.3f) / 0.7f).coerceIn(0f, 1f) },
         modifier = Modifier
@@ -2223,6 +2270,10 @@ private fun HiHanaEvoAppContent(
                 alpha = if (axisPos >= 1f) 0f else 1f
             },
     ) {
+        // 통합 검색 — 알리미 왼쪽.
+        OneUiActionButton(onClick = { showingUnifiedSearch = true }, size = islandButton) {
+            Icon(AppIcons.Search, contentDescription = "통합 검색")
+        }
         OneUiActionButton(onClick = { openAlimScreen() }, size = islandButton) {
             BadgedBox(badge = {
                 if (alimUnread > 0) {
@@ -2323,6 +2374,7 @@ private fun HiHanaEvoAppContent(
             onOpenAlim = { openAlimScreen() },
             onOpenWeather = { axisWeather = true },
             onOpenSettings = { settingsStartPage = null; showingSettings = true },
+            onOpenSearch = { showingUnifiedSearch = true },
             quickLinks = listOf(
                 QuickLink("library", "도서관 좌석", { painterResource(R.drawable.ic_local_library) }, Color(0xFF8E7CFF)) { seatService = SeatService.LIBRARY },
                 QuickLink("study_room", "면학실 좌석", { painterResource(R.drawable.ic_chair) }, Color(0xFF5C7CFA)) { seatService = SeatService.STUDY_ROOM },
@@ -2511,9 +2563,41 @@ private fun HiHanaEvoAppContent(
         )
     }
 
+    // 통합 검색 — 하이하나 검색·글 화면보다 먼저 그려 결과에서 연 것이 이 위에 뜨게.
+    if (showingUnifiedSearch) {
+        UnifiedSearchScreen(
+            schedule = scheduleEntries,
+            studentGrade = studentGrade,
+            agendaExtras = agendaExtras,
+            classroom = classroomSnapshot,
+            alims = alimList,
+            onDismiss = { showingUnifiedSearch = false },
+            onMarkAlimRead = { markAlimRead(it) },
+            onPick = { pick ->
+                when (pick) {
+                    is SearchPick.Portal -> { portalSearchQuery = pick.query; showingPortalSearch = true }
+                    is SearchPick.Board -> openBoardPost(pick.post)
+                    is SearchPick.Alim -> openAlim(pick.alim)
+                    is SearchPick.Classroom -> {
+                        // 큰 화면은 글이 오른쪽 칸에 열리므로 검색을 닫습니다.
+                        if (twoPane) showingUnifiedSearch = false
+                        openClassroomPost(pick.post, pane = twoPane)
+                    }
+                    is SearchPick.Agenda -> if (pick.item.source == AgendaSource.ACADEMIC) {
+                        // 학사일정은 시트라 검색 아래에 깔립니다 — 검색을 닫고 엽니다.
+                        showingUnifiedSearch = false
+                        scheduleSubTab = 1
+                        tab = TabIndex.SCHEDULE
+                    } else openAgenda(pick.item)
+                }
+            },
+        )
+    }
+
     if (showingPortalSearch) {
         PortalSearchScreen(
-            onDismiss = { showingPortalSearch = false },
+            initialQuery = portalSearchQuery,
+            onDismiss = { showingPortalSearch = false; portalSearchQuery = null },
             // 검색 화면은 그대로 두고 그 위에 글을 엽니다 — 닫으면 결과 목록으로 돌아옵니다.
             onOpenPost = { url, title -> boardPost = url to title },
         )
@@ -2858,7 +2942,11 @@ private fun SettingsScreen(
                     OneUiDivider(startIndent = SettingsCategoryIndent)
                     SettingsCategoryRow(
                         page = SettingsPage.CLASSROOM,
-                        summary = if (ClassroomBridge.connected.value == true) "학교 계정 연결됨" else "연결 안 됨",
+                        summary = when {
+                            ClassroomBridge.connected.value != true -> "연결 안 됨"
+                            ClassroomStore.snapshot.value?.stale == true -> "동기화 멈춤 · 다시 연결 필요"
+                            else -> listOfNotNull("학교 계정 연결됨", ClassroomStore.snapshot.value?.syncedLabel()).joinToString(" · ")
+                        },
                         onClick = { page = SettingsPage.CLASSROOM },
                     )
                     OneUiDivider(startIndent = SettingsCategoryIndent)
@@ -3137,7 +3225,7 @@ private fun SettingsScreen(
                                 tint = onPageVariantColor(),
                             )
                         },
-                        onClick = { LiveActivity.openNotificationSettings(context) },
+                        onClick = { reason.open(context) },
                     )
                 }
             }
@@ -3200,10 +3288,26 @@ private fun SettingsScreen(
                         if (!ClassroomBridge.available) {
                             OneUiListItem(title = "이 빌드에서는 지원하지 않음", subtitle = "클래스룸 연결 웹 앱 주소가 들어 있는 빌드에서만 연결할 수 있습니다.")
                         } else if (classroomOn) {
+                            val snap = ClassroomStore.snapshot.value
+                            val stale = snap?.stale == true
                             OneUiListItem(
-                                title = "연결됨",
-                                subtitle = (ClassroomBridge.email(context) ?: "학교 Google 계정") + " · 15분마다 공지·과제를 받아 클래스룸 화면과 홈에, 과제 마감과 공지 속 일정을 학사일정에 보여 줍니다.",
+                                title = if (stale) "동기화가 멈췄습니다" else "연결됨",
+                                subtitle = listOfNotNull(
+                                    ClassroomBridge.email(context) ?: "학교 Google 계정",
+                                    snap?.syncedLabel(),
+                                    if (stale) "15분마다 받아야 하는데 ${ClassroomSnapshot.STALE_MS / 3_600_000}시간 넘게 새로 오지 않았습니다."
+                                    else "15분마다 공지·과제를 받아 클래스룸 화면과 홈에, 과제 마감과 공지 속 일정을 학사일정에 보여 줍니다.",
+                                ).joinToString(" · "),
+                                titleColor = if (stale) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             )
+                            if (stale) {
+                                OneUiDivider()
+                                OneUiListItem(
+                                    title = "다시 연결",
+                                    subtitle = "다른 기기에서 연결하면서 이 기기가 목록에서 밀려났거나 15분 트리거가 사라진 경우입니다. 브라우저에서 '허용'을 다시 누르면 이어서 받습니다.",
+                                    onClick = { if (!ClassroomBridge.beginSignIn(context)) toastText(context, "브라우저를 열 수 없습니다") },
+                                )
+                            }
                             OneUiDivider()
                             OneUiListItem(
                                 title = if (disconnecting) "연결 해제 중" else "연결 해제",

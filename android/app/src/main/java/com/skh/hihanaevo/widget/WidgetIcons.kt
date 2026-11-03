@@ -14,6 +14,19 @@ fun iconResFor(key: String): Int = when (key) {
     "query_stats" -> R.drawable.ic_query_stats
     "translate" -> R.drawable.ic_translate
     "sports_soccer" -> R.drawable.ic_sports_soccer
+    "code" -> R.drawable.ic_code
+    "biotech" -> R.drawable.ic_biotech
+    "public" -> R.drawable.ic_public
+    "music_note" -> R.drawable.ic_music_note
+    "palette" -> R.drawable.ic_palette
+    "history_edu" -> R.drawable.ic_history_edu
+    "paid" -> R.drawable.ic_paid
+    "account_balance" -> R.drawable.ic_account_balance
+    "psychology" -> R.drawable.ic_psychology
+    "map" -> R.drawable.ic_map
+    "groups" -> R.drawable.ic_groups
+    "edit_note" -> R.drawable.ic_edit_note
+    "lightbulb" -> R.drawable.ic_lightbulb
     "free_breakfast" -> R.drawable.ic_free_breakfast
     "meeting_room" -> R.drawable.ic_meeting_room
     "chair" -> R.drawable.ic_chair

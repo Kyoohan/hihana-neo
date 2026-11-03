@@ -194,11 +194,6 @@ internal fun TodayDashboard(
     val morningBrief = MorningBrief.current.value?.takeIf { it.date == today }
     val briefShown = briefItems.isNotEmpty() || morningBrief != null
     val briefTop = briefShown && briefMorning(now)
-    // 큰 화면의 카드 격자 — 오늘 브리프가 보이면 일정 카드는 오늘 몫을 뺍니다.
-    val skipTodayAgenda = briefShown
-    val briefCard: @Composable (Modifier) -> Unit = { m ->
-        TodayBriefCard(today, briefItems, onOpen = { if (it.academic != null) onOpenSchedule() else onOpenAgenda(it) }, modifier = m, brief = morningBrief)
-    }
     // 폰 홈은 오늘 일정을 칸으로 따로 보이므로 데일리 브리핑만 한 장으로. 12:10 전: 안 봤으면 펼쳐 맨 위, 봤으면 접어 맨 위.
     // 그 뒤: 안 봤으면 접어 맨 위, 봤으면 접어 맨 아래. '봤다'는 홈에서 카드가 화면에 1.5초 넘게 보였을 때 — 보는 동안엔 자리를
     // 바꾸지 않고, 앱으로 돌아오거나 다른 화면에서 홈으로 돌아올 때 새로 읽습니다.
@@ -238,70 +233,15 @@ internal fun TodayDashboard(
             },
         )
     }
-    // 나머지 카드는 사용자가 정한 순서대로(헤더의 연필 → 위·아래). '지금' 카드는 늘 맨 위.
-    val cards: List<Pair<String, @Composable (Modifier) -> Unit>> = buildList {
-        homeOrder.forEach { key ->
-            when (key) {
-                // 귀가 기간엔 '지금' 카드가 이미 귀가를 알리므로, 비어 있는 남은 일정 카드는 빼서 같은 말을 되풀이하지 않습니다.
-                HomeOrderStore.UPCOMING -> {
-                    if (!(homeStayIdle && upcomingGroups.isEmpty())) add("upcoming" to { m ->
-                        UpcomingCard(upcomingGroups, supervisor, kindColors, emptyText = "남은 일정이 없습니다", modifier = m)
-                    })
-                    if (briefShown && !briefTop) add("brief" to briefCard)
-                }
-                // 면학 위치는 '오늘 남은 일정'과 같은 내용이라 홈에서는 빼고, 급식을 한 장으로 둡니다.
-                HomeOrderStore.MEAL -> if (!(homeStayIdle && !isLoadingMeals && meals?.items.orEmpty().values.all { it.isEmpty() })) add("meal" to { m ->
-                    MealMiniCard(
-                        meals, allergyCodes, isLoadingMeals,
-                        onClick = { onNavigateToTab(TabIndex.MEAL) },
-                        modifier = m.fillMaxWidth(),
-                    )
-                })
-                // 날씨 — 예전엔 버튼 섬의 해 아이콘이었습니다. 귀가 기간엔 '지금' 카드가 날씨를 보여 주므로 뺍니다.
-                HomeOrderStore.WEATHER -> if (homeStayExtras == null) add("weather" to { m ->
-                    WeatherCard(onOpen = { weatherUntil = java.time.LocalDateTime.MAX }, modifier = m)
-                })
-                HomeOrderStore.BOARD -> add("board" to { m ->
-                    BoardMiniCard(boardPosts, boardCategoryLabel, isLoadingBoard, onOpenPost, onOpenBoardList, modifier = m)
-                })
-                // 폰은 학사일정과 알리미(최근 2건)를 반 폭씩 한 줄에, 큰 화면은 각자 한 칸.
-                HomeOrderStore.SCHEDULE_ALIM -> if (lanes > 1) {
-                    add("schedule" to { m ->
-                        ScheduleMiniCard(schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule, modifier = m.fillMaxWidth(), showExam = homeStayExtras?.exam == null, extras = agendaExtras, onOpenAgenda = onOpenAgenda, skipToday = skipTodayAgenda)
-                    })
-                    add("alim" to { m ->
-                        AlimMiniCard(alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList, limit = 3, modifier = m.fillMaxWidth())
-                    })
-                } else add("schedule_alim" to { m ->
-                    Row(
-                        modifier = m.fillMaxWidth().height(IntrinsicSize.Min),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ScheduleMiniCard(
-                            schedule, today, studentGrade, isLoadingSchedule, onOpenSchedule,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            showExam = homeStayExtras?.exam == null,
-                            extras = agendaExtras,
-                            onOpenAgenda = onOpenAgenda,
-                            skipToday = skipTodayAgenda,
-                        )
-                        AlimMiniCard(
-                            alims, alimUnread, isLoadingAlim, onOpenAlim, onOpenAlimList,
-                            limit = 2,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                    }
-                })
-            }
-        }
-    }
     val gap = if (lanes > 1) 16.dp else 12.dp
-    // 폰 — '지금' 아래 두 기둥(급식·게시판 | 클래스룸·오늘 일정)과 날씨·시험 칸([BentoHome]).
-    if (lanes == 1) {
+    // 폰·태블릿 모두 — '지금' 아래 두 기둥(급식·게시판 | 클래스룸·오늘 일정)과 날씨·시험 칸([BentoHome]).
+    // 태블릿은 아이패드 홈처럼 왼쪽 기둥(브리핑·지금·날씨|시험)과 오른쪽 두 기둥으로 나란히.
+    run {
         Column(modifier = modifier.fillMaxSize().verticalScroll(columnScroll).padding(contentPadding)) {
             // 데일리 브리핑은 맨 위('지금' 위)거나, 이미 봤고 12:10 이 지났으면 맨 아래(날씨·시험 줄 밑).
-            if (dailyBriefTop) dailyBrief(Modifier.padding(bottom = gap))
             BentoHome(
+                wide = lanes > 1,
+                top = { if (dailyBriefTop) dailyBrief(Modifier) },
                 today = today,
                 now = now,
                 currentBlock = currentBlock,
@@ -335,32 +275,6 @@ internal fun TodayDashboard(
                 onOpenClassroom = { onNavigateToTab(TabIndex.CLASSROOM) },
                 onOpenClassroomPost = onOpenClassroomPost,
             )
-        }
-        return
-    }
-    LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(if (lanes > 1) lanes else 2),
-        state = gridState,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = contentPadding,
-        horizontalArrangement = Arrangement.spacedBy(gap),
-        verticalItemSpacing = gap,
-    ) {
-        if (lanes >= 3 && cards.isNotEmpty()) {
-            // 첫 줄: '지금'(두 칸) + 순서상 첫 카드(한 칸), 높이는 둘 중 큰 쪽에 맞춥니다.
-            item(span = StaggeredGridItemSpan.FullLine, key = "now") {
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    Box(Modifier.weight(2f).fillMaxHeight()) { nowCard(Modifier.fillMaxHeight()) }
-                    Box(Modifier.weight(1f).fillMaxHeight()) { cards[0].second(Modifier.fillMaxHeight()) }
-                }
-            }
-            if (briefTop) item(span = StaggeredGridItemSpan.FullLine, key = "brief") { briefCard(Modifier) }
-            cards.drop(1).forEach { (key, card) -> item(key = key) { card(Modifier) } }
-        } else {
-            item(span = StaggeredGridItemSpan.FullLine, key = "now") { nowCard(Modifier) }
-            if (briefTop) item(span = StaggeredGridItemSpan.FullLine, key = "brief") { briefCard(Modifier) }
-            val span = if (lanes > 1) StaggeredGridItemSpan.SingleLane else StaggeredGridItemSpan.FullLine
-            cards.forEach { (key, card) -> item(span = span, key = key) { card(Modifier) } }
         }
     }
 }

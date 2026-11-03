@@ -633,7 +633,16 @@ object HanaAcademicRepository {
         if (!force && stored != null && System.currentTimeMillis() - stored.at <= TTL_EXAMS) {
             return decodeSchedule(stored.value)
         }
-        val fresh = HanaAcademicApi.fetchUpcomingExams(context, scheduleEnd(today).plusDays(1), today.plusDays(75))
+        // 새로 고침 중 실패하거나 잠깐 빈 응답이 와도 받아 둔 시험을 버리지 않습니다 — 버리면 홈이 '다가오는 시험 없음'이 됐습니다.
+        val fresh = try {
+            HanaAcademicApi.fetchUpcomingExams(context, scheduleEnd(today).plusDays(1), today.plusDays(75))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return stored?.let { decodeSchedule(it.value) } ?: throw e
+        }
+        val previous = stored?.let { decodeSchedule(it.value) }.orEmpty()
+        if (fresh.isEmpty() && previous.any { !it.date.isBefore(today) }) return previous
         PlanStore.writeCachedJson(context, name, encodeSchedule(fresh))
         return fresh
     }

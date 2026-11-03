@@ -77,8 +77,17 @@ object LiveActivity {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** 시스템 설정 때문에 실시간 알림이 안 보이는 이유 — 없으면 null. */
-    class BlockedReason(val title: String, val steps: String)
+    /** 시스템 설정 때문에 실시간 알림이 안 보이는 이유 — 없으면 null. [open] 은 눌렀을 때 열 설정 화면. */
+    class BlockedReason(val title: String, val steps: String, val open: (Context) -> Unit = ::openNotificationSettings)
+
+    /**
+     * 삼성 One UI 가 다른 앱의 실시간 정보(Android Live Update)를 Now Bar·상태 바에 올릴지 — 개발자 옵션 '모든 앱의 실시간 정보 보기'.
+     * 꺼져 있으면 시스템은 알림을 promoted 로 표시해 두고도(canPostPromotedNotifications 는 true) 매분 거부해 아이콘만 남깁니다.
+     * One UI 9 업데이트가 이 값을 0 으로 되돌렸습니다. 키가 없는 기기(삼성 아님·옛 One UI)는 켜진 것으로 봅니다.
+     */
+    private fun samsungLiveNotificationsForAllApps(context: Context): Boolean =
+        !Build.MANUFACTURER.equals("samsung", ignoreCase = true) ||
+            runCatching { android.provider.Settings.Secure.getInt(context.contentResolver, "enable_notification_nowbar_test", 1) }.getOrDefault(1) != 0
 
     fun blockedReason(context: Context): BlockedReason? {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -95,6 +104,14 @@ object LiveActivity {
                 "'알람 및 리마인더' 권한이 없으면 절전 중 갱신이 5~15분 미뤄집니다. 위의 위젯 항목에서 권한을 허용해 주세요.",
             )
         }
+        if (Build.VERSION.SDK_INT >= 36 && !samsungLiveNotificationsForAllApps(context)) {
+            return BlockedReason(
+                "Now Bar에 나오지 않습니다",
+                "삼성 폰은 설정 → 개발자 옵션 → '모든 앱의 실시간 정보 보기'를 켜야 Now Bar·상태 바에 나옵니다. " +
+                    "One UI 업데이트 뒤 꺼지기도 합니다. (눌러서 개발자 옵션 열기)",
+                open = ::openDeveloperSettings,
+            )
+        }
         if (Build.VERSION.SDK_INT >= 36 && !manager.canPostPromotedNotifications()) {
             return BlockedReason(
                 "Now Bar 표시가 허용되지 않았습니다",
@@ -103,6 +120,14 @@ object LiveActivity {
             )
         }
         return null
+    }
+
+    /** 개발자 옵션 화면 — 삼성 '모든 앱의 실시간 정보 보기'가 여기 있습니다. 개발자 옵션이 잠겨 있으면 설정 첫 화면으로. */
+    fun openDeveloperSettings(context: Context) {
+        val dev = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(dev) }.onFailure {
+            runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
     }
 
     /** 이 앱의 시스템 알림 설정 화면을 엽니다. */
@@ -273,6 +298,7 @@ object LiveActivity {
             is NextUp.StudyNext -> placeFirst(next.place)
             null -> null
         }
+        is BlockKind.OutingKind -> block.room
         BlockKind.BlankKind -> null
     }
 

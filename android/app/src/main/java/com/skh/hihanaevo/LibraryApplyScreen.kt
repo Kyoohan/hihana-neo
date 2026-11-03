@@ -233,12 +233,14 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     }
 
     LaunchedEffect(Unit) {
-        slots = runCatching { HanaLibraryApi.slots(context, service) }.getOrDefault(emptyList())
-        runCatching { refreshDevice() }
-        // 오늘이 주말·공휴일이면 휴일 타임을, 아니면 평일 타임을 먼저 고릅니다.
+        val all = runCatching { HanaLibraryApi.slots(context, service) }.getOrDefault(emptyList())
+        // 포털 timeList 가 가끔 주중·휴일 타임을 다 줍니다 — 오늘이 주말·공휴일이면 휴일 타임만, 아니면 주중 타임만
+        // (한쪽만 남는 게 없으면 받은 그대로).
         val weekend = Timetable.isRestDay(PlanStore.today())
-        slotId = slots.firstOrNull { it.label.contains("휴일") == weekend }?.id
-            ?: slots.firstOrNull()?.id
+        val fit = all.filter { (it.label.contains("휴일") || it.label.contains("주말")) == weekend }
+        slots = fit.ifEmpty { all }
+        runCatching { refreshDevice() }
+        slotId = slots.firstOrNull()?.id
         if (slotId == null) {
             error = "타임 목록을 불러오지 못했습니다"
             loading = false
@@ -254,7 +256,7 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     }
 
     // 큰 화면(가로 태블릿)은 구역을 여러 개 나란히 — 좌석 칸은 폰과 비슷한 크기로 고정하고 화면을 넓게 씁니다.
-    val wideSeats = isExpandedWindow()
+    val wideSeats = com.skh.hihanaevo.ui.isLargeWindow()
     OneUiFullScreen(
         maxContentWidth = if (wideSeats) 1400.dp else Adaptive.ReadingWidth,
         title = "${service.label} 신청",

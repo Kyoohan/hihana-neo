@@ -676,6 +676,44 @@ private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, m
     val subtext = GlanceTheme.colors.onSurfaceVariant
     val onSurface = GlanceTheme.colors.onSurface
 
+    // 좁은 위젯(2x2, 폭 ~150dp)에선 '교실 · 선생님'처럼 긴 장소가 남는 폭을 다 써서 제목이 0 폭으로 눌렸습니다 — 장소를 제목 아래
+    // 줄로 내립니다. 넓으면 예전처럼 한 줄(제목은 남는 폭에서 줄바꿈, 장소는 자기 폭 먼저).
+    val stacked = room != null && LocalSize.current.width < 200.dp
+    if (stacked) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    provider = ImageProvider(R.drawable.ic_next),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(subtext),
+                    modifier = GlanceModifier.size(14.dp),
+                )
+                Spacer(GlanceModifier.width(4.dp))
+                Text(
+                    text = title,
+                    style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
+                    maxLines = maxLines,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = GlanceModifier.padding(start = 18.dp)) {
+                Image(
+                    provider = ImageProvider(R.drawable.ic_place),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(subtext),
+                    modifier = GlanceModifier.size(12.dp),
+                )
+                Spacer(GlanceModifier.width(3.dp))
+                Text(
+                    text = room!!,
+                    style = TextStyle(color = subtext, fontSize = fontSize, fontWeight = FontWeight.Medium),
+                    maxLines = 1,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+            }
+        }
+        return
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Image(
             provider = ImageProvider(R.drawable.ic_next),
@@ -978,13 +1016,14 @@ object WidgetKindColors {
         Accent.IDLE to 0xFF6B7280.toInt(),
         Accent.AFTER_SCHOOL to 0xFF06B6D4.toInt(),
         Accent.ONE_TWO to 0xFFEAB308.toInt(),
+        Accent.OUTING to 0xFF34B27D.toInt(),
     )
 
     /** 설정에 보이는 순서 — 수업 계열 → 급식 → 면학 장소 → 활동. */
     val ordered: List<Accent> = listOf(
         Accent.LESSON, Accent.FREE, Accent.BREAK_TIME, Accent.IDLE,
         Accent.BREAKFAST, Accent.LUNCH, Accent.DINNER, Accent.SNACK,
-        Accent.STUDY, Accent.LIBRARY, Accent.DORM, Accent.AFTER_SCHOOL, Accent.ONE_TWO,
+        Accent.STUDY, Accent.LIBRARY, Accent.DORM, Accent.AFTER_SCHOOL, Accent.ONE_TWO, Accent.OUTING,
     )
 
     fun label(accent: Accent): String = when (accent) {
@@ -1001,6 +1040,7 @@ object WidgetKindColors {
         Accent.IDLE -> "대기"
         Accent.AFTER_SCHOOL -> "방과후"
         Accent.ONE_TWO -> "1인2기"
+        Accent.OUTING -> "외출·외박"
     }
 
     /** 저장된 사용자 색을 기본 색 위에 덮은 최종 표. */

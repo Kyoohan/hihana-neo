@@ -174,19 +174,43 @@ data class Lesson(val subject: String, val room: String?) {
             return match.groupValues[1].trim() to match.groupValues[2]
         }
 
-    /** 위젯에 표시할 과목별 아이콘 키 — 매칭되는 과목이 없으면 기본값(menu_book)을 씁니다 */
+    /**
+     * 위젯·Now Bar 에 표시할 과목별 아이콘 키 — 하나고 교육과정 편제표(2015·2022 개정, hana.hs.kr/education/curriculum.do)의 모든
+     * 과목이 어느 한 줄에 걸리도록 낱말로 고릅니다. 먼저 맞는 줄이 이기므로 순서가 뜻입니다: "세계 문화와 영어"는 영어, "역사로
+     * 탐구하는 현대 세계"는 역사, "고전역학"은 물리, "세포와 물질대사"는 생명, "법과 사회"는 정치·법, "AP 프로그래밍과 문제해결"은 정보.
+     * 어느 줄에도 없으면 기본값(menu_book).
+     */
     val iconKey: String
-        get() = when {
-            isFree -> "free_breakfast"
-            subject.contains("확률과 통계") -> "casino"
-            subject.contains("미적분") -> "functions"
-            subject.contains("화학") -> "science"
-            subject.contains("물리") -> "bolt"
-            subject.contains("데이터 과학") -> "query_stats"
-            subject.contains("선형대수") || subject.contains("인공지능") -> "smart_toy"
-            subject.contains("영어") -> "translate"
-            subject.contains("스포츠") || subject.contains("체육") -> "sports_soccer"
-            else -> "menu_book"
+        get() {
+            if (isFree) return "free_breakfast"
+            val s = subject
+            fun any(vararg words: String) = words.any { s.contains(it) }
+            return when {
+                any("데이터 과학") -> "query_stats"
+                any("확률과 통계", "통계") -> "casino"
+                any("인공지능", "선형대수", "이산수학") -> "smart_toy"
+                any("프로그래밍", "소프트웨어", "컴퓨터", "컴퓨팅", "자료구조", "알고리즘", "정보") -> "code"
+                any("물리", "역학", "전자기", "양자") -> "bolt"
+                any("생명", "생물", "세포", "유전", "분자") -> "biotech"
+                any("화학", "물질", "유기") -> "science"
+                any("지구", "행성", "우주", "환경") -> "public"
+                any("스포츠", "체육", "운동") -> "sports_soccer"
+                any("음악", "합주", "합창", "연주", "공연") -> "music_note"
+                any("미술", "드로잉", "조형", "디자인") -> "palette"
+                any("영어", "영미", "영문학", "퍼블릭", "스피킹", "중국", "일본") -> "translate"
+                any("한국사", "역사", "세계사", "동아시아사", "지성사") -> "history_edu"
+                any("경제", "금융") -> "paid"
+                any("정치", "국제", "법과 사회", "와 법") -> "account_balance"
+                any("윤리", "철학", "심리", "논리", "사상") -> "psychology"
+                any("지리", "세계", "지역", "글로벌", "비교 문화") -> "map"
+                any("사회") -> "groups"
+                any("미적분", "미분적분", "수학", "대수", "기하", "정수론", "함수론", "수치해석", "문제해결") -> "functions"
+                any("국어", "문학", "독서", "화법", "언어", "작문", "글쓰기", "고전", "논술", "스토리텔") -> "edit_note"
+                any("과학", "실험", "융합", "프런티어", "공학") -> "science"
+                any("교육") -> "school"
+                any("탐구", "R&E", "과제연구", "과제 연구", "프로젝트", "세미나", "토론", "토의") -> "lightbulb"
+                else -> "menu_book"
+            }
         }
 
     companion object {
@@ -199,7 +223,7 @@ data class Lesson(val subject: String, val room: String?) {
 
 // MARK: - 강조 색상 키 (실제 색 매핑은 위젯/컴포즈 쪽에서)
 
-enum class Accent { LESSON, FREE, BREAK_TIME, BREAKFAST, LUNCH, DINNER, SNACK, STUDY, LIBRARY, DORM, IDLE, AFTER_SCHOOL, ONE_TWO }
+enum class Accent { LESSON, FREE, BREAK_TIME, BREAKFAST, LUNCH, DINNER, SNACK, STUDY, LIBRARY, DORM, IDLE, AFTER_SCHOOL, ONE_TWO, OUTING }
 
 // MARK: - 블록 모델
 
@@ -233,7 +257,14 @@ data class Gap(
     val accent: Accent,
 )
 
+/** 외출·외박 구간 — 포털 외출 내역에서(신청·승인·복귀만). */
+data class OutingSpan(val start: LocalDateTime, val end: LocalDateTime, val reason: String?, val pending: Boolean) {
+    val overnight: Boolean get() = start.toLocalDate() != end.toLocalDate()
+}
+
 sealed class BlockKind {
+    /** 외출·외박 — 그동안의 일과 대신. */
+    data class OutingKind(val outing: OutingSpan) : BlockKind()
     data class LessonKind(val period: Int, val lesson: Lesson) : BlockKind()
     data class StudyKind(val session: StudySession, val place: StudyPlace?) : BlockKind()
     data class GapKind(val gap: Gap) : BlockKind()
@@ -248,6 +279,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
             is BlockKind.LessonKind -> if (kind.lesson.isFree) "${kind.period}교시 · 공강" else "${kind.period}교시 수업 중"
             is BlockKind.StudyKind -> kind.session.name
             is BlockKind.GapKind -> kind.gap.label
+            is BlockKind.OutingKind -> (if (kind.outing.overnight) "외박" else "외출") + (if (kind.outing.pending) " · 승인 대기" else "")
             BlockKind.BlankKind -> ""
         }
 
@@ -256,6 +288,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
             is BlockKind.LessonKind -> kind.lesson.title
             is BlockKind.StudyKind -> kind.place?.name ?: "위치 미설정"
             is BlockKind.GapKind -> kind.gap.next?.title ?: kind.gap.fallbackTitle
+            is BlockKind.OutingKind -> kind.outing.reason ?: if (kind.outing.overnight) "외박 중" else "외출 중"
             BlockKind.BlankKind -> ""
         }
 
@@ -269,6 +302,11 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
             is BlockKind.LessonKind -> kind.lesson.place
             is BlockKind.StudyKind -> kind.place?.detail
             is BlockKind.GapKind -> kind.gap.next?.room
+            is BlockKind.OutingKind -> {
+                val back = kind.outing.end
+                (if (back.toLocalDate() == start.toLocalDate()) "" else "${back.monthValue}/${back.dayOfMonth} ") +
+                    back.format(DateTimeFormatter.ofPattern("HH:mm")) + " 복귀"
+            }
             BlockKind.BlankKind -> null
         }
 
@@ -293,6 +331,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
                 is NextUp.StudyNext -> next.place?.iconKey ?: ""
                 null -> ""
             }
+            is BlockKind.OutingKind -> "outing"
             BlockKind.BlankKind -> ""
         }
 
@@ -301,6 +340,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
             is BlockKind.LessonKind -> if (kind.lesson.isFree) Accent.FREE else Accent.LESSON
             is BlockKind.StudyKind -> kind.place?.accent ?: Accent.IDLE
             is BlockKind.GapKind -> kind.gap.accent
+            is BlockKind.OutingKind -> Accent.OUTING
             BlockKind.BlankKind -> Accent.IDLE
         }
 
@@ -309,6 +349,7 @@ data class Block(val kind: BlockKind, val start: LocalDateTime, val end: LocalDa
             is BlockKind.LessonKind -> if (kind.lesson.isFree) "다음 교시까지" else "종료까지"
             is BlockKind.StudyKind -> "종료까지"
             is BlockKind.GapKind -> kind.gap.caption
+            is BlockKind.OutingKind -> "복귀까지"
             BlockKind.BlankKind -> null
         }
 
@@ -499,7 +540,25 @@ object Timetable {
      * 그 남은 부분을 오늘 맨 앞에 붙입니다. 신청이 없으면 평소 블록 그대로입니다.
      */
     fun blocks(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> =
-        applyHomeStay(date, blocksWithMidnight(date, placeFor))
+        applyOutings(date, applyHomeStay(date, blocksWithMidnight(date, placeFor)))
+
+    // ---------- 외출·외박 ----------
+
+    @Volatile private var outings: List<OutingSpan>? = null
+
+    fun installOutings(list: List<OutingSpan>) { outings = list }
+    fun outingsInstalled(): Boolean = outings != null
+
+    /** 외출·외박에 걸치는 블록을 빼고, 그 날에 걸친 만큼의 외출 블록을 넣습니다. */
+    private fun applyOutings(date: LocalDate, blocks: List<Block>): List<Block> {
+        val dayStart = date.atStartOfDay()
+        val dayEnd = dayStart.plusDays(1)
+        val spans = outings.orEmpty().filter { it.start.isBefore(dayEnd) && it.end.isAfter(dayStart) }
+        if (spans.isEmpty()) return blocks
+        val kept = blocks.filter { b -> spans.none { it.start.isBefore(b.end) && b.start.isBefore(it.end) } }
+        val added = spans.map { Block(BlockKind.OutingKind(it), maxOf(it.start, dayStart), minOf(it.end, dayEnd)) }
+        return (kept + added).sortedBy { it.start }
+    }
 
     private fun blocksWithMidnight(date: LocalDate, placeFor: (PlanSlot) -> StudyPlace?): List<Block> {
         val base = baseBlocks(date, placeFor)

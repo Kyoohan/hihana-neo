@@ -77,7 +77,7 @@ fun DevTab(
         OneUiGroupColumn {
             OneUiListItem(
                 title = "새로 설치 투어",
-                subtitle = "개요(오프닝 → 앱 전체 그림) → 새 조작법 → 위젯 … 개인정보 보호 → 권한 → 로그인 → 완료 (이미 허용한 권한이면 그 장은 빠짐 · dev 빌드만 건너뛰기 가능)",
+                subtitle = "오프닝 → 환영 화면(유리 방울) → 개요(앱 전체 그림) → 새 조작법 → 위젯 … 개인정보 보호 → 권한 → 로그인 → 완료 (이미 허용한 권한이면 그 장은 빠짐 · dev 빌드만 건너뛰기 가능)",
                 onClick = { onStartTour(TourKind.WELCOME) },
             )
             OneUiDivider()

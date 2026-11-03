@@ -449,6 +449,8 @@ object HanaTimetableSync {
         MidnightSchedule.ensureInstalled(context)
         // 귀가 기간(학사일정의 귀가·귀교)도 — 그 사이엔 일정이 비어 Now Bar·위젯이 꺼집니다.
         HomeStaySchedule.ensureInstalled(context)
+        // 외출·외박도 — 그동안엔 외출 블록이 대신 보입니다.
+        OutingSchedule.ensureInstalled(context)
         if (Timetable.fetchedWeek() != null) return
         val week = PlanStore.cachedJson(context, NAME_PREFIX + weekKey(date))?.let { TimetableWeek.fromJson(it.value) }
             ?: latest(context)

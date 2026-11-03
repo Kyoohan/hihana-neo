@@ -17,8 +17,11 @@
  */
 
 const WORKER = 'https://hihana-summary.kyoohan0711ultra.workers.dev/bridge/';
-const MAX_DEVICES = 3;
+const MAX_DEVICES = 6;
 const EVERY_MINUTES = 15;
+// 내용이 그대로여도 이만큼 지나면 다시 올립니다 — 올린 시각(at)이 곧 '스크립트가 아직 돈다'는 표시라서, 앱이 멈춤(밀려난 기기·
+// 사라진 트리거)을 알아챕니다. 그 전엔 내용이 바뀔 때만 올려서 열흘 넘게 조용히 옛 내용만 남아도 알 길이 없었습니다.
+const REUPLOAD_MS = 2 * 60 * 60 * 1000;
 
 // MARK: - 웹 앱
 
@@ -30,10 +33,14 @@ function doGet(e) {
     return page('앱에서 연결해 주세요', '하이하나 Neo › 설정 › 게시판 › Google 클래스룸에서 연결을 누르면 이 화면이 다시 열립니다.', null);
   }
   const props = PropertiesService.getUserProperties();
-  const secrets = devices().filter(s => s !== secret).concat([secret]).slice(-MAX_DEVICES);
+  const before = devices();
+  const secrets = before.filter(s => s !== secret).concat([secret]).slice(-MAX_DEVICES);
   props.setProperty('secrets', JSON.stringify(secrets));
+  // 기기 수를 넘겨 밀려난 기기는 서버 사본도 지웁니다(410) — 그 앱이 '다시 연결'을 띄우도록. 예전엔 조용히 옛 내용만 남았습니다.
+  before.filter(s => secrets.indexOf(s) < 0).forEach(s => forget(s, props));
   ensureTrigger();
-  const back = 'intent://classroom#Intent;scheme=hihananeo;package=' + pkg + ';end';
+  // iPhone 앱은 p=ios — 인증 창(ASWebAuthenticationSession)이 hihananeo:// 로 가는 순간 닫히고 앱이 이어받습니다.
+  const back = pkg === 'ios' ? 'hihananeo://classroom' : 'intent://classroom#Intent;scheme=hihananeo;package=' + pkg + ';end';
   try {
     sync();
     return page('연결되었습니다', '앱으로 돌아가면 클래스룸 공지와 과제가 보입니다. 이후에는 ' + EVERY_MINUTES + '분마다 저절로 새로 받습니다.', back);
@@ -74,11 +81,11 @@ function sync() {
   const keep = [];
   list.forEach(secret => {
     const keys = derive(secret);
-    const sentKey = 'h_' + keys.id;
+    const sentKey = 'h_' + keys.id, atKey = 't_' + keys.id;
     const opts = { muteHttpExceptions: true, headers: { 'x-app': 'hihana-neo', 'x-hash': hash } };
     let res;
-    if (props.getProperty(sentKey) === hash) {
-      // 내용이 그대로면 살아 있는지만 — 404(서버에서 지워짐)면 아래에서 다시 올립니다.
+    if (props.getProperty(sentKey) === hash && Number(props.getProperty(atKey) || 0) > Date.now() - REUPLOAD_MS) {
+      // 내용이 그대로고 올린 지 얼마 안 됐으면 살아 있는지만 — 404(서버에서 지워짐)면 아래에서 다시 올립니다.
       res = UrlFetchApp.fetch(WORKER + keys.id + '?ping=1', opts);
     }
     if (!res || res.getResponseCode() === 404) {
@@ -86,9 +93,12 @@ function sync() {
       opts.contentType = 'text/plain';
       opts.payload = seal(plain, keys);
       res = UrlFetchApp.fetch(WORKER + keys.id, opts);
-      if (res.getResponseCode() < 300) props.setProperty(sentKey, hash);
+      if (res.getResponseCode() < 300) {
+        props.setProperty(sentKey, hash);
+        props.setProperty(atKey, String(Date.now()));
+      }
     }
-    if (res.getResponseCode() === 410) props.deleteProperty(sentKey);
+    if (res.getResponseCode() === 410) { props.deleteProperty(sentKey); props.deleteProperty(atKey); }
     else keep.push(secret);
   });
   props.setProperty('secrets', JSON.stringify(keep));
@@ -154,6 +164,18 @@ function attempt(fn) {
 
 function devices() {
   try { return JSON.parse(PropertiesService.getUserProperties().getProperty('secrets') || '[]'); } catch (err) { return []; }
+}
+
+/** 목록에서 밀려난 기기 — 서버 사본을 지워(앱은 다음 읽기에서 410 → 다시 연결) 기억해 둔 해시·시각도 지웁니다. */
+function forget(secret, props) {
+  const keys = derive(secret);
+  try {
+    UrlFetchApp.fetch(WORKER + keys.id, { method: 'delete', muteHttpExceptions: true, headers: { 'x-app': 'hihana-neo' } });
+  } catch (err) {
+    console.warn(err);
+  }
+  props.deleteProperty('h_' + keys.id);
+  props.deleteProperty('t_' + keys.id);
 }
 
 function ensureTrigger() {

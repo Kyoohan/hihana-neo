@@ -478,7 +478,7 @@ private fun TodoRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDat
 }
 
 @Composable
-private fun StreamRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDateTime, unread: Boolean, selected: Boolean, onClick: () -> Unit) {
+internal fun StreamRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDateTime, unread: Boolean, selected: Boolean, onClick: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().background(rowBackground(selected)).clickable(onClick = onClick).padding(horizontal = OneUi.RowPadding, vertical = 14.dp),
     ) {

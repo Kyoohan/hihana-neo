@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -263,6 +264,27 @@ internal class EvoHandoff(val exact: Boolean, val stay: Boolean = false) {
 /** 완성된 로고의 테두리(로고 단위) — 첫 장 로고 자리에 맞춰 놓을 때 씁니다. */
 private val LOGO_BOUNDS by lazy {
     android.graphics.RectF().also { r -> SURFACES.forEach { s -> val b = android.graphics.RectF(); s.finalPath.computeBounds(b, true); r.union(b) } }
+}
+
+/**
+ * 완성된 로고를 [box] 안에 꼭 맞게, 가운데에 — 오프닝이 첫 장 로고 자리([EvoHandoff.target], exact)로 옮겨 가 앉을 때와
+ * 같은 계산이라, 오프닝이 끝나고 이걸로 바꿔 그려도 한 픽셀도 움직이지 않습니다. 환영 화면 유리 구슬 속 표식이 씁니다.
+ */
+internal fun DrawScope.drawEvoLogo(box: androidx.compose.ui.geometry.Rect, paint: Paint) {
+    val b = LOGO_BOUNDS
+    val unit = min(box.width / b.width(), box.height / b.height())
+    drawIntoCanvas { c ->
+        val n = c.nativeCanvas
+        n.save()
+        n.translate(box.center.x, box.center.y)
+        n.scale(unit, unit)
+        n.translate(-b.centerX(), -b.centerY())
+        for (sf in SURFACES) {
+            paint.shader = sf.finalShader
+            n.drawPath(sf.finalPath, paint)
+        }
+        n.restore()
+    }
 }
 
 /** 오프닝 끝 장면의 로고 위 끝과 글자 두 줄 아래 끝(px, 화면 기준) — 업데이트 투어 첫 장이 그 아래에 내용을 둘 때. 글자 두 줄 높이는 대략값. */

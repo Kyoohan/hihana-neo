@@ -7,6 +7,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+/** 개발자 빌드 번호 — 이 저장소의 커밋 수(iOS 빌드 번호와 같은 값). git 이 없으면 gradle.properties 의 devBuild. */
+val devBuildNumber: String = runCatching {
+    providers.exec { commandLine("git", "-C", rootProject.projectDir.absolutePath, "rev-list", "--count", "HEAD") }
+        .standardOutput.asText.get().trim().takeIf { it.toIntOrNull() != null }
+}.getOrNull() ?: (project.findProperty("devBuild") as? String ?: "0")
+
 android {
     namespace = "com.skh.hihanaevo"
     compileSdk = 37
@@ -17,8 +23,8 @@ android {
         applicationId = "com.yhjang.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 140
-        versionName = "14.0"
+        versionCode = 142
+        versionName = "14.2"
 
         // 앱 내 업데이트가 최신 릴리스를 읽을 GitHub 저장소(owner/repo). gradle.properties 의 updateRepo 로 지정하며,
         // 비어 있으면 업데이트 확인을 건너뜁니다.
@@ -56,14 +62,15 @@ android {
         debug {
             // 설치 ID 는 아래 androidComponents 에서 com.skh.hihanaevo.dev 로.
             versionNameSuffix = "-dev"
-            // 개발자 빌드 번호(gradle.properties 의 devBuild) — 새로 빌드해 설치할 때마다 1씩.
-            buildConfigField("int", "DEV_BUILD", (project.findProperty("devBuild") as? String ?: "0"))
+            // 개발자 빌드 번호 — 커밋 수로 저절로 올라갑니다(위 devBuildNumber).
+            buildConfigField("int", "DEV_BUILD", devBuildNumber)
             buildConfigField("boolean", "DEV", "true")
             resValue("string", "app_name", "HiHana Evo (dev)")
             // 디버그 가능 앱은 ART 가 최적화를 끄고 돌려 같은 코드가 출시 빌드보다 2~3배 느렸습니다(시트 처음 열기 60~90ms →
             // 20~35ms, 프레임당 메인 스레드 4.7 → 2.3ms, S25+). 느낌을 출시 빌드와 맞추려고 끕니다 — 디버거 붙이기·run-as 는
-            // 안 되고, 성능 측정은 profileable(src/debug 매니페스트)로.
-            isDebuggable = false
+            // 안 되고, 성능 측정은 profileable(src/debug 매니페스트)로. 알파 테스터 목록을 읽을 때(tools/build_alpha.py)만
+            // -Pdebuggable 로 켜서 설치합니다.
+            isDebuggable = providers.gradleProperty("debuggable").isPresent
             buildConfigField("String", "UPDATE_REPO", "\"\"")
         }
         release {
