@@ -19,6 +19,12 @@
             </intent-filter>
         </activity>
 
+        <!-- 위젯 미리보기 — 상황 × 크기 격자 (dev 빌드에만, adb 로 엽니다). -->
+        <activity
+            android:name=".widget.WidgetPreviewActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <activity-alias
             android:name="com.yhjang.timetable.MainActivity"
             tools:node="remove" />

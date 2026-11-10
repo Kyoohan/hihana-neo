@@ -199,22 +199,25 @@ fun AcademicTab(
         topContent?.let { content -> item { content() } }
 
         if (subTab == 0) {
-            if (scheduleError != null) {
-                item { AcademicErrorBlock(scheduleError, onRetrySchedule, onOpenAccount) }
-            } else {
+            // 학사일정을 못 받아도(로그인 전·오류) 내 일정·게시글·클래스룸 일정은 그 아래에 그대로 보입니다 — 예전엔 목록 전체가
+            // 오류 안내로 바뀌어 직접 추가한 일정까지 사라졌습니다.
+            if (scheduleError != null) item { AcademicErrorBlock(scheduleError, onRetrySchedule, onOpenAccount) }
+            run {
                 val today = PlanStore.today()
-                // 학사일정 + 게시글에서 뽑은 일정 + 클래스룸 과제 마감을 날짜순 한 목록으로. 2주 넘게 이어지는 상시 안내는
+                // 학사일정 + 게시글에서 뽑은 일정 + 클래스룸 과제 마감 + 내 일정을 날짜순 한 목록으로. 2주 넘게 이어지는 상시 안내는
                 // 몇 달 전 시작일 머리로 목록 맨 위를 차지해 뺍니다(타임라인·홈에는 그대로).
-                val merged = Agenda.merge(schedule, studentGrade, agendaExtras, today).filterNot { it.longRunning }
+                val merged = Agenda.merge(if (scheduleError != null) emptyList() else schedule, studentGrade, agendaExtras, today).filterNot { it.longRunning }
 
-                examDday(schedule, today)?.let { exam ->
-                    item { ExamDdayCard(exam) }
-                }
+                if (scheduleError == null) {
+                    examDday(schedule, today)?.let { exam ->
+                        item { ExamDdayCard(exam) }
+                    }
 
-                if (scheduleLoading && merged.isEmpty()) {
-                    item { LoadingBlock() }
-                } else if (merged.isEmpty()) {
-                    item { ScheduleEmptyBlock(onRetrySchedule) }
+                    if (scheduleLoading && merged.isEmpty()) {
+                        item { LoadingBlock() }
+                    } else if (merged.isEmpty()) {
+                        item { ScheduleEmptyBlock(onRetrySchedule) }
+                    }
                 }
 
                 merged.groupBy { it.date }.forEach { (date, items) ->
@@ -343,7 +346,8 @@ internal fun AgendaRow(item: AgendaItem, onOpen: (AgendaItem) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (item.url != null) Modifier.clickable { onOpen(item) } else Modifier)
+            // 내 일정은 주소가 없어도 눌러서 고칩니다.
+            .then(if (item.url != null || item.source == AgendaSource.MINE) Modifier.clickable { onOpen(item) } else Modifier)
             .padding(horizontal = OneUi.RowPadding, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -669,6 +673,7 @@ internal fun AlimRow(alim: HanaAlim, selected: Boolean = false, maxLines: Int = 
  * android.webkit.CookieManager 로 복사한 뒤 로드해야 로그인된 페이지가 뜹니다.
  * 실패하면 "브라우저로 열기" 폴백을 제공합니다.
  */
+@android.annotation.SuppressLint("ClickableViewAccessibility")
 @Composable
 fun BoardDetailScreen(
     url: String,
@@ -739,6 +744,13 @@ fun BoardDetailScreen(
                             // 그러면 크로미움이 "높이 미정"으로 보고 페이지의 100vh 를 0 으로 계산합니다 — 포털 모달
                             // (교과교실 신청 등)이 높이 0 으로 접혀 머리글만 보이던 원인. MATCH_PARENT 로 고정합니다.
                             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                            // 시트(EvoSheet)의 내용 영역엔 '끌어내려 닫기'가 걸려 있어, 웹뷰를 세로로 끄는 손가락을 시트가
+                            // 가로채 페이지가 스크롤되지 않았습니다(위로는 아무 일 없고 아래로는 시트가 내려감 — 알리미·신청 페이지).
+                            // 손이 닿는 순간 부모에게 가로채지 말라고 알려 웹뷰가 끌기를 모두 받습니다. 시트는 머리를 끌어 닫습니다.
+                            setOnTouchListener { v, event ->
+                                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) v.parent?.requestDisallowInterceptTouchEvent(true)
+                                false
+                            }
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             // 포털이 세션을 UA 에 묶을 수 있어 OkHttp 와 같은 UA 로 맞춥니다.

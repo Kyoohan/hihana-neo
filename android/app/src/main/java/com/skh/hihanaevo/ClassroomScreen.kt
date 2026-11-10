@@ -8,6 +8,8 @@ import androidx.compose.ui.draw.shadow
 import com.skh.hihanaevo.ui.FrostOpacity
 import com.skh.hihanaevo.ui.PerformanceMode
 import com.skh.hihanaevo.ui.oneUiFrostedBackdrop
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -190,6 +192,7 @@ internal fun ClassroomTab(
     val scope = rememberCoroutineScope()
     LaunchedEffect(resetTick) { scroll.scrollTo(0) }
     var page by rememberSaveable(state.courseFilter) { mutableIntStateOf(0) }
+    var todoOpen by rememberSaveable { mutableStateOf(false) }
     // 쪽을 바꾸면 '스트림' 제목으로 — 그 위치(스크롤 안 y).
     var streamTop by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
@@ -234,10 +237,14 @@ internal fun ClassroomTab(
                 if (state.error != null) {
                     Text("새로 받지 못해 마지막 받은 내용입니다 · ${state.error}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
                 }
+                if (snapshot.needsReconnect) ClassroomReconnectCard(onConnect)
                 if (todo.isNotEmpty()) {
-                    OneUiSectionTitle("할 일 ${todo.size}")
-                    OneUiGroup(items = todo, modifier = Modifier.padding(vertical = 4.dp)) { post ->
-                        TodoRow(post, snapshot.course(post.courseId), now, selected = post.id == selectedId) { onOpen(post) }
+                    // 오래된 미제출 과제가 쌓여 스트림이 한참 밀려서 — 처음엔 개수만, 눌러야 펼칩니다(앱을 다시 켜면 다시 접힘).
+                    TodoHeader(todo.size, todoOpen) { todoOpen = !todoOpen }
+                    AnimatedVisibility(todoOpen, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                        OneUiGroup(items = todo, modifier = Modifier.padding(vertical = 4.dp)) { post ->
+                            TodoRow(post, snapshot.course(post.courseId), now, selected = post.id == selectedId) { onOpen(post) }
+                        }
                     }
                 }
                 if (posts.isEmpty()) {
@@ -449,12 +456,53 @@ private fun ClassroomConnectCard(onConnect: () -> Unit, onRetry: () -> Unit, pen
     }
 }
 
+/** 접히는 '할 일' 제목 — 섹션 제목 줄에 개수 배지와 펼침 화살표. 줄 전체를 누릅니다. */
+@Composable
+internal fun TodoHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val arrow by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow), label = "todoArrow")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(OneUi.CornerMedium))
+            .clickable(onClickLabel = if (open) "할 일 접기" else "할 일 펼치기", onClick = onToggle)
+            .padding(start = OneUi.RowPadding, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("할 일", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = onPageVariantColor())
+        Spacer(Modifier.width(8.dp))
+        OneUiBadge("$count")
+        Spacer(Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = onPageVariantColor(), modifier = Modifier.graphicsLayer { rotationZ = arrow })
+    }
+}
+
+/** 과제 권한이 빠진 연결([ClassroomSnapshot.needsReconnect]) — 같은 비밀키로 웹 앱을 다시 열면 Google 이 새 권한만 묻습니다. */
+@Composable
+private fun ClassroomReconnectCard(onConnect: () -> Unit) {
+    OneUiCard(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_school), contentDescription = null, tint = ClassroomGreen, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("과제를 보려면 한 번 더 허용해 주세요", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "지금은 공지만 받고 있어요. 과제를 읽는 권한이 빠진 채로 연결됐기 때문이에요. 다시 연결해서 학교 계정으로 허용을 누르면 몇 분 안에 과제와 제출 상태가 보여요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = onPageVariantColor(),
+        )
+        Spacer(Modifier.height(14.dp))
+        OneUiButton(text = "다시 연결", onClick = onConnect)
+    }
+}
+
 @Composable
 private fun rowBackground(selected: Boolean) =
     if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
 
 @Composable
-private fun TodoRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDateTime, selected: Boolean, onClick: () -> Unit) {
+internal fun TodoRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDateTime, selected: Boolean, onClick: () -> Unit) {
     val overdue = post.due != null && post.due.isBefore(now)
     Row(
         Modifier.fillMaxWidth().background(rowBackground(selected)).clickable(onClick = onClick).padding(horizontal = OneUi.RowPadding, vertical = 12.dp),

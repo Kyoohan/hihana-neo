@@ -1,9 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Chronometer xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_countdown"
+<!--
+  위젯 카운트다운 — 앞에 작은 설명("종료까지", "다음 수업까지")을 붙여, 큰 숫자 "23:40"이 시각(밤 11시 40분)이 아니라 남은 시간으로
+  읽히게 합니다. 숫자와 설명은 같은 글자 바닥선에 맞춥니다.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:includeFontPadding="false"
-    android:textSize="30sp"
-    android:textStyle="bold"
-    android:textColor="#E2E8F0" />
+    android:baselineAligned="true"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/widget_countdown_caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="6dp"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textSize="12sp" />
+
+    <Chronometer
+        android:id="@+id/widget_countdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:textSize="30sp"
+        android:textStyle="bold"
+        android:textColor="#E2E8F0" />
+</LinearLayout>

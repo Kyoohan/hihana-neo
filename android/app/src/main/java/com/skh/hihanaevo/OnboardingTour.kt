@@ -1,5 +1,6 @@
 package com.skh.hihanaevo
 
+import androidx.compose.material.icons.filled.Add
 import com.skh.hihanaevo.ui.OneUiBadge
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -126,10 +127,18 @@ import kotlinx.coroutines.withContext
  * 권한을 이미 모두 허용했으면 권한 장은 처음부터 빠집니다. 로그인 장은 항상 있고, 이미 연동돼 있으면 '이미 연결됨'을 보여 줍니다.
  * 권한은 허용하지 않고 넘어갈 수 있고, 로그인은 '나중에'로 미룰 수 있습니다.
  */
-enum class TourKind { WELCOME, UPDATE }
+enum class TourKind {
+    WELCOME,
+    /** 14.0(Evo) 투어를 아직 안 본 사람 — 13.x 이하에서 바로 올라온 경우. */
+    UPDATE,
+    /** 14.0 투어는 봤고 이번 버전(14.3)에서 새로 생긴 것만 — 오프닝 없이 몇 장. */
+    WHATS_NEW,
+}
 
 /** 이 버전의 투어 — 앱을 열 때 이 값보다 작게 기록돼 있으면 한 번 보여 줍니다 (새로 설치는 새로 설치 투어, 업데이트는 업데이트 투어). */
-const val TOUR_VERSION = 140
+const val TOUR_VERSION = 143
+/** Evo 개편 투어(14.0) — 이보다 작게 기록된 사람은 개편 투어부터. */
+private const val EVO_TOUR_VERSION = 140
 private const val TOUR_PREFS = "prompts"
 private const val KEY_TOUR_VERSION = "tourVersion"
 
@@ -139,7 +148,11 @@ fun pendingTour(context: android.content.Context): TourKind? {
     if (seen >= TOUR_VERSION) return null
     val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
     val fresh = info == null || info.firstInstallTime == info.lastUpdateTime
-    return if (fresh) TourKind.WELCOME else TourKind.UPDATE
+    return when {
+        fresh -> TourKind.WELCOME
+        seen < EVO_TOUR_VERSION -> TourKind.UPDATE
+        else -> TourKind.WHATS_NEW
+    }
 }
 
 fun markTourSeen(context: android.content.Context) {
@@ -161,6 +174,8 @@ private enum class TourPage {
     UPDATE_BRIEF,
     /** 배경 사진을 쓰던 사람에게만 — 사진을 그대로 둘지, 새 기본 배경으로 바꿀지. */
     UPDATE_BACKGROUND,
+    /** 14.3 — 클래스룸 과제·할 일(사실상 처음 보이는 기능), 내 일정, 자세한 날씨, 그 밖에. */
+    NEW143_CLASSROOM, NEW143_MY_EVENTS, NEW143_WEATHER, NEW143_MORE,
 }
 
 /** 투어의 원 아이콘 색 — 설정 첫 화면과 같은 One UI 9 설정 색. */
@@ -229,6 +244,8 @@ private fun TourContent(
                         // 표지 다음은 대표 기능 둘 — 클래스룸, 데일리 브리핑 — 그다음 조작법과 화면별.
                         TourPage.UPDATE_EVO, TourPage.UPDATE_GCLASSROOM, TourPage.UPDATE_BRIEF,
                         TourPage.NAVIGATE, TourPage.PRACTICE, TourPage.UPDATE_HOME, TourPage.UPDATE_TIMELINE, TourPage.UPDATE_AGENDA,
+                        // 14.3 에서 생긴 것 중 개편 투어에 없는 둘.
+                        TourPage.NEW143_MY_EVENTS, TourPage.NEW143_WEATHER,
                         TourPage.UPDATE_ALERTS, TourPage.UPDATE_ICONS,
                     ),
                 )
@@ -237,12 +254,22 @@ private fun TourContent(
                 if (needsPermissions) add(TourPage.PERMISSIONS)
                 if (ClassroomBridge.available) add(TourPage.CLASSROOM_LINK)
             }
+            TourKind.WHATS_NEW -> buildList {
+                add(TourPage.NEW143_CLASSROOM)
+                add(TourPage.NEW143_MY_EVENTS)
+                add(TourPage.NEW143_WEATHER)
+                add(TourPage.NEW143_MORE)
+                if (needsPermissions) add(TourPage.PERMISSIONS)
+                // 아직 클래스룸을 연결하지 않았으면 끝에 연결 장 — 과제를 보려면 연결이 먼저라서.
+                if (ClassroomBridge.available && !ClassroomBridge.isConnected(context)) add(TourPage.CLASSROOM_LINK)
+            }
         }
     }
     val pagerState = rememberPagerState { pages.size }
     val scope = rememberCoroutineScope()
     var showingPrivacy by remember { mutableStateOf(false) }
-    var opening by remember { mutableStateOf(true) }
+    // 리본 오프닝은 처음 설치·Evo 개편 투어만 — 작은 업데이트 투어는 바로 첫 장부터.
+    var opening by remember { mutableStateOf(kind != TourKind.WHATS_NEW) }
     // 처음 투어는 오프닝 다음에 환영 화면(GlassWelcome) — 오프닝의 완성 로고가 유리 구슬 속 표식 자리로 날아가 앉고, 어두운
     // 바탕이 걷히며 환영 화면이 드러납니다. 업데이트 투어는 예전대로 첫 장이 오프닝 끝 장면을 그대로 그려(EvoFinalFrame)
     // 아무것도 옮기지 않고 어두운 바탕만 걷힙니다.
@@ -257,7 +284,11 @@ private fun TourContent(
         label = "welcome",
     )
     // 첫 장 — 처음 투어는 앱 전체 개요, 업데이트 투어는 새 기능.
-    val evoPage = if (kind == TourKind.UPDATE) TourPage.UPDATE_EVO else TourPage.OVERVIEW
+    val evoPage = when (kind) {
+        TourKind.WELCOME -> TourPage.OVERVIEW
+        TourKind.UPDATE -> TourPage.UPDATE_EVO
+        TourKind.WHATS_NEW -> null
+    }
     // 장마다 스크롤 — '다음'은 아직 끝까지 내리지 않았으면 먼저 끝까지 내리고, 한 번 더 눌러야 넘어갑니다.
     val pageScrolls = remember(pages) { pages.map { androidx.compose.foundation.ScrollState(0) } }
     // 업데이트 투어 첫 장 — 오프닝이 끝나면 끝 장면(로고·글자)이 살짝 위로 떠오르고, 그 아래로 새 기능 목록이 차례로 올라옵니다.
@@ -285,7 +316,7 @@ private fun TourContent(
     // 업데이트 투어는 글이 길고 이미 고른 사진 위에 뜹니다 — 사진 위 회색 설명이 밝은 곳에서 묻혀, 정보·변경 사항 화면처럼
     // 불투명 서리 바탕을 깔고 글자는 보통 테마색으로. 처음 투어는 늘 기본 배경 — 화면 장에서 사진을 골라도 투어는 그대로
     // (사진 위에선 설명·연습 글이 묻혔습니다). 고른 사진은 투어를 마치면 앱에 보입니다.
-    val frostedPage = kind == TourKind.UPDATE
+    val frostedPage = kind != TourKind.WELCOME
     // 투어는 다른 창이라 카드가 메인 화면의 배경 Haze 를 비출 수 없습니다 — 반투명 색으로.
     CompositionLocalProvider(
         com.skh.hihanaevo.ui.LocalMaterialHazeState provides null,
@@ -401,6 +432,10 @@ private fun TourContent(
                             TourPage.UPDATE_MORE -> UpdateMorePage()
                             TourPage.UPDATE_BACKGROUND -> UpdateBackgroundPage(appearance)
                             TourPage.UPDATE_BRIEF -> UpdateBriefPage()
+                            TourPage.NEW143_CLASSROOM -> New143ClassroomPage()
+                            TourPage.NEW143_MY_EVENTS -> New143MyEventsPage()
+                            TourPage.NEW143_WEATHER -> New143WeatherPage()
+                            TourPage.NEW143_MORE -> New143MorePage()
                             TourPage.NAVIGATE -> NavigatePage()
                             TourPage.PRACTICE -> PracticePage(onDone = { practiced = true })
                         }
@@ -448,7 +483,7 @@ private fun TourContent(
         if (opening) EvoOpening(onFinish = { opening = false }, handoff = handoff)
         // 업데이트 투어 첫 장 — 오프닝 끝 장면(로고·'HiHana Evo'·'Neo를 넘어 Evo로')이 바탕이 걷히는 동안 줄어들며 벤토의
         // 가운데 타일로 들어갑니다. 화면 전체 좌표라 페이저 밖에 두고, 가운데 타일의 자리(넘기기·스크롤 포함)를 따라갑니다.
-        run {
+        if (evoPage != null) run {
             val evoIndex = pages.indexOf(evoPage)
             EvoFinalFrame(
                 // 오프닝의 흰 글자에서 투어 글자색으로 — 바탕이 걷히는 만큼.
@@ -1989,5 +2024,197 @@ private fun ColumnScope.UpdateMorePage() {
         TourRow(painterResource(R.drawable.ic_meal), TourOrange, "보던 끼니부터", "홈 급식 칸을 누르면 그 칸에 보이던 끼니(저녁이면 저녁)부터 열립니다.")
         RowGap()
         TourRow(rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.Search), TourViolet, "교과교실 현황 한눈에", "교과교실 현황이 건물 '전체'부터 보여, 학교 전체 신청을 교실별로 바로 볼 수 있습니다.")
+    }
+}
+
+// MARK: - 14.3 새 기능 투어 — 14.0 투어를 본 사람에게 이번 버전에서 생긴 것만([TourKind.WHATS_NEW]). 그림은 실제 화면 부품
+// (할 일 줄·스트림 줄·시간별 띠·지표 칸)에 예시 값을 넣어 그립니다. 제목은 명사형, 설명은 문장.
+
+@Composable
+private fun ColumnScope.New143ClassroomPage() {
+    val context = LocalContext.current
+    PageHead(
+        "클래스룸",
+        "클래스룸 과제와 할 일",
+        "그동안은 권한 문제로 과제가 빠지고 공지만 보였습니다. 이제 과제도 받아 옵니다. 아직 내지 않은 과제는 '할 일'에 마감이 가까운 순서로 모이고 " +
+            "남은 날이 D-day로 붙습니다. 낸 과제에는 제출 여부와 받은 점수가 보이고, 과제 마감은 홈·타임라인·일정에도 함께 올라갑니다.",
+        isNew = true,
+    )
+    val now = remember { java.time.LocalDateTime.now() }
+    val english = ClassroomCourse("tour-en", "심화영어독해1 2분반", null, null)
+    val calculus = ClassroomCourse("tour-ca", "2026-2 미적분2 (7분반)", null, null)
+    val todo = remember(now) {
+        listOf(
+            ClassroomPost(
+                "tour-w1", calculus.id, ClassroomKind.WORK, "3단원 탐구 보고서", "", null, now.minusDays(3), now.minusDays(3),
+                due = now.toLocalDate().plusDays(1).atTime(23, 59),
+            ),
+            ClassroomPost(
+                "tour-w2", english.id, ClassroomKind.WORK, "Worksheet ch. 7 제출", "", null, now.minusDays(1), now.minusDays(1),
+                due = now.toLocalDate().plusDays(4).atTime(8, 30),
+            ),
+        )
+    }
+    val handedIn = remember(now) {
+        ClassroomPost(
+            "tour-w3", english.id, ClassroomKind.WORK, "Worksheet ch. 6 제출", "Worksheet의 A & B를 수업 전에 풀어 오세요", null,
+            now.minusDays(6), now.minusDays(2), due = now.toLocalDate().minusDays(2).atTime(8, 30), maxPoints = 20.0, submitted = true, grade = 18.0,
+        )
+    }
+    fun course(post: ClassroomPost) = if (post.courseId == english.id) english else calculus
+    TourCaption("할 일 — 처음엔 개수만 보이고, 누르면 펼쳐집니다")
+    var open by remember { mutableStateOf(true) }
+    TodoHeader(todo.size, open) { open = !open }
+    androidx.compose.animation.AnimatedVisibility(
+        open,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+    ) {
+        com.skh.hihanaevo.ui.OneUiGroup(items = todo, modifier = Modifier.padding(vertical = 4.dp)) { post ->
+            TodoRow(post, course(post), now, selected = false) {}
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    TourCaption("낸 과제 — 제출 여부와 받은 점수")
+    com.skh.hihanaevo.ui.OneUiGroup(items = listOf(handedIn)) { post -> StreamRow(post, course(post), now, unread = false, selected = false) {} }
+    Spacer(Modifier.height(16.dp))
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.Refresh), TourGreen, "5분마다, 그리고 바로",
+            "클래스룸을 5분마다 새로 받고, 클래스룸 화면 위 새로고침 버튼으로 바로 받아 올 수도 있습니다.",
+        )
+    }
+    // 예전에 연결한 사람은 과제 권한을 새로 허용해야 합니다 — 연결돼 있고 스크립트가 '다시 연결 필요'를 보냈을 때만.
+    var needsReconnect by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        needsReconnect = withContext(Dispatchers.IO) {
+            ClassroomBridge.isConnected(context) && ClassroomStore.load(context)?.needsReconnect == true
+        }
+    }
+    if (needsReconnect) {
+        Spacer(Modifier.height(16.dp))
+        OneUiCard(Modifier.fillMaxWidth()) {
+            TourRow(
+                painterResource(R.drawable.ic_school), TourGreen, "한 번 더 허용해 주세요",
+                "이미 연결했다면 과제 권한을 새로 허용해야 과제가 보입니다. 아래 버튼을 누르고 학교 계정으로 '허용'을 누르세요.",
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        com.skh.hihanaevo.ui.OneUiButton(
+            text = "다시 연결",
+            onClick = { if (!ClassroomBridge.beginSignIn(context)) android.widget.Toast.makeText(context, "브라우저를 열 수 없습니다", android.widget.Toast.LENGTH_SHORT).show() },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun ColumnScope.New143MyEventsPage() {
+    PageHead(
+        "일정",
+        "직접 넣는 내 일정",
+        "학교 일정에 없는 학원 보강이나 개인 마감도 직접 넣을 수 있습니다. 일정 목록 오른쪽 위나 타임라인 날짜 옆의 +를 누르고 제목·날짜·시간을 적으면, " +
+            "학교 일정과 똑같이 홈·타임라인·일정 목록과 데일리 브리핑에 함께 올라갑니다.",
+        isNew = true,
+    )
+    TourCaption("일정 목록")
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourAgendaRow("수학 학원 보강", "11/12 (목) 19:00~21:00", AgendaSource.MINE.label, AgendaSource.MINE.color)
+        TourAgendaRow("동아리 활동 보고서", "11/14 (토)", AgendaSource.MINE.label, AgendaSource.MINE.color, deadline = true)
+        TourAgendaRow("2학기 기말고사", "12/7 (월) ~ 12/10 (목)", AgendaSource.ACADEMIC.label, AgendaSource.ACADEMIC.color)
+    }
+    Spacer(Modifier.height(16.dp))
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.Add), AgendaSource.MINE.color, "일정 · 마감",
+            "약속은 일정으로, 제출할 것은 마감으로 넣습니다. 마감은 목록에서 '마감' 표시와 함께 보입니다.",
+        )
+        RowGap()
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.DateRange), TourBlue, "하루 종일 · 여러 날",
+            "시간 없이 하루 종일로 넣거나, 시작일과 끝나는 날을 정해 여러 날에 걸쳐 넣을 수 있습니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_edit_note), TourViolet, "누르면 고치기",
+            "목록이나 타임라인에서 내 일정을 누르면 바로 고치거나 지울 수 있습니다. 내 일정은 이 기기에만 저장됩니다.",
+        )
+    }
+}
+
+@Composable
+private fun ColumnScope.New143WeatherPage() {
+    PageHead(
+        "날씨",
+        "더 자세해진 날씨",
+        "날씨 화면에 체감온도·습도·바람 칸이 생겼습니다. 체감온도는 기상청 계산식으로 겨울엔 바람, 여름엔 습도를 반영합니다. " +
+            "비나 눈 예보가 있으면 시간별·요일별 예보에 강수량(mm)과 적설(cm)이 함께 보이고, 비가 오는 중이면 지난 한 시간 동안 온 비의 양도 알려 줍니다.",
+        isNew = true,
+    )
+    val now = remember { java.time.LocalDateTime.now().withMinute(0).withSecond(0).withNano(0) }
+    // 예시 — 저녁부터 비가 오다 그치는 늦가을 하루. 코드는 WMO(3 흐림, 61 비).
+    val sample = remember(now) {
+        val temps = listOf(6.0, 5.0, 5.0, 4.0, 4.0, 3.0, 3.0, 2.0)
+        val rain = listOf(null, "1mm 미만", "2mm", "3mm", "1mm", null, null, null)
+        val hours = temps.mapIndexed { i, t ->
+            val r = rain[i]
+            SeoulWeather.Hour(
+                now.plusHours(i.toLong()), t, if (r != null) 61 else 3, if (r != null) 70 + i * 3 else 30,
+                rain = when (r) { null -> null; "1mm 미만" -> 0.5; else -> r.removeSuffix("mm").toDouble() }, rainText = r,
+            )
+        }
+        SeoulWeather.Forecast(
+            // 지금 칸과 같은 6°, 바람 4.2m/s 의 기상청 겨울철 체감온도 ≈ 3°.
+            currentTemp = 6.0, currentCode = 3, hours = hours, days = emptyList(),
+            currentFeels = 3.0, currentHumidity = 86, currentWind = 4.2, currentWindDir = 315,
+        )
+    }
+    TourCaption("시간별 — 비가 오는 시간에 강수량")
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+        Spacer(Modifier.height(10.dp))
+        HourlyStrip(sample.hours, now, null, Color(0xFF3D8BFF))
+        Spacer(Modifier.height(10.dp))
+    }
+    Spacer(Modifier.height(12.dp))
+    TourCaption("지금")
+    // 시간별·요일별 없이 넘겨 지금 칸(체감온도·습도·바람)만.
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        IndexTiles(sample.copy(hours = emptyList()), now.toLocalDate(), emptyList(), null)
+    }
+}
+
+@Composable
+private fun ColumnScope.New143MorePage() {
+    PageHead("그 밖에", "그 밖에 달라진 것", "매일 쓰는 곳들을 손봤습니다.")
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(
+            painterResource(R.drawable.ic_widgets), TourBlue, "크기마다 다시 맞춘 위젯",
+            "2×1부터 4×3까지 크기마다 글자가 잘리거나 넘치던 곳을 고쳤습니다. 지금 수업과 남은 시간, 다음 일정, 급식이 위젯 크기에 맞게 보입니다.",
+        )
+        RowGap()
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.Edit), TourViolet, "키보드로 넣는 시간",
+            "외출·외박 신청과 일정 추가에서 시간 휠의 가운데 숫자를 누르면 키보드로 바로 입력할 수 있습니다.",
+        )
+        RowGap()
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.DateRange), TourBlue, "달력으로 고르는 날짜",
+            "날짜를 고를 때 달력이 떠서 요일을 보며 바로 누를 수 있습니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_free_breakfast), TourOrange, "타임라인의 간식 시간",
+            "평일 1타임과 2타임 사이, 21:00~21:30 간식 시간이 타임라인에 보입니다.",
+        )
+        RowGap()
+        TourRow(
+            rememberVectorPainter(androidx.compose.material.icons.Icons.Filled.Refresh), TourGreen, "열자마자 새 정보",
+            "앱을 다시 열면 홈의 지금 정보와 클래스룸이 기다리지 않고 바로 새로 바뀝니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_bolt), TourSlate, "고친 것",
+            "알리미 글이 스크롤되지 않던 것과, 외출·외박 사유를 쓸 때 키보드가 입력칸을 가리던 것을 고쳤습니다.",
+        )
     }
 }

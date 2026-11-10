@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1120,13 +1121,17 @@ fun OneUiFullScreen(
                 }
             }
             val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            // 키보드가 올라오면 내용 영역을 그 높이만큼 줄입니다 — 영역이 줄어야 스크롤이 입력 중인 칸을 키보드 위로 따라
+            // 올립니다(아래 여백만 늘리면 칸이 키보드 뒤에 남았습니다). 키보드 높이에 내비게이션 바가 들어 있어 그땐 그 몫을 뺍니다.
+            val keyboardUp = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+            val bottom = if (keyboardUp) 24.dp else navBottom + 24.dp
             // 사진 바탕이 기본 — 글이 카드 안에 있어 글 부분에만 바탕이 깔립니다. 긴 설명을 카드 밖에 둔 화면([frosted])만
             // 흐린 사진에 면 색을 덮은 판으로.
             EvoSheet(title = title, onClosed = onDismiss, actions = { actions?.invoke(this) }, photo = !frosted) { _ ->
                 CompositionLocalProvider(LocalHazeState provides null, LocalDialogHazeState provides null) {
-                    Box(Modifier.fillMaxSize()) {
-                        content(PaddingValues(top = 4.dp, bottom = navBottom + 24.dp))
-                        overlay?.invoke(this, PaddingValues(top = 4.dp, bottom = navBottom + 24.dp))
+                    Box(Modifier.fillMaxSize().imePadding()) {
+                        content(PaddingValues(top = 4.dp, bottom = bottom))
+                        overlay?.invoke(this, PaddingValues(top = 4.dp, bottom = bottom))
                     }
                 }
             }
@@ -1193,8 +1198,10 @@ fun OneUiFullScreen(
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     // 태블릿에서는 글·목록이 화면 끝까지 늘어나지 않게 읽기 좋은 폭으로 가운데에 (폰은 그대로 전체 폭).
-                    Box(Modifier.fillMaxHeight().widthIn(max = maxContentWidth + OneUi.PagePadding * 2)) {
-                        content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = navBottom))
+                    // 키보드가 올라오면 그 높이만큼 줄여 입력 중인 칸이 키보드 위로 따라 올라오게 (위 시트 틀과 같은 이유).
+                    val keyboardUp = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+                    Box(Modifier.fillMaxHeight().widthIn(max = maxContentWidth + OneUi.PagePadding * 2).imePadding()) {
+                        content(PaddingValues(top = statusTop + OneUiToolbarHeight, bottom = if (keyboardUp) 0.dp else navBottom))
                     }
                 }
                 Row(

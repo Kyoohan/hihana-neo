@@ -190,7 +190,8 @@ object MorningBrief {
         val extras = BoardAgendaStore.items(context)
             .filter { it.forGrade(grade) }
             .filterNot { it.source == AgendaSource.CLASSROOM && it.id.removePrefix("cr:").substringBefore(':') in hiddenPosts } +
-            (all?.visible(hidden)?.agenda() ?: emptyList())
+            (all?.visible(hidden)?.agenda() ?: emptyList()) +
+            UserAgendaStore.items(context)
         val last = today.plusDays(DAYS_AHEAD)
         val items = Agenda.merge(schedule, grade, extras, today)
             .filter { it.academic?.code != SUPERVISION_CODE && !it.done && !it.date.isAfter(last) }
@@ -216,6 +217,7 @@ object MorningBrief {
         item.source == AgendaSource.CLASSROOM && item.deadline -> "과제 마감"
         item.deadline -> "마감"
         item.academic != null -> scheduleLabel(item.academic.code)
+        item.source == AgendaSource.MINE -> "내 일정"
         else -> "행사"
     }
 

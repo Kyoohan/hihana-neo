@@ -391,10 +391,20 @@ private fun ClassroomTile(snapshot: ClassroomSnapshot?, onOpenTab: () -> Unit, o
         return
     }
     val readIds = remember(snapshot, ClassroomReadStore.revision.intValue) { ClassroomReadStore.readIds(context) }
-    val recent = remember(snapshot) { snapshot.posts.sortedByDescending { it.updated }.take(3) }
+    // 다시 허용해야 하면 한 줄을 그 안내에 내줍니다 — 칸을 누르면 클래스룸 화면의 '다시 연결' 카드로.
+    val recent = remember(snapshot) { snapshot.posts.sortedByDescending { it.updated }.take(if (snapshot.needsReconnect) 2 else 3) }
     val unread = snapshot.posts.count { it.id !in readIds }
     BentoTile(if (unread > 0) "클래스룸 새 글 $unread" else "클래스룸", accent, modifier, onOpenTab) {
-        if (recent.isEmpty()) DashboardEmpty("글이 없습니다")
+        if (snapshot.needsReconnect) Text(
+            "과제를 보려면 다시 허용해 주세요",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
+        if (recent.isEmpty() && !snapshot.needsReconnect) DashboardEmpty("글이 없습니다")
         recent.forEach { post ->
             Column(
                 Modifier

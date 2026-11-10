@@ -106,6 +106,7 @@ export default {
     if (url.pathname.startsWith("/bridge/")) return bridge(req, env, url);
     if (url.pathname === "/brief") return brief(req, env, ctx);
     if (url.pathname === "/menu") return menu(req, env, ctx);
+    if (url.pathname === "/notice") return notice(env);
     if (url.pathname !== "/summarize") return json({ error: "not_found" }, 404);
     if (req.method !== "POST") return json({ error: "method" }, 405);
     if (req.headers.get("x-app") !== "hihana-neo") return json({ error: "forbidden" }, 403);
@@ -338,6 +339,18 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+// MARK: - 공지 팝업
+
+/** 앱 공지 팝업 한 건 — notice.mjs 가 KV 에 적습니다. 앱(RemoteNotice.kt)은 실행·복귀 때 읽어 처음 보는 id 면 한 번 띄웁니다. */
+const NOTICE_KEY = "notice:current";
+
+async function notice(env: Env): Promise<Response> {
+  // 몇 분 늦게 퍼져도 되는 것이라 KV 엣지 캐시 1분 — 모든 앱이 복귀 때마다 읽어도 KV 읽기 한도에 닿지 않게.
+  const raw = await env.SUMMARIES.get(NOTICE_KEY, { cacheTtl: 60 });
+  if (!raw) return new Response(null, { status: 204 });
+  return new Response(raw, { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
 // MARK: - 날씨
 
 /**
@@ -349,12 +362,59 @@ const PLACES: Record<string, Place> = {
   seoul: { name: "서울", lat: 37.5665, lon: 126.978, nx: 60, ny: 127 },
   hana: { name: "하나고", lat: 37.6413, lon: 126.9371, nx: 59, ny: 128 },
 };
-const WEATHER_KEY = (place: string) => `weather:${place}:v3`;
+// v5 — 지금 체감온도·습도·바람이 붙었습니다(v4: 강수량 mm).
+const WEATHER_KEY = (place: string) => `weather:${place}:v5`;
 const WEATHER_SECONDS = 30 * 60;
 
-interface Hour { t: string; temp: number | null; code: number | null; pop: number | null }
-interface Day { date: string; code: number | null; max: number | null; min: number | null; pop: number | null }
-interface Forecast { source: string; current: { time: string; temp: number | null; code: number | null }; hourly: Hour[]; daily: Day[] }
+/**
+ * [rain] 은 그 한 시간 강수량(mm, 비가 안 오면 null), [rainText] 는 기상청이 쓰는 그대로의 표현("1mm 미만", "30~50mm").
+ * 눈은 [snow](cm)·[snowText]. 일별 [rain] 은 그날 시간별 강수량의 합(대략).
+ */
+interface Hour { t: string; temp: number | null; code: number | null; pop: number | null; rain?: number | null; rainText?: string | null; snow?: number | null; snowText?: string | null }
+interface Day { date: string; code: number | null; max: number | null; min: number | null; pop: number | null; rain?: number | null; snow?: number | null }
+/** 지금 — [feels] 체감온도(°C, 기상청 계산식), [humidity] 습도(%), [wind] 풍속(m/s), [windDir] 바람이 불어오는 쪽(°, 0 = 북). */
+interface Current { time: string; temp: number | null; code: number | null; rain?: number | null; feels?: number | null; humidity?: number | null; wind?: number | null; windDir?: number | null }
+interface Forecast { source: string; current: Current; hourly: Hour[]; daily: Day[] }
+
+/**
+ * 체감온도 — 기상청 계산식. 10~4월은 겨울철(바람): 기온 10°C 이하·풍속 1.3m/s 이상일 때만, 아니면 기온 그대로.
+ * 5~9월은 여름철(습도): 습구온도(Stull)로 계산. 값이 하나라도 없으면 null.
+ */
+function feelsLike(temp: number | null, humidity: number | null, wind: number | null, month: number): number | null {
+  if (temp == null) return null;
+  const round = (n: number) => Math.round(n * 10) / 10;
+  if (month >= 5 && month <= 9) {
+    if (humidity == null) return null;
+    const rh = humidity;
+    const tw = temp * Math.atan(0.151977 * Math.sqrt(rh + 8.313659)) + Math.atan(temp + rh) - Math.atan(rh - 1.67633)
+      + 0.00391838 * Math.pow(rh, 1.5) * Math.atan(0.023101 * rh) - 4.686035;
+    return round(-0.2442 + 0.55399 * tw + 0.45535 * temp - 0.0022 * tw * tw + 0.00278 * tw * temp + 3.0);
+  }
+  if (wind == null) return null;
+  if (temp > 10 || wind < 1.3) return round(temp);
+  const v = Math.pow(wind * 3.6, 0.16);
+  return round(13.12 + 0.6215 * temp - 11.37 * v + 0.3965 * v * temp);
+}
+
+/**
+ * 기상청 강수량·적설 글(PCP·RN1·SNO) → 숫자와 보여 줄 글. "강수없음"·"적설없음"은 null, "1mm 미만"은 0.5,
+ * "30.0~50.0mm"는 아래 값 30(글은 "30~50mm"), "50.0mm 이상"은 50. 실황 RN1 처럼 숫자만 오면 그 값.
+ */
+function kmaAmount(v: string | undefined, unit: "mm" | "cm"): { value: number | null; text: string | null } {
+  if (v == null) return { value: null, text: null };
+  const raw = v.trim();
+  if (!raw || raw.includes("없음") || raw === "0" || raw === "0.0") return { value: null, text: null };
+  const clean = (n: string) => String(Number(n));
+  const under = raw.match(/^([\d.]+)\s*(mm|cm)?\s*미만$/);
+  if (under) return { value: Number(under[1]) / 2, text: `${clean(under[1])}${unit} 미만` };
+  const range = raw.match(/^([\d.]+)\s*~\s*([\d.]+)\s*(mm|cm)?$/);
+  if (range) return { value: Number(range[1]), text: `${clean(range[1])}~${clean(range[2])}${unit}` };
+  const over = raw.match(/^([\d.]+)\s*(mm|cm)?\s*이상$/);
+  if (over) return { value: Number(over[1]), text: `${clean(over[1])}${unit} 이상` };
+  const n = Number(raw.replace(/(mm|cm)$/, ""));
+  if (Number.isNaN(n) || n <= 0 || n >= 900) return { value: null, text: null };
+  return { value: n, text: `${clean(String(n))}${unit}` };
+}
 
 async function weather(req: Request, env: Env, url: URL): Promise<Response> {
   if (req.method !== "GET") return json({ error: "method" }, 405);
@@ -381,14 +441,15 @@ async function weather(req: Request, env: Env, url: URL): Promise<Response> {
 // MARK: Open-Meteo (기상청이 안 될 때만)
 
 interface OpenMeteo {
-  current?: { time: string; temperature_2m: number | null; weather_code: number | null };
-  hourly?: { time: string[]; temperature_2m: (number | null)[]; weather_code: (number | null)[]; precipitation_probability: (number | null)[] };
+  current?: { time: string; temperature_2m: number | null; weather_code: number | null; relative_humidity_2m?: number | null; wind_speed_10m?: number | null; wind_direction_10m?: number | null };
+  hourly?: { time: string[]; temperature_2m: (number | null)[]; weather_code: (number | null)[]; precipitation_probability: (number | null)[]; precipitation?: (number | null)[] };
   daily?: {
     time: string[];
     weather_code: (number | null)[];
     temperature_2m_max: (number | null)[];
     temperature_2m_min: (number | null)[];
     precipitation_probability_max: (number | null)[];
+    precipitation_sum?: (number | null)[];
   };
 }
 
@@ -397,9 +458,10 @@ async function openMeteo(place: Place): Promise<Forecast> {
   api.search = new URLSearchParams({
     latitude: String(place.lat),
     longitude: String(place.lon),
-    current: "temperature_2m,weather_code",
-    hourly: "temperature_2m,weather_code,precipitation_probability",
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    current: "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m",
+    wind_speed_unit: "ms",
+    hourly: "temperature_2m,weather_code,precipitation_probability,precipitation",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum",
     timezone: "Asia/Seoul",
     forecast_days: "7",
   }).toString();
@@ -410,9 +472,18 @@ async function openMeteo(place: Place): Promise<Forecast> {
   const now = data.current.time.slice(0, 13);
   return {
     source: "open-meteo",
-    current: { time: data.current.time, temp: data.current.temperature_2m, code: data.current.weather_code },
+    current: {
+      time: data.current.time, temp: data.current.temperature_2m, code: data.current.weather_code,
+      humidity: data.current.relative_humidity_2m ?? null, wind: data.current.wind_speed_10m ?? null, windDir: data.current.wind_direction_10m ?? null,
+      // 체감온도는 기상청 쪽과 같은 계산식으로 — Open-Meteo 의 apparent_temperature 는 식이 달라 기상청일 때와 값이 어긋납니다.
+      feels: feelsLike(data.current.temperature_2m, data.current.relative_humidity_2m ?? null, data.current.wind_speed_10m ?? null, Number(data.current.time.slice(5, 7))),
+    },
     hourly: data.hourly.time
-      .map((t, i) => ({ t, temp: data.hourly!.temperature_2m[i], code: data.hourly!.weather_code[i], pop: data.hourly!.precipitation_probability[i] }))
+      .map((t, i) => {
+        const mm = data.hourly!.precipitation?.[i] ?? null;
+        const rain = mm != null && mm > 0 ? mm : null;
+        return { t, temp: data.hourly!.temperature_2m[i], code: data.hourly!.weather_code[i], pop: data.hourly!.precipitation_probability[i], rain, rainText: rain != null ? `${rain}mm` : null };
+      })
       .filter((h) => h.t.slice(0, 13) >= now)
       .slice(0, 72),
     daily: data.daily.time.map((date, i) => ({
@@ -421,6 +492,7 @@ async function openMeteo(place: Place): Promise<Forecast> {
       max: data.daily!.temperature_2m_max[i],
       min: data.daily!.temperature_2m_min[i],
       pop: data.daily!.precipitation_probability_max[i],
+      rain: (data.daily!.precipitation_sum?.[i] ?? 0) > 0 ? data.daily!.precipitation_sum![i] : null,
     })),
   };
 }
@@ -521,9 +593,10 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
   };
 
   // 시간별 — 단기예보를 깔고, 6시간은 더 정확한 초단기예보로 덮습니다(강수확률은 단기예보에만 있음).
-  type Slot = { temp: number | null; sky: number | null; pty: number | null; pop: number | null; lgt: boolean };
+  type Amount = { value: number | null; text: string | null };
+  type Slot = { temp: number | null; sky: number | null; pty: number | null; pop: number | null; lgt: boolean; rain: Amount | null; snow: Amount | null; reh: number | null; wsd: number | null; vec: number | null };
   const slots = new Map<string, Slot>();
-  const slot = (t: string) => slots.get(t) ?? (slots.set(t, { temp: null, sky: null, pty: null, pop: null, lgt: false }), slots.get(t)!);
+  const slot = (t: string) => slots.get(t) ?? (slots.set(t, { temp: null, sky: null, pty: null, pop: null, lgt: false, rain: null, snow: null, reh: null, wsd: null, vec: null }), slots.get(t)!);
   for (const it of vil) {
     if (!it.fcstDate || !it.fcstTime) continue;
     const s = slot(iso(it.fcstDate, it.fcstTime));
@@ -531,6 +604,11 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
     else if (it.category === "SKY") s.sky = num(it.fcstValue);
     else if (it.category === "PTY") s.pty = num(it.fcstValue);
     else if (it.category === "POP") s.pop = num(it.fcstValue);
+    else if (it.category === "PCP") s.rain = kmaAmount(it.fcstValue, "mm");
+    else if (it.category === "SNO") s.snow = kmaAmount(it.fcstValue, "cm");
+    else if (it.category === "REH") s.reh = num(it.fcstValue);
+    else if (it.category === "WSD") s.wsd = num(it.fcstValue);
+    else if (it.category === "VEC") s.vec = num(it.fcstValue);
   }
   for (const it of ultra) {
     if (!it.fcstDate || !it.fcstTime) continue;
@@ -540,6 +618,10 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
     else if (it.category === "PTY") s.pty = num(it.fcstValue);
     else if (it.category === "LGT") s.lgt = (num(it.fcstValue) ?? 0) > 0;
     else if (it.category === "POP") s.pop = num(it.fcstValue) ?? s.pop; // 2026-06-23 부터 초단기예보에도 강수확률
+    else if (it.category === "RN1") s.rain = kmaAmount(it.fcstValue, "mm");
+    else if (it.category === "REH") s.reh = num(it.fcstValue);
+    else if (it.category === "WSD") s.wsd = num(it.fcstValue);
+    else if (it.category === "VEC") s.vec = num(it.fcstValue);
   }
 
   // 지금 — 초단기실황의 기온·강수형태, 하늘은 가장 가까운 초단기예보 시간에서.
@@ -549,20 +631,37 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
   const nearest = nextSlots[0]?.[1];
   const curPty = obs("PTY");
   // 실황이 없으면(잠깐 실패) 가장 가까운 예보 시간으로.
-  const current = {
+  const curTemp = obs("T1H") ?? nearest?.temp ?? null;
+  // 습도·바람도 실황 먼저, 없으면 가장 가까운 예보 시간.
+  const humidity = obs("REH") ?? nearest?.reh ?? null;
+  const wind = obs("WSD") ?? nearest?.wsd ?? null;
+  const current: Current = {
     time: nowIso,
-    temp: obs("T1H") ?? nearest?.temp ?? null,
+    temp: curTemp,
     code: kmaCode(nearest?.sky ?? null, curPty ?? nearest?.pty ?? null, nearest?.lgt ?? false),
+    // 지난 한 시간 동안 실제로 온 비(실황 RN1, mm).
+    rain: kmaAmount(ncst.find((i) => i.category === "RN1")?.obsrValue, "mm").value,
+    feels: feelsLike(curTemp, humidity, wind, Number(nowIso.slice(5, 7))),
+    humidity,
+    wind,
+    windDir: obs("VEC") ?? nearest?.vec ?? null,
   };
 
   const hourly: Hour[] = [];
   // 지금 시간 칸 — 예보엔 다음 시간부터라 실황으로 채웁니다(귀가일 23시대처럼 남은 칸이 지금뿐일 때 필요).
-  if (!slots.has(nowIso)) hourly.push({ t: nowIso, temp: current.temp, code: current.code, pop: nearest?.pop ?? null });
-  for (const [t, s] of nextSlots) hourly.push({ t, temp: s.temp, code: kmaCode(s.sky, s.pty, s.lgt), pop: s.pop });
+  if (!slots.has(nowIso)) {
+    hourly.push({ t: nowIso, temp: current.temp, code: current.code, pop: nearest?.pop ?? null, rain: current.rain, rainText: current.rain != null ? `${current.rain}mm` : null });
+  }
+  for (const [t, s] of nextSlots) {
+    hourly.push({
+      t, temp: s.temp, code: kmaCode(s.sky, s.pty, s.lgt), pop: s.pop,
+      rain: s.rain?.value ?? null, rainText: s.rain?.text ?? null, snow: s.snow?.value ?? null, snowText: s.snow?.text ?? null,
+    });
+  }
 
   // 일별 — 최저·최고는 TMN·TMX(없으면 시간별 기온), 강수확률은 그날 최대, 날씨는 06~21시 대표값.
-  const days = new Map<string, { codes: number[]; temps: number[]; pops: number[]; max: number | null; min: number | null }>();
-  const day = (d: string) => days.get(d) ?? (days.set(d, { codes: [], temps: [], pops: [], max: null, min: null }), days.get(d)!);
+  const days = new Map<string, { codes: number[]; temps: number[]; pops: number[]; max: number | null; min: number | null; rain: number; snow: number }>();
+  const day = (d: string) => days.get(d) ?? (days.set(d, { codes: [], temps: [], pops: [], max: null, min: null, rain: 0, snow: 0 }), days.get(d)!);
   for (const it of [...morning, ...vil]) {
     if (!it.fcstDate) continue;
     if (it.category === "TMX") day(it.fcstDate).max ??= num(it.fcstValue);
@@ -572,6 +671,8 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
     const d = day(t.slice(0, 10).replaceAll("-", ""));
     if (s.temp != null) d.temps.push(s.temp);
     if (s.pop != null) d.pops.push(s.pop);
+    d.rain += s.rain?.value ?? 0;
+    d.snow += s.snow?.value ?? 0;
     const hour = Number(t.slice(11, 13));
     const c = kmaCode(s.sky, s.pty, s.lgt);
     if (c != null && hour >= 6 && hour <= 21) d.codes.push(c);
@@ -587,6 +688,8 @@ async function kmaForecast(key: string, place: Place): Promise<Forecast> {
       max: v.max ?? (v.temps.length ? Math.max(...v.temps) : null),
       min: v.min ?? (v.temps.length ? Math.min(...v.temps) : null),
       pop: v.pops.length ? Math.max(...v.pops) : null,
+      rain: v.rain > 0 ? Math.round(v.rain * 10) / 10 : null,
+      snow: v.snow > 0 ? Math.round(v.snow * 10) / 10 : null,
     }));
 
   return { source: "kma", current, hourly: hourly.slice(0, 72), daily };

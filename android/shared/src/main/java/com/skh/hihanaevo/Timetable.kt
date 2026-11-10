@@ -741,8 +741,9 @@ object Timetable {
             )
             result += studyBlock(Sessions.weekend3, PlanSlot.weekend3)
 
+            // 간식은 평일에만 나옵니다 — 주말·공휴일의 3·4타임 사이는 그냥 쉬는 시간.
             result += gapBlock(
-                Gap("간식시간", "간식시간", "4타임까지", nextStudy(Sessions.weekend4, PlanSlot.weekend4), Accent.SNACK),
+                Gap("쉬는 시간", "쉬는 시간", "4타임까지", nextStudy(Sessions.weekend4, PlanSlot.weekend4), Accent.BREAK_TIME),
                 snack.first, snack.second,
             )
             result += studyBlock(Sessions.weekend4, PlanSlot.weekend4)

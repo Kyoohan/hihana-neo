@@ -82,9 +82,15 @@ fun DevTab(
             )
             OneUiDivider()
             OneUiListItem(
-                title = "업데이트 투어 (13.x → 14.0)",
-                subtitle = "바뀐 것만 — 클래스룸 · 데일리 브리핑 · 새 조작법 · 홈 · 타임라인 · 한곳에 모은 일정 · 알림·요약 · 아이콘 · (배경 사진을 쓰면) 배경 고르기 · 그 밖에 (+ 권한이 빠졌으면 권한) · 클래스룸 연결",
+                title = "업데이트 투어 (13.x → 14.3)",
+                subtitle = "바뀐 것만 — 클래스룸 · 데일리 브리핑 · 새 조작법 · 홈 · 타임라인 · 한곳에 모은 일정 · 내 일정 · 날씨 · 알림·요약 · 아이콘 · (배경 사진을 쓰면) 배경 고르기 · 그 밖에 (+ 권한이 빠졌으면 권한) · 클래스룸 연결",
                 onClick = { onStartTour(TourKind.UPDATE) },
+            )
+            OneUiDivider()
+            OneUiListItem(
+                title = "새 기능 투어 (14.0~14.2 → 14.3)",
+                subtitle = "오프닝 없이 — 클래스룸 과제·할 일 (+ 예전 연결이면 다시 연결) · 내 일정 · 날씨 · 그 밖에 (+ 권한) (+ 클래스룸 미연결이면 연결)",
+                onClick = { onStartTour(TourKind.WHATS_NEW) },
             )
             OneUiDivider()
             OneUiListItem(

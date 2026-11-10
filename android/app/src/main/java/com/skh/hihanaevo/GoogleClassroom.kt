@@ -37,7 +37,7 @@ import javax.crypto.spec.SecretKeySpec
  *
  * 학교 Google 계정은 만 18세 미만이라 외부 앱의 Google 로그인(OAuth)이 학교 관리자 허용 없이는 막혀 있습니다. 대신 같은 학교
  * 계정으로 만든 Apps Script 웹 앱(classroom-bridge/Code.gs)은 학교 안의 앱으로 허용되므로, 그 스크립트가 학생 본인 권한으로
- * 15분마다 클래스룸을 읽어 암호화해 중계 서버(summary-worker /bridge)에 올리고, 앱은 그걸 받아 풉니다.
+ * 5분마다 클래스룸을 읽어 암호화해 중계 서버(summary-worker /bridge)에 올리고, 앱은 그걸 받아 풉니다.
  *
  * 비밀키는 기기에서 만들어 스크립트에만 건넵니다(웹 앱 주소의 k). 서버에는 비밀키에서 만든 id 와 암호문만 있어 내용을 볼 수 없습니다.
  * 받은 글은 기기에만 둡니다.
@@ -285,11 +285,16 @@ data class ClassroomSnapshot(
     val fetchedAt: Long,
     /** 스크립트가 이 내용을 올린 시각(payload 의 at) — 중계 서버에서 받아 온 것만, 샘플·옛 캐시는 null. */
     val syncedAt: Long? = null,
+    /**
+     * 과제를 읽을 권한이 없어 다시 허용해야 하는지(payload 의 reconnect) — 2026-11-10 전에 연결한 학생은 스크립트가 교사용 과제 권한만
+     * 받아 과제가 모든 수업에서 403 이었습니다. 다시 연결하면(새 권한 허용) 스크립트가 표시를 거둡니다.
+     */
+    val needsReconnect: Boolean = false,
 ) {
     fun course(id: String): ClassroomCourse? = courses.find { it.id == id }
 
     /**
-     * 스크립트가 멈춘 듯한지 — 내용이 그대로여도 2시간마다 다시 올리므로(Code.gs REUPLOAD_MS) 그보다 한참 지났으면 이 기기가
+     * 스크립트가 멈춘 듯한지 — 내용이 그대로여도 돌 때마다(5분) 다시 올리므로 그보다 한참 지났으면 이 기기가
      * 기기 목록에서 밀려났거나 트리거가 사라진 것. 앱은 중계 서버의 옛 사본을 계속 받아 와서 그냥 봐서는 알 수 없습니다.
      */
     val stale: Boolean get() = syncedAt != null && System.currentTimeMillis() - syncedAt > STALE_MS
@@ -338,6 +343,9 @@ object ClassroomApi {
     private const val EVENT_DAYS = 30L
     private const val EVENT_BATCH = 25
 
+    /** 스크립트가 예전 앱을 위해 목록에 끼워 넣는 '다시 허용' 안내 글(Code.gs NOTICE_ID) — 이 앱은 대신 배너를 띄워 글은 뺍니다. */
+    private const val RECONNECT_NOTICE_ID = "hihana-reconnect"
+
     suspend fun fetch(context: Context): ClassroomSnapshot = ClassroomBridge.fetch(context)
 
     /** 스크립트가 보낸 꼴(Code.gs 의 collect) → 스냅샷. 시각은 UTC 로 오므로 한국 시각으로 바꿉니다. */
@@ -346,6 +354,7 @@ object ClassroomApi {
             ClassroomCourse(c.getString("id"), c.optString("name"), c.optStr("section"), c.optStr("link"))
         }
         val posts = o.optJSONArray("posts").objects().mapNotNull { p ->
+            if (p.optString("id") == RECONNECT_NOTICE_ID) return@mapNotNull null
             val kind = when (p.optString("k")) {
                 "A" -> ClassroomKind.ANNOUNCEMENT
                 "W" -> ClassroomKind.WORK
@@ -379,7 +388,10 @@ object ClassroomApi {
                 attachments = p.optJSONArray("att").objects().mapNotNull { a -> a.optStr("u")?.let { ClassroomAttachment(a.optString("t").ifBlank { it }, it) } },
             )
         }
-        return ClassroomSnapshot(courses, posts.sortedByDescending { it.updated }, System.currentTimeMillis(), o.optLong("at").takeIf { it > 0 })
+        return ClassroomSnapshot(
+            courses, posts.sortedByDescending { it.updated }, System.currentTimeMillis(), o.optLong("at").takeIf { it > 0 },
+            needsReconnect = o.optString("reconnect").isNotEmpty(),
+        )
     }
 
     /**
@@ -416,10 +428,11 @@ object ClassroomApi {
 
 // MARK: - 보관
 
-/** 마지막 스냅샷 — 앱을 열면 파일에서 바로 보여 주고, 10분 지났으면 뒤에서 새로 받습니다. */
+/** 마지막 스냅샷 — 앱을 열면 파일에서 바로 보여 주고, 2분 지났으면 뒤에서 새로 받습니다(앱을 다시 펼칠 때·떠 있는 동안 3분마다). */
 object ClassroomStore {
     private const val FILE = "classroom_snapshot.json"
-    const val TTL_MS = 10 * 60_000L
+    // 10분 → 2분 — 스크립트가 5분마다 올리는데 앱이 10분 동안 옛 사본을 들고 있어 '째깍째깍' 바뀌지 않았습니다.
+    const val TTL_MS = 2 * 60_000L
 
     val snapshot = mutableStateOf<ClassroomSnapshot?>(null)
     private var loaded = false
@@ -487,6 +500,7 @@ object ClassroomStore {
     private fun encode(s: ClassroomSnapshot): String = JSONObject()
         .put("fetchedAt", s.fetchedAt)
         .put("syncedAt", s.syncedAt ?: JSONObject.NULL)
+        .put("reconnect", s.needsReconnect)
         .put("courses", JSONArray(s.courses.map { c ->
             JSONObject().put("id", c.id).put("name", c.name).put("section", c.section ?: JSONObject.NULL).put("link", c.link ?: JSONObject.NULL)
         }))
@@ -519,7 +533,7 @@ object ClassroomStore {
                 attachments = if (att == null) emptyList() else (0 until att.length()).map { att.getJSONObject(it) }.map { ClassroomAttachment(it.optString("title"), it.optString("url")) },
             )
         }
-        return ClassroomSnapshot(courses, posts, o.optLong("fetchedAt"), o.optLong("syncedAt").takeIf { it > 0 })
+        return ClassroomSnapshot(courses, posts, o.optLong("fetchedAt"), o.optLong("syncedAt").takeIf { it > 0 }, needsReconnect = o.optBoolean("reconnect"))
     }
 }
 

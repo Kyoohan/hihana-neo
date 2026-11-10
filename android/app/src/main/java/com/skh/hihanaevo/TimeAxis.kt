@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.Constraints
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
@@ -190,6 +191,8 @@ internal fun TimeAxisScreen(
     onOpenClassroomPost: (ClassroomPost) -> Unit,
     onOpenAgenda: (AgendaItem) -> Unit,
     onOpenSchedule: () -> Unit,
+    /** 일정 추가(+) — 보던 날로 새 일정을 엽니다. null 이면 단추를 두지 않습니다. */
+    onAddEvent: ((LocalDate) -> Unit)? = null,
     /** 바뀌면 처음 모습(시간 배율, 오늘 지금 근처)으로 — 화면을 버리지 않고 살려 두므로, 홈으로 돌아갈 때마다 올려 줍니다. */
     resetTick: Int = 0,
 ) {
@@ -223,12 +226,15 @@ internal fun TimeAxisScreen(
                 Accent.BREAKFAST -> Meal.BREAKFAST
                 Accent.LUNCH -> Meal.LUNCH
                 Accent.DINNER -> Meal.DINNER
+                // 1·2타임 사이 간식(평일 21:00~21:30) — 예전엔 끼니 셋만 골라 축에서 간식 칸이 빠졌습니다.
+                Accent.SNACK -> Meal.SNACK
                 else -> null
             }
             if (b.kind is BlockKind.GapKind && meal == null) return@forEach
             if (meal != null) {
                 val menu = allMeals[PlanStore.dayKey(date)]?.items?.get(meal.key).orEmpty()
-                left += AxisEntry(b.start, b.end, "${meal.label} 급식", menu.take(3).joinToString(" · ") { it.name }.ifEmpty { null }, "급식", kind(b.accent)) { onOpenTab(TabIndex.MEAL) }
+                val name = if (meal == Meal.SNACK) "간식" else "${meal.label} 급식"
+                left += AxisEntry(b.start, b.end, name, menu.take(3).joinToString(" · ") { it.name }.ifEmpty { null }, "급식", kind(b.accent)) { onOpenTab(TabIndex.MEAL) }
             } else {
                 // '수업 중'은 지금 하는 수업에만 맞는 말 — 축엔 다른 날·다른 시각도 있어 수업은 교시와 과목만(공강은 '공강' 한 번).
                 val title = when (val k = b.kind) {
@@ -342,6 +348,14 @@ internal fun TimeAxisScreen(
                     Column(Modifier.weight(1f)) {
                         Text(today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN), style = MaterialTheme.typography.labelLarge, color = com.skh.hihanaevo.ui.onPageVariantColor())
                         Text("${today.monthValue}월 ${today.dayOfMonth}일", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = pageInk())
+                    }
+                    if (onAddEvent != null) {
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape).clickable { onAddEvent(focusDay) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.Icon(Icons.Filled.Add, contentDescription = "일정 추가", tint = pageAccent())
+                        }
                     }
                     Text(
                         "지금으로",

@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /**
  * 날씨 — 평소엔 하나고등학교, 귀가 기간엔 서울특별시([currentPlace]). 앱은 AI 요약 서버(Cloudflare Worker)의 `/weather?place=`
@@ -32,13 +33,33 @@ object SeoulWeather {
         return if (homeStayNotice(now.toLocalDate(), now) != null) Place.SEOUL else Place.HANA
     }
 
-    data class Hour(val time: LocalDateTime, val temp: Double?, val code: Int?, val pop: Int?)
-    data class Day(val date: LocalDate, val code: Int?, val max: Double?, val min: Double?, val pop: Int?)
+    /** [rainText]·[snowText] 은 그 한 시간 강수량·적설 — 기상청 표현 그대로("1mm 미만", "30~50mm"), 안 오면 null. */
+    data class Hour(
+        val time: LocalDateTime,
+        val temp: Double?,
+        val code: Int?,
+        val pop: Int?,
+        val rain: Double? = null,
+        val rainText: String? = null,
+        val snowText: String? = null,
+    )
+
+    /** [rain](mm)·[snow](cm) 은 그날 시간별 예보의 합(대략) — 없으면 null. */
+    data class Day(val date: LocalDate, val code: Int?, val max: Double?, val min: Double?, val pop: Int?, val rain: Double? = null, val snow: Double? = null)
     data class Forecast(
         val currentTemp: Double?,
         val currentCode: Int?,
         val hours: List<Hour>,
         val days: List<Day>,
+        /** 지난 한 시간 동안 실제로 온 비(mm, 기상청 실황) — 안 왔으면 null. */
+        val currentRain: Double? = null,
+        /** 지금 체감온도(°C) — 서버가 기상청 계산식으로(10~4월은 바람, 5~9월은 습도). */
+        val currentFeels: Double? = null,
+        /** 지금 습도(%). */
+        val currentHumidity: Int? = null,
+        /** 지금 풍속(m/s)과 바람이 불어오는 쪽(°, 0 = 북). */
+        val currentWind: Double? = null,
+        val currentWindDir: Int? = null,
         /** 서버가 받은 곳 — "kma"(기상청) 또는 "open-meteo"(기상청 장애 때 대신). */
         val source: String? = null,
         /** 서버가 받아 온 시각. */
@@ -80,17 +101,23 @@ object SeoulWeather {
         val hours = json.optJSONArray("hourly")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                Hour(LocalDateTime.parse(o.getString("t")), o.num("temp"), o.int("code"), o.int("pop"))
+                fun JSONObject.text(key: String): String? = optString(key).takeIf { it.isNotEmpty() && it != "null" }
+                Hour(LocalDateTime.parse(o.getString("t")), o.num("temp"), o.int("code"), o.int("pop"), o.num("rain"), o.text("rainText"), o.text("snowText"))
             }
         }.orEmpty()
         val days = json.optJSONArray("daily")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                Day(LocalDate.parse(o.getString("date")), o.int("code"), o.num("max"), o.num("min"), o.int("pop"))
+                Day(LocalDate.parse(o.getString("date")), o.int("code"), o.num("max"), o.num("min"), o.int("pop"), o.num("rain"), o.num("snow"))
             }
         }.orEmpty()
         Forecast(
             current?.num("temp"), current?.int("code"), hours, days,
+            currentRain = current?.num("rain")?.takeIf { it > 0 },
+            currentFeels = current?.num("feels"),
+            currentHumidity = current?.num("humidity")?.roundToInt(),
+            currentWind = current?.num("wind"),
+            currentWindDir = current?.num("windDir")?.roundToInt(),
             source = json.optString("source").takeIf { it.isNotBlank() },
             updated = runCatching { java.time.Instant.parse(json.getString("updated")) }.getOrNull(),
         )

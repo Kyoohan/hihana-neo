@@ -16,6 +16,8 @@ enum class AgendaSource(val label: String, val color: Color) {
     ACADEMIC("학사", Color(0xFF3A7BD5)),
     BOARD("게시판", Color(0xFFE3A82E)),
     CLASSROOM("클래스룸", Color(0xFF1E8E3E)),
+    /** 학생이 직접 적은 일정([UserAgendaStore]) — 분홍은 학사일정 종류 색·마감 빨강과 겹치지 않습니다. */
+    MINE("내 일정", Color(0xFFE0569B)),
 }
 
 data class AgendaItem(
@@ -81,7 +83,10 @@ object Agenda {
                 )
             }
         val academicKeys = academic.map { it.date to normalize(it.title) }.toSet()
+        // 내 일정은 학생이 직접 적은 것이라 학사일정·게시글 일정과 이름이 겹쳐도 그대로 둡니다(지우면 적은 게 사라진 것처럼 보임).
+        val mine = extras.filter { it.source == AgendaSource.MINE && !(it.endDate ?: it.date).isBefore(today) }
         val others = extras
+            .filter { it.source != AgendaSource.MINE }
             .filter { !(it.endDate ?: it.date).isBefore(today) }
             .filter { item ->
                 val key = normalize(item.title)
@@ -90,7 +95,7 @@ object Agenda {
             // 같은 날 같은 이름은 한 번만(여러 글이 같은 일정을 알리면) — 시각·마감이 있는 쪽을 남깁니다.
             .groupBy { it.date to normalize(it.title) }
             .map { (_, same) -> same.maxBy { (if (it.time != null) 2 else 0) + (if (it.deadline) 1 else 0) } }
-        return (academic + others).sortedWith(
+        return (academic + others + mine).sortedWith(
             // 같은 날 안에선 면학감독을 맨 아래로 — 가장 덜 중요합니다.
             compareBy<AgendaItem>({ it.date }, { it.academic?.code == SUPERVISION_CODE }, { it.time ?: "99" }, { !it.deadline }, { it.source.ordinal }, { it.title }),
         )

@@ -69,6 +69,7 @@ import com.skh.hihanaevo.BlockKind
 import com.skh.hihanaevo.HanaAcademicRepository
 import com.skh.hihanaevo.HanaTimetableSync
 import com.skh.hihanaevo.MainActivity
+import com.skh.hihanaevo.NextUp
 import com.skh.hihanaevo.Meal
 import com.skh.hihanaevo.PlanStore
 import com.skh.hihanaevo.R
@@ -122,7 +123,16 @@ class HiHanaEvoWidget : GlanceAppWidget() {
             val now = LocalDateTime.now(PlanStore.seoulZone)
             val block = Timetable.blockAt(today, now) { places[it] }
             // 쉬는 시간은 다음 일정이 아니므로 수업·면학만 셉니다.
-            val next = Timetable.nextEvent(Timetable.blocks(today) { places[it] }, block, now)
+            val blocks = Timetable.blocks(today) { places[it] }
+            val next = Timetable.nextEvent(blocks, block, now)
+            // 세 칸 이상 높은 위젯의 '이후 일정' — 다음 일정부터 이어지는 몇 개(연강은 하나로).
+            val upcoming = buildList {
+                var ref = next
+                while (ref != null && size < 6) {
+                    add(UpcomingRow(ref.start.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")), rowTitle(ref), widgetPlace(ref)))
+                    ref = Timetable.nextEvent(blocks, ref, ref.start)
+                }
+            }
 
             // 지금이 급식 "표시 창"(아침·점심·저녁은 종료 10분 전까지, 간식은 전체) 안이면
             // 그 끼니 메뉴를 보여주고, 아니면 아래에서 다음 일정으로 넘어갑니다.
@@ -157,7 +167,8 @@ class HiHanaEvoWidget : GlanceAppWidget() {
                 homeStay = homeStay,
                 homeStayExtras = if (homeStay != null) homeStayExtras(context, today, now) else null,
                 nextTitle = next?.title,
-                nextRoom = next?.room,
+                nextRoom = next?.let(::widgetPlace),
+                upcoming = upcoming,
                 mealText = mealText,
                 mealAllergyPrefix = mealAllergyPrefix,
                 supervisionText = supervisionText,
@@ -184,37 +195,56 @@ class HiHanaEvoWidget : GlanceAppWidget() {
             val remaining = snap.remainingMillis
             val blockAccent = snap.block?.let { accentOverride ?: kindColors.getValue(it.accent) }
             if (remaining != null && blockAccent != null) {
-                countdownRemoteViews(context, remaining, blockAccent)
+                countdownRemoteViews(context, remaining, blockAccent, snap.block.countdownCaption, if (isDark) 0xFFE2E8F0.toInt() else 0xFF475569.toInt())
             } else {
                 null
             }
         }
 
         provideContent {
-            CompositionLocalProvider(LocalAccentOverride provides accentOverride, LocalKindColors provides kindColors) {
-            GlanceTheme {
-                WidgetContent(
-                    block = snapshot?.block,
-                    opacityPercent = opacity,
-                    isDark = isDark,
-                    wallpaperTint = wallpaperTint,
-                    nextTitle = snapshot?.nextTitle,
-                    nextRoom = snapshot?.nextRoom,
-                    mealText = snapshot?.mealText,
-                    mealAllergyPrefix = snapshot?.mealAllergyPrefix.orEmpty(),
-                    supervisionText = snapshot?.supervisionText,
-                    countdownViews = countdownViews,
-                    homeStay = snapshot?.homeStay,
-                    homeStayExtras = snapshot?.homeStayExtras,
-                )
-            }
-            }
+            WidgetRoot(snapshot, opacity, isDark, wallpaperTint, accentOverride, kindColors, countdownViews)
+        }
+    }
+}
+
+/**
+ * 위젯 한 장 — 실제 위젯과 dev 빌드의 위젯 미리보기(src/debug WidgetPreviewActivity)가 같이 씁니다. 미리보기는 같은 그림을
+ * 여러 크기·상황으로 늘어놓아 레이아웃을 한눈에 비교합니다.
+ */
+@Composable
+internal fun WidgetRoot(
+    snapshot: WidgetSnapshot?,
+    opacity: Int,
+    isDark: Boolean,
+    wallpaperTint: Int?,
+    accentOverride: Int?,
+    kindColors: Map<Accent, Int>,
+    countdownViews: RemoteViews?,
+) {
+    CompositionLocalProvider(LocalAccentOverride provides accentOverride, LocalKindColors provides kindColors) {
+        GlanceTheme {
+            WidgetContent(
+                block = snapshot?.block,
+                opacityPercent = opacity,
+                isDark = isDark,
+                wallpaperTint = wallpaperTint,
+                nextTitle = snapshot?.nextTitle,
+                nextRoom = snapshot?.nextRoom,
+                upcoming = snapshot?.upcoming.orEmpty(),
+                mealText = snapshot?.mealText,
+                mealAllergyPrefix = snapshot?.mealAllergyPrefix.orEmpty(),
+                supervisionText = snapshot?.supervisionText,
+                countdownViews = countdownViews,
+                remainingMillis = snapshot?.remainingMillis,
+                homeStay = snapshot?.homeStay,
+                homeStayExtras = snapshot?.homeStayExtras,
+            )
         }
     }
 }
 
 /** 위젯이 한 번 그릴 때 필요한 값 묶음 */
-private data class WidgetSnapshot(
+internal data class WidgetSnapshot(
     val block: Block?,
     /** 귀가 기간 안내 — 일정이 빈 동안 '현재 일정이 없습니다' 대신 띄웁니다. */
     val homeStay: HomeStayNotice?,
@@ -227,7 +257,33 @@ private data class WidgetSnapshot(
     val supervisionText: String?,
     val remainingMillis: Long?,
     val refreshDelayMillis: Long,
+    /** 다음 일정부터 이어지는 몇 개 — 세 칸 이상 높은 위젯에만 보입니다. */
+    val upcoming: List<UpcomingRow> = emptyList(),
 )
+
+/** '이후 일정' 한 줄 — 시작 시각, 이름("5교시 스포츠 생활1", "1타임 · 도서관"), 장소(선생님 이름 없이). */
+internal data class UpcomingRow(val time: String, val title: String, val place: String?)
+
+/**
+ * 위젯에 쓰는 장소 — 수업은 선생님 이름 없이 교실만. 좁은 위젯에서 "융합관 2층 컴퓨터실2 · 이도윤"의 선생님 이름이
+ * 교실을 밀어내 잘렸습니다. 다른 구간은 앱과 같은 [Block.room].
+ */
+internal fun widgetPlace(block: Block): String? = when (val kind = block.kind) {
+    is BlockKind.LessonKind -> kind.lesson.room
+    is BlockKind.GapKind -> when (val next = kind.gap.next) {
+        is NextUp.LessonNext -> next.lesson.room
+        else -> block.room
+    }
+    else -> block.room
+}
+
+/** '이후 일정' 이름 — 수업은 "5교시 과목", 면학은 "1타임 · 장소". */
+internal fun rowTitle(block: Block): String = when (val kind = block.kind) {
+    is BlockKind.LessonKind -> if (kind.lesson.isFree) "${kind.period}교시 공강" else "${kind.period}교시 ${kind.lesson.title}"
+    is BlockKind.StudyKind -> "${kind.session.name} · ${kind.place?.name ?: "위치 미설정"}"
+    is BlockKind.OutingKind -> block.statusLabel
+    else -> block.title
+}
 
 /** 지금 구간이 급식 시간대이고 아직 메뉴를 보여줄 창 안이면 해당 끼니를 돌려줍니다 */
 private fun activeMeal(block: Block, now: LocalDateTime): Meal? {
@@ -285,13 +341,19 @@ private fun openTabAction(tab: String): Action =
     )
 
 /** MM:SS 카운트다운 — Chronometer는 RemoteViews로만 만들 수 있어 별도 레이아웃을 씁니다 */
-private fun countdownRemoteViews(
+internal fun countdownRemoteViews(
     context: Context,
     remainingMillis: Long,
     accentArgb: Int,
+    /** 숫자 앞의 작은 설명 — "종료까지", "다음 수업까지". 없으면 숫자만. */
+    caption: String?,
+    captionArgb: Int,
 ): RemoteViews {
     val views = RemoteViews(context.packageName, R.layout.widget_countdown)
     val id = R.id.widget_countdown
+    views.setTextViewText(R.id.widget_countdown_caption, caption.orEmpty())
+    views.setTextColor(R.id.widget_countdown_caption, captionArgb)
+    views.setViewVisibility(R.id.widget_countdown_caption, if (caption.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
     views.setTextColor(id, accentArgb)
     views.setChronometerCountDown(id, true)
     // 라벨 없이 남은 시간만 "%s"(MM:SS) 로 표시하고, 글자색은 고른 강조 색을 씁니다.
@@ -307,10 +369,12 @@ private fun WidgetContent(
     wallpaperTint: Int?,
     nextTitle: String?,
     nextRoom: String?,
+    upcoming: List<UpcomingRow>,
     mealText: String?,
     mealAllergyPrefix: String,
     supervisionText: String?,
     countdownViews: RemoteViews?,
+    remainingMillis: Long?,
     homeStay: HomeStayNotice?,
     homeStayExtras: HomeStayExtras?,
 ) {
@@ -371,7 +435,7 @@ private fun WidgetContent(
                 contentAlignment = Alignment.TopStart,
             ) {
                 if (block != null && !block.isBlank) {
-                    ScheduleContent(block, nextTitle, nextRoom, mealText, mealAllergyPrefix, supervisionText, countdownViews)
+                    ScheduleContent(block, nextTitle, nextRoom, upcoming, mealText, mealAllergyPrefix, supervisionText, countdownViews, remainingMillis)
                 } else {
                     if (homeStay != null && homeStayExtras != null) HomeStayContent(homeStay, homeStayExtras)
                     else EmptyScheduleContent(homeStay)
@@ -411,6 +475,10 @@ private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
     val titleColor = GlanceTheme.colors.onSurface
     val subtextColor = GlanceTheme.colors.onSurfaceVariant
     val wide = LocalSize.current.width >= 250.dp
+    // 한 칸 높이(≈115dp)엔 날씨 칸(아이콘·큰 기온)이 들어가지 않아 잘렸습니다 — 그땐 "지금 서울 17° · 귀교 21시 12°" 한 줄로.
+    val compact = widgetHeight() == WidgetHeight.COMPACT
+    // 날씨 칸의 설명·한마디(구름 조금 · 우산 챙기세요)는 세 칸 이상일 때만 — 두 칸에선 아래가 잘렸습니다.
+    val tall = widgetHeight() == WidgetHeight.TALL
     val returning = homeStay.shortDetail == "오늘 귀교"
 
     @Composable
@@ -430,7 +498,14 @@ private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
             Text(homeStay.title, style = TextStyle(color = titleColor, fontSize = 15.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             Text(homeStay.shortDetail, style = TextStyle(color = subtextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
             val tiles = listOfNotNull(extras.weatherNow, extras.weatherBack)
-            if (tiles.isNotEmpty()) {
+            if (tiles.isNotEmpty() && compact) {
+                Spacer(GlanceModifier.defaultWeight())
+                Text(
+                    tiles.joinToString(" · ") { "${it.label} ${it.temp ?: "–"}" },
+                    style = TextStyle(color = titleColor, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                )
+            } else if (tiles.isNotEmpty()) {
                 // 서울 날씨 두 칸(지금 · 귀교 밤 9시) — 남는 높이를 다 써서 아이콘·기온을 크게, 위아래 가운데에.
                 Spacer(GlanceModifier.defaultWeight())
                 Row(modifier = GlanceModifier.fillMaxWidth()) {
@@ -441,10 +516,12 @@ private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
                             Spacer(GlanceModifier.height(2.dp))
                             Image(provider = ImageProvider(tile.icon), contentDescription = null, modifier = GlanceModifier.size(34.dp))
                             Text(tile.temp ?: "–", style = TextStyle(color = titleColor, fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 1)
-                            // 좁은 칸이라 "강수 90%" 는 "90%" 로.
-                            Text(tile.desc.replace("강수 ", ""), style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
-                            tile.tip?.let {
-                                Text(it, style = TextStyle(color = ColorProvider(Color(0xFF3D8BFF)), fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                            if (tall) {
+                                // 좁은 칸이라 "강수 90%" 는 "90%" 로.
+                                Text(tile.desc.replace("강수 ", ""), style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                                tile.tip?.let {
+                                    Text(it, style = TextStyle(color = ColorProvider(Color(0xFF3D8BFF)), fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                                }
                             }
                         }
                     }
@@ -473,12 +550,18 @@ private fun HomeStayContent(homeStay: HomeStayNotice, extras: HomeStayExtras) {
         Column(modifier = GlanceModifier.width(140.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             extras.firstPlan?.let { (plan, time) ->
                 Text("귀교 후 첫 일정 · $time", style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
-                Text(plan, style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 2)
-                Spacer(GlanceModifier.height(10.dp))
+                Text(plan, style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = if (compact) 1 else 2)
+                Spacer(GlanceModifier.height(if (compact) 6.dp else 10.dp))
             }
             extras.exam?.let { (name, days) ->
-                Text(name, style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
-                Text(if (days == 0L) "D-day" else "D-$days", style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                val dday = if (days == 0L) "D-day" else "D-$days"
+                // 한 칸 높이에선 시험 이름과 D-day 를 한 줄로 — 두 줄이면 D-day 가 잘렸습니다.
+                if (compact) {
+                    Text("$name $dday", style = TextStyle(color = titleColor, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                } else {
+                    Text(name, style = TextStyle(color = subtextColor, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                    Text(dday, style = TextStyle(color = titleColor, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                }
             }
         }
     }
@@ -524,33 +607,107 @@ private fun EmptyScheduleContent(homeStay: HomeStayNotice?) {
 }
 
 /**
- * 크기(2x2 / 3x1)와 급식 표시 여부로 레이아웃을 고릅니다.
- * 급식 창이 활성일 때만 메뉴 레이아웃을 쓰고, 평소에는 기존 일정 레이아웃입니다.
+ * 위젯 높이 단계 — 삼성 홈 한 칸(≈115dp) / 두 칸(≈180dp) / 세 칸 이상. 실제 줄 수·글자 크기는 이 단계 안에서 실제 높이로 정합니다.
+ * 위젯 미리보기(dev 빌드)로 크기마다 그려 맞춘 값입니다.
+ */
+private enum class WidgetHeight { COMPACT, MEDIUM, TALL }
+
+@Composable
+private fun widgetHeight(): WidgetHeight {
+    val height = LocalSize.current.height
+    return when {
+        height < 150.dp -> WidgetHeight.COMPACT
+        height < 230.dp -> WidgetHeight.MEDIUM
+        else -> WidgetHeight.TALL
+    }
+}
+
+/** 두 칸 폭(≈150dp) — 장소를 아랫줄로 내리고 시간 범위 같은 곁가지를 덜어 냅니다. */
+@Composable
+private fun isNarrow(): Boolean = LocalSize.current.width < 200.dp
+
+/** 위젯 안쪽(여백 16dp 를 뺀) 폭·높이(dp). */
+@Composable
+private fun innerWidth(): Float = LocalSize.current.width.value - 32f
+
+@Composable
+private fun innerHeight(): Float = LocalSize.current.height.value - 32f
+
+/**
+ * 한 줄 높이(dp) 어림 — 위젯 글꼴(한글 본고딕 계열)은 줄 간격이 글자 크기의 약 1.47배입니다(미리보기로 잰 값).
+ * 예전엔 15sp 를 20dp, 13sp 를 18dp 로 잡아 급식 메뉴 줄 수가 넘쳐, 마지막 줄이 가로로 반 잘려 보였습니다.
+ */
+private fun lineDp(sp: Float): Float = sp * 1.47f
+
+/** 히어로(장소) 글자 — 위젯이 2·3·4칸이든 장소 이름은 가장 크게, 넘치면 줄이지 않고 두 줄로([text] 에 줄바꿈이 들어감). */
+private data class HeroFit(val text: String, val sp: Float, val lines: Int) {
+    /** 한글이 들어가면 본고딕 줄 높이(1.47배), 숫자·영문만("2-46", "A304")이면 로보토 줄 높이(1.2배). */
+    val heightDp: Float get() = lines * sp * (if (text.any { it.code in 0xAC00..0xD7A3 }) 1.47f else 1.2f)
+}
+
+/**
+ * 히어로 글자 크기 — 한 줄에 [minOneLine] sp 이상으로 들어가면 한 줄, 아니면([twoLines] 일 때) 두 줄로 나눠 더 크게.
+ * 좁은 2×2 에서 "융합관 2층 컴퓨터실2"가 14sp 로 줄고도 잘리던 것.
+ */
+private fun fitHero(text: String, spaceDp: Float, maxSp: Float, minOneLine: Float, twoLines: Boolean, twoLineMaxSp: Float = maxSp - 4f): HeroFit {
+    val one = fitFont(text, spaceDp)
+    val spaces = text.indices.filter { text[it] == ' ' }
+    if (one >= minOneLine || !twoLines || spaces.isEmpty()) return HeroFit(text, one.coerceIn(14f, maxSp), 1)
+    // 두 줄은 가운데에 가장 가까운 띄어쓰기에서 직접 나눕니다 — 맡겨 두면 "컴 / 퓨터실2"처럼 낱말 중간에서 꺾였습니다.
+    val cut = spaces.minBy { kotlin.math.abs(it - text.length / 2) }
+    val first = text.substring(0, cut)
+    val second = text.substring(cut + 1)
+    val sp = minOf(fitFont(first, spaceDp), fitFont(second, spaceDp)).coerceIn(15f, twoLineMaxSp)
+    return HeroFit("$first\n$second", sp, 2)
+}
+
+/**
+ * Glance 는 텍스트 자동 축소를 지원하지 않아, 글자별 대략적인 폭(em)을 합산해 주어진 폭에 맞는 글자 크기를 역산합니다.
+ * 한글은 1em, 대문자·숫자·소문자·기호는 그보다 좁게 봅니다.
+ */
+private fun fitFont(text: String, availableDp: Float): Float {
+    if (text.isEmpty() || availableDp <= 0f) return 30f
+    val em = text.fold(0.0) { acc, c ->
+        acc + when {
+            c.code in 0xAC00..0xD7A3 || c.code in 0x3131..0x318E -> 1.0 // 한글 음절/자모
+            c.isWhitespace() -> 0.3
+            c.isDigit() -> 0.6
+            c.isUpperCase() -> 0.68
+            c in ".-()·:" -> 0.38
+            else -> 0.56
+        }
+    }
+    // 0.95: 폰트 메트릭 오차로 잘리지 않도록 여유를 둡니다
+    return (availableDp / (em * 0.95)).toFloat()
+}
+
+/** 히어로에 쓸 글자 — 가야 할 장소(선생님 이름 없이), 장소가 없으면(공강·생활관) 이름. */
+private fun heroText(block: Block): String = widgetPlace(block) ?: block.title
+
+/** 외출·외박 사유 — 히어로가 "18:00 복귀"라 사유는 그 아래 줄에. */
+private fun outingReason(block: Block): String? = (block.kind as? BlockKind.OutingKind)?.outing?.reason
+
+/**
+ * 높이 단계와 급식 표시 여부로 레이아웃을 고릅니다. 급식 창이 활성일 때만 메뉴 레이아웃이고, 평소에는 일정 레이아웃입니다.
  */
 @Composable
 private fun ScheduleContent(
     block: Block,
     nextTitle: String?,
     nextRoom: String?,
+    upcoming: List<UpcomingRow>,
     mealText: String?,
     mealAllergyPrefix: String,
     supervisionText: String?,
     countdownViews: RemoteViews?,
+    remainingMillis: Long?,
 ) {
-    val tall = LocalSize.current.height >= 120.dp
-    if (mealText != null) {
-        if (tall) {
-            MealHeroContent(block, mealText, mealAllergyPrefix, supervisionText, nextTitle, nextRoom)
-        } else {
-            MealCompactContent(block, mealText, mealAllergyPrefix, supervisionText)
-        }
-    } else {
-        if (tall) {
-            NormalHeroContent(block, nextTitle, nextRoom, supervisionText, countdownViews)
-        } else {
-            // 3x1/2x1 처럼 세로가 짧으면 면학감독 줄까지 넣기엔 공간이 부족해 생략합니다.
-            NormalCompactContent(block, nextTitle, nextRoom)
-        }
+    val compact = widgetHeight() == WidgetHeight.COMPACT
+    when {
+        mealText != null && compact -> MealCompactContent(block, mealText, mealAllergyPrefix, supervisionText)
+        mealText != null -> MealHeroContent(block, mealText, mealAllergyPrefix, supervisionText, nextTitle, nextRoom)
+        compact -> NormalCompactContent(block, nextTitle, nextRoom)
+        else -> NormalHeroContent(block, nextTitle, nextRoom, upcoming, supervisionText, countdownViews, remainingMillis)
     }
 }
 
@@ -565,7 +722,7 @@ private fun statusText(block: Block): String {
     return block.statusLabel
 }
 
-/** 상단 상태 점 + 라벨 — 2x2/3x1에서 점 크기만 달리해 재사용합니다 */
+/** 상단 상태 점 + 라벨 (+ 오른쪽 끝에 [trailing] — 넓은 위젯의 시간 범위). */
 @Composable
 private fun StatusRow(
     block: Block,
@@ -573,9 +730,10 @@ private fun StatusRow(
     gap: Dp,
     fontSize: TextUnit,
     text: String,
+    trailing: String? = null,
 ) {
     val accent = accentColor(block.accent)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = GlanceModifier
                 .width(dotSize)
@@ -588,11 +746,20 @@ private fun StatusRow(
             text = text,
             style = TextStyle(color = accent, fontSize = fontSize, fontWeight = FontWeight.Medium),
             maxLines = 1,
+            modifier = GlanceModifier.defaultWeight(),
         )
+        if (trailing != null) {
+            Spacer(GlanceModifier.width(8.dp))
+            Text(
+                text = trailing,
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                maxLines = 1,
+            )
+        }
     }
 }
 
-/** 위치(방) 히어로 한 줄 — 아이콘 + 강조 텍스트 */
+/** 위치(방) 히어로 — 아이콘 + 큰 글자(넘치면 두 줄). */
 @Composable
 private fun HeroRow(
     block: Block,
@@ -600,10 +767,11 @@ private fun HeroRow(
     iconSize: Dp,
     fontSize: TextUnit,
     color: ColorProvider? = null,
+    maxLines: Int = 1,
 ) {
     val heroColor = color ?: accentColor(block.accent)
     Row(
-        modifier = GlanceModifier.clickable(openTabAction(MainActivity.TAB_TODAY)),
+        modifier = GlanceModifier.fillMaxWidth().clickable(openTabAction(MainActivity.TAB_TODAY)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (block.iconKey.isNotEmpty()) {
@@ -618,103 +786,61 @@ private fun HeroRow(
         Text(
             text = heroText,
             style = TextStyle(color = heroColor, fontSize = fontSize, fontWeight = FontWeight.Bold),
-            maxLines = 1,
+            maxLines = maxLines,
+            modifier = GlanceModifier.defaultWeight(),
         )
     }
 }
 
 /**
- * 하단 내용 — 급식 표시 창이면 메뉴를, 아니면 다음 일정 한 줄을 보여줍니다.
- * 그 끼니 메뉴 데이터가 없을 때도 다음 일정으로 자연스럽게 넘어갑니다.
+ * 급식 메뉴 — 알레르기 경고가 있으면 그 부분만 빨간 굵은 글씨로. Glance Text 는 한 줄 안에서 색을 나눌 수 없어 그때만
+ * RemoteViews TextView(색 구간 지정)로 그립니다. 가중치 계산이 깨지지 않게 Box 로 감쌉니다.
  */
 @Composable
-private fun MealOrNextContent(
-    mealText: String?,
-    nextTitle: String?,
-    nextRoom: String?,
-    fontSize: TextUnit,
-    maxLines: Int,
-    allergyPrefix: String = "",
-) {
-    if (mealText != null) {
-        if (allergyPrefix.isEmpty()) {
-            Text(
-                text = mealText,
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
-                maxLines = maxLines,
-                modifier = GlanceModifier.clickable(openTabAction(MainActivity.TAB_MEAL)),
-            )
-        } else {
-            // 알레르기 경고만 빨간 굵은 글씨로, 메뉴는 그 뒤에 같은 줄로 이어 흐르게 — Glance Text 는 한 줄 안에서 색을
-            // 나눌 수 없어 이 줄만 RemoteViews TextView(색 구간 지정)로 그립니다. 가중치 계산이 깨지지 않게 Box 로 감쌉니다.
-            val context = LocalContext.current
-            val views = mealRemoteViews(
-                context,
-                prefix = allergyPrefix.trimEnd(),
-                menu = mealText,
-                textColor = GlanceTheme.colors.onSurface.getColor(context).toArgb(),
-                fontSizeSp = fontSize.value,
-                maxLines = maxLines,
-            )
-            Box(modifier = GlanceModifier.fillMaxWidth().clickable(openTabAction(MainActivity.TAB_MEAL))) {
-                AndroidRemoteViews(remoteViews = views, modifier = GlanceModifier.fillMaxWidth())
-            }
-        }
-    } else {
-        NextRow(nextTitle, nextRoom, fontSize, maxLines)
+private fun MealText(mealText: String, allergyPrefix: String, fontSize: TextUnit, maxLines: Int) {
+    if (allergyPrefix.isEmpty()) {
+        Text(
+            text = mealText,
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
+            maxLines = maxLines,
+            modifier = GlanceModifier.clickable(openTabAction(MainActivity.TAB_MEAL)),
+        )
+        return
+    }
+    val context = LocalContext.current
+    val views = mealRemoteViews(
+        context,
+        prefix = allergyPrefix.trimEnd(),
+        menu = mealText,
+        textColor = GlanceTheme.colors.onSurface.getColor(context).toArgb(),
+        fontSizeSp = fontSize.value,
+        maxLines = maxLines,
+    )
+    Box(modifier = GlanceModifier.fillMaxWidth().clickable(openTabAction(MainActivity.TAB_MEAL))) {
+        AndroidRemoteViews(remoteViews = views, modifier = GlanceModifier.fillMaxWidth())
     }
 }
 
 /**
- * '다음 일정' 한 줄 — "다음" 텍스트·가운뎃점 대신 아이콘으로 구분합니다.
- * 제목이 없으면 통째로 그리지 않습니다.
+ * '다음 일정' — "다음" 텍스트·가운뎃점 대신 아이콘으로 구분합니다. 제목이 없으면 통째로 그리지 않습니다.
+ * [stack] 이면 장소를 제목 아랫줄로(좁은 위젯: 긴 장소가 제목을 0 폭으로 누르던 것), [showRoom] 이 아니면 장소를 뺍니다.
  */
 @Composable
-private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, maxLines: Int = 1) {
+private fun NextRow(
+    nextTitle: String?,
+    nextRoom: String?,
+    fontSize: TextUnit,
+    maxLines: Int = 1,
+    stack: Boolean = false,
+    showRoom: Boolean = true,
+) {
     val title = nextTitle?.takeIf { it.isNotEmpty() } ?: return
-    val room = nextRoom?.takeIf { it.isNotEmpty() }
+    val room = nextRoom?.takeIf { it.isNotEmpty() && showRoom }
     val subtext = GlanceTheme.colors.onSurfaceVariant
     val onSurface = GlanceTheme.colors.onSurface
 
-    // 좁은 위젯(2x2, 폭 ~150dp)에선 '교실 · 선생님'처럼 긴 장소가 남는 폭을 다 써서 제목이 0 폭으로 눌렸습니다 — 장소를 제목 아래
-    // 줄로 내립니다. 넓으면 예전처럼 한 줄(제목은 남는 폭에서 줄바꿈, 장소는 자기 폭 먼저).
-    val stacked = room != null && LocalSize.current.width < 200.dp
-    if (stacked) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    provider = ImageProvider(R.drawable.ic_next),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(subtext),
-                    modifier = GlanceModifier.size(14.dp),
-                )
-                Spacer(GlanceModifier.width(4.dp))
-                Text(
-                    text = title,
-                    style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
-                    maxLines = maxLines,
-                    modifier = GlanceModifier.defaultWeight(),
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = GlanceModifier.padding(start = 18.dp)) {
-                Image(
-                    provider = ImageProvider(R.drawable.ic_place),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(subtext),
-                    modifier = GlanceModifier.size(12.dp),
-                )
-                Spacer(GlanceModifier.width(3.dp))
-                Text(
-                    text = room!!,
-                    style = TextStyle(color = subtext, fontSize = fontSize, fontWeight = FontWeight.Medium),
-                    maxLines = 1,
-                    modifier = GlanceModifier.defaultWeight(),
-                )
-            }
-        }
-        return
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    @Composable
+    fun titleRow() = Row(verticalAlignment = Alignment.CenterVertically) {
         Image(
             provider = ImageProvider(R.drawable.ic_next),
             contentDescription = null,
@@ -722,16 +848,32 @@ private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, m
             modifier = GlanceModifier.size(14.dp),
         )
         Spacer(GlanceModifier.width(4.dp))
-        // 제목은 남는 폭 안에서 줄바꿈하고, 장소는 자기 폭을 먼저 확보합니다 — 제목에 폭 제한이 없으면 긴 과목명이
-        // 한 줄로 늘어나 장소가 위젯 밖으로 밀려 잘려 보였습니다.
         Text(
             text = title,
             style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
             maxLines = maxLines,
             modifier = GlanceModifier.defaultWeight(),
         )
-        if (room != null) {
+        if (room != null && !stack) {
             Spacer(GlanceModifier.width(8.dp))
+            Image(
+                provider = ImageProvider(R.drawable.ic_place),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(subtext),
+                modifier = GlanceModifier.size(12.dp),
+            )
+            Spacer(GlanceModifier.width(3.dp))
+            Text(text = room, style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium), maxLines = 1)
+        }
+    }
+
+    if (room == null || !stack) {
+        titleRow()
+        return
+    }
+    Column(modifier = GlanceModifier.fillMaxWidth()) {
+        titleRow()
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = GlanceModifier.padding(start = 18.dp)) {
             Image(
                 provider = ImageProvider(R.drawable.ic_place),
                 contentDescription = null,
@@ -741,9 +883,327 @@ private fun NextRow(nextTitle: String?, nextRoom: String?, fontSize: TextUnit, m
             Spacer(GlanceModifier.width(3.dp))
             Text(
                 text = room,
-                style = TextStyle(color = onSurface, fontSize = fontSize, fontWeight = FontWeight.Medium),
+                style = TextStyle(color = subtext, fontSize = fontSize, fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                modifier = GlanceModifier.defaultWeight(),
+            )
+        }
+    }
+}
+
+/** '이후 일정' 한 줄 높이(dp) — 넓으면 시각·이름·장소 한 줄, 좁으면 시각·장소 / 이름 두 줄. */
+private fun upcomingRowDp(narrow: Boolean): Float = if (narrow) lineDp(11f) + lineDp(13f) + 4f else lineDp(13f) + 4f
+
+/**
+ * 세 칸 이상 높은 위젯의 '이후 일정' — 예전엔 히어로·다음 일정·카운트다운만 있어 가운데가 크게 비었습니다.
+ * 다음 일정부터 [count] 개.
+ */
+@Composable
+private fun UpcomingList(rows: List<UpcomingRow>, count: Int, narrow: Boolean) {
+    val subtext = GlanceTheme.colors.onSurfaceVariant
+    val onSurface = GlanceTheme.colors.onSurface
+    Column(modifier = GlanceModifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_next),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(subtext),
+                modifier = GlanceModifier.size(13.dp),
+            )
+            Spacer(GlanceModifier.width(4.dp))
+            Text("이후 일정", style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+        }
+        rows.take(count).forEach { row ->
+            Spacer(GlanceModifier.height(4.dp))
+            if (narrow) {
+                Text(
+                    text = listOfNotNull(row.time, row.place).joinToString(" · "),
+                    style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                    maxLines = 1,
+                )
+                Text(row.title, style = TextStyle(color = onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+            } else {
+                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = row.time,
+                        style = TextStyle(color = subtext, fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        modifier = GlanceModifier.width(44.dp),
+                    )
+                    Text(
+                        text = row.title,
+                        style = TextStyle(color = onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
+                    row.place?.let {
+                        Spacer(GlanceModifier.width(8.dp))
+                        Text(it, style = TextStyle(color = subtext, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 저녁 창에 덧붙는 면학감독 한 줄 — 메뉴/카운트다운과 구분되도록 보조 색·작은 글씨로 그립니다.
+ * Glance Text 는 overflow 를 지원하지 않아 maxLines=1 로 잘라 폭을 지킵니다.
+ */
+@Composable
+private fun SupervisionLine(text: String, fontSize: TextUnit) {
+    Text(
+        text = text,
+        style = TextStyle(
+            color = GlanceTheme.colors.onSurfaceVariant,
+            fontSize = fontSize,
+            fontWeight = FontWeight.Medium,
+        ),
+        maxLines = 1,
+    )
+}
+
+/**
+ * 한 칸 높이(≈115dp)용(정상 일정) — 상태(넓으면 오른쪽에 시간 범위) → 장소 → 다음 일정 한 줄(좁으면 장소 빼고)
+ * → (좁으면) 시간 범위. 예전엔 좁은 2×1 에서 다음 일정이 두 줄로 늘어 시간 범위가 잘렸습니다.
+ */
+@Composable
+private fun NormalCompactContent(block: Block, nextTitle: String?, nextRoom: String?) {
+    val subtext = GlanceTheme.colors.onSurfaceVariant
+    val narrow = isNarrow()
+    val heroText = heroText(block)
+    val hero = fitHero(heroText, innerWidth() - (if (block.iconKey.isNotEmpty()) 26f else 0f), maxSp = 22f, minOneLine = 14f, twoLines = false)
+    val reason = outingReason(block)
+
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        StatusRow(block, dotSize = 6.dp, gap = 6.dp, fontSize = 12.sp, text = statusText(block), trailing = if (narrow) null else block.timeRangeText)
+
+        Spacer(GlanceModifier.defaultWeight())
+
+        HeroRow(block = block, heroText = hero.text, iconSize = 18.dp, fontSize = hero.sp.sp, color = GlanceTheme.colors.onSurface)
+
+        when {
+            reason != null -> Text(reason, style = TextStyle(color = subtext, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+            !nextTitle.isNullOrEmpty() -> {
+                Spacer(GlanceModifier.height(2.dp))
+                NextRow(nextTitle, nextRoom, 12.sp, maxLines = 1, showRoom = !narrow)
+            }
+        }
+
+        Spacer(GlanceModifier.defaultWeight())
+
+        if (narrow) {
+            Text(
+                text = block.timeRangeText,
+                style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Medium),
                 maxLines = 1,
             )
+        }
+    }
+}
+
+/**
+ * 한 칸 높이(≈115dp)용(급식 창) — 상태·장소를 한 줄로, 아래에 메뉴. 메뉴 줄 수는 남는 높이(면학감독 줄 몫을 뺀)로.
+ */
+@Composable
+private fun MealCompactContent(block: Block, mealText: String, allergyPrefix: String, supervisionText: String?) {
+    val supervisionDp = if (supervisionText != null) lineDp(11f) + 2f else 0f
+    val mealLines = ((innerHeight() - lineDp(12f) - 4f - supervisionDp) / lineDp(13f)).toInt().coerceIn(1, 4)
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        StatusRow(
+            block = block,
+            dotSize = 6.dp,
+            gap = 6.dp,
+            fontSize = 12.sp,
+            text = "${statusText(block)} · ${heroText(block)}",
+        )
+
+        Spacer(GlanceModifier.defaultWeight())
+
+        MealText(mealText, allergyPrefix, fontSize = 13.sp, maxLines = mealLines)
+
+        if (supervisionText != null) {
+            Spacer(GlanceModifier.height(2.dp))
+            SupervisionLine(supervisionText, fontSize = 11.sp)
+        }
+    }
+}
+
+/**
+ * 두 칸 이상 높이용(정상 일정) — 상태 → 장소 히어로(넘치면 두 줄) → 다음 일정, 세 칸 이상이면 '이후 일정' 목록 → 남은 시간.
+ * 저녁 창(18:50~19:00)에는 남은 시간 위에 면학감독 한 줄이 더 붙습니다.
+ *
+ * 남은 시간은 넓으면 초까지 세는 Chronometer("종료까지 23:40"), 좁으면 분 단위 글자("종료까지" / "23분") — 좁은 폭에선
+ * 설명과 큰 숫자가 한 줄에 들어가지 않아 숫자가 "23:4 / 0"으로 꺾였습니다. 위젯은 1분마다 다시 그려집니다.
+ * Chronometer(AndroidRemoteViews)를 같은 Column 에 넣으면 defaultWeight 계산이 깨지므로,
+ * 가중치가 걸린 내용은 안쪽 Column 에 두고 카운트다운은 바깥 Box 에 겹쳐 그립니다.
+ */
+@Composable
+private fun NormalHeroContent(
+    block: Block,
+    nextTitle: String?,
+    nextRoom: String?,
+    upcoming: List<UpcomingRow>,
+    supervisionText: String?,
+    countdownViews: RemoteViews?,
+    remainingMillis: Long?,
+) {
+    val narrow = isNarrow()
+    val tall = widgetHeight() == WidgetHeight.TALL
+    val iconDp = if (narrow) 24f else 28f
+    val hero = fitHero(
+        heroText(block),
+        innerWidth() - (if (block.iconKey.isNotEmpty()) iconDp + 8f else 0f),
+        maxSp = if (narrow) 24f else 30f,
+        // 두 칸 높이에선 한 줄로 조금 작게가 낫고(아래 다음 일정 자리), 세 칸 이상이나 좁은 폭에선 두 줄로 크게.
+        minOneLine = if (tall || narrow) 17f else 15f,
+        twoLines = true,
+        // 좁은 두 칸 높이(2×2)는 두 줄을 조금 작게 — 그래야 아래 다음 일정 한 줄이 들어갑니다.
+        twoLineMaxSp = when {
+            narrow && !tall -> 17f
+            narrow -> 20f
+            else -> 26f
+        },
+    )
+    val showCountdown = remainingMillis != null && (narrow || countdownViews != null)
+    val countdownDp = when {
+        !showCountdown -> 0f
+        narrow -> lineDp(11f) + 22f * 1.25f
+        else -> 44f
+    }
+    val supervisionDp = if (supervisionText != null) lineDp(12f) + 2f else 0f
+    // 히어로 아래에 쓸 수 있는 높이 — 상태 줄·간격·히어로·면학감독·남은 시간을 뺀 만큼.
+    val room = innerHeight() - lineDp(13f) - 8f - hero.heightDp - 8f - supervisionDp - countdownDp
+    val nextLines = (room / lineDp(13f)).toInt()
+    val listRows = ((room - lineDp(11f) - 2f) / upcomingRowDp(narrow)).toInt()
+    val reason = outingReason(block)
+    val subtext = GlanceTheme.colors.onSurfaceVariant
+
+    Box(modifier = GlanceModifier.fillMaxSize()) {
+        Column(modifier = GlanceModifier.fillMaxSize()) {
+            StatusRow(block, dotSize = 8.dp, gap = 8.dp, fontSize = 13.sp, text = statusText(block), trailing = if (narrow) null else block.timeRangeText)
+
+            Spacer(GlanceModifier.height(8.dp))
+
+            HeroRow(
+                block = block,
+                heroText = hero.text,
+                iconSize = iconDp.dp,
+                fontSize = hero.sp.sp,
+                color = GlanceTheme.colors.onSurface,
+                maxLines = hero.lines,
+            )
+
+            Spacer(GlanceModifier.height(8.dp))
+
+            when {
+                nextLines < 1 -> Unit
+                reason != null -> Text(
+                    reason,
+                    style = TextStyle(color = subtext, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                    maxLines = nextLines.coerceAtMost(3),
+                )
+                tall && upcoming.size >= 2 && listRows >= 2 -> UpcomingList(upcoming, listRows.coerceAtMost(upcoming.size), narrow)
+                !nextTitle.isNullOrEmpty() -> NextRow(
+                    nextTitle,
+                    nextRoom,
+                    13.sp,
+                    maxLines = if (narrow) 1 else nextLines.coerceAtMost(3),
+                    // 좁으면 장소를 아랫줄로 — 그럴 높이가 없으면 장소는 빼고 이름만.
+                    stack = narrow && nextLines >= 2,
+                    showRoom = !narrow || nextLines >= 2,
+                )
+            }
+
+            Spacer(GlanceModifier.defaultWeight())
+
+            if (supervisionText != null) {
+                SupervisionLine(supervisionText, fontSize = 12.sp)
+                Spacer(GlanceModifier.height(2.dp))
+            }
+
+            if (showCountdown && narrow) {
+                block.countdownCaption?.let { Text(it, style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1) }
+                Text(
+                    remainingText(remainingMillis!!),
+                    style = TextStyle(color = accentColor(block.accent), fontSize = 22.sp, fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                )
+            } else if (showCountdown) {
+                Spacer(GlanceModifier.height(countdownDp.dp))
+            }
+        }
+
+        if (showCountdown && !narrow && countdownViews != null) {
+            Box(
+                modifier = GlanceModifier.fillMaxSize(),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                AndroidRemoteViews(
+                    remoteViews = countdownViews,
+                    modifier = GlanceModifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/** 분 단위 남은 시간 — "23분", "1시간 5분". 1분 안이면 "1분". */
+private fun remainingText(millis: Long): String {
+    val minutes = ((millis + 59_999) / 60_000).coerceAtLeast(1)
+    return if (minutes >= 60) "${minutes / 60}시간 ${minutes % 60}분" else "${minutes}분"
+}
+
+/**
+ * 두 칸 이상 높이용(급식 창) — 장소 히어로는 유지하고 그 아래를 메뉴로, 맨 아래 다음 일정 한 줄.
+ * 메뉴 줄 수는 실제 줄 높이로 남는 높이를 나눠 정합니다 — 예전엔 줄 높이를 낮게 잡아 마지막 줄이 가로로 잘렸습니다.
+ */
+@Composable
+private fun MealHeroContent(
+    block: Block,
+    mealText: String,
+    allergyPrefix: String,
+    supervisionText: String?,
+    nextTitle: String?,
+    nextRoom: String?,
+) {
+    val narrow = isNarrow()
+    val heroText = heroText(block)
+    val iconDp = if (narrow) 24f else 28f
+    val hero = fitHero(
+        heroText,
+        innerWidth() - (if (block.iconKey.isNotEmpty()) iconDp + 8f else 0f),
+        maxSp = if (narrow) 22f else 28f,
+        minOneLine = 14f,
+        twoLines = false,
+    )
+    val hasNext = !nextTitle.isNullOrEmpty()
+    val fixedDp = lineDp(13f) + 10f + hero.heightDp + 8f +
+        (if (hasNext) lineDp(12f) + 2f else 0f) + (if (supervisionText != null) lineDp(12f) + 2f else 0f)
+    val mealLines = ((innerHeight() - fixedDp) / lineDp(15f)).toInt().coerceIn(1, 12)
+
+    Column(modifier = GlanceModifier.fillMaxSize()) {
+        StatusRow(block, dotSize = 8.dp, gap = 8.dp, fontSize = 13.sp, text = statusText(block), trailing = if (narrow) null else block.timeRangeText)
+
+        Spacer(GlanceModifier.height(10.dp))
+
+        HeroRow(block = block, heroText = hero.text, iconSize = iconDp.dp, fontSize = hero.sp.sp)
+
+        Spacer(GlanceModifier.height(8.dp))
+
+        Box(modifier = GlanceModifier.fillMaxWidth().defaultWeight(), contentAlignment = Alignment.TopStart) {
+            MealText(mealText, allergyPrefix, fontSize = 15.sp, maxLines = mealLines)
+        }
+
+        // 급식 창에도 다음 일정(다음 수업·면학)을 한 줄 보여줍니다.
+        if (hasNext) {
+            Spacer(GlanceModifier.height(2.dp))
+            NextRow(nextTitle, nextRoom, 12.sp, maxLines = 1, showRoom = !narrow)
+        }
+
+        if (supervisionText != null) {
+            Spacer(GlanceModifier.height(2.dp))
+            SupervisionLine(supervisionText, fontSize = 12.sp)
         }
     }
 }
@@ -768,233 +1228,6 @@ private fun scheduleBoundaryRefresh(context: Context, delayMillis: Long) {
         ExistingWorkPolicy.REPLACE,
         request,
     )
-}
-
-/**
- * Glance 는 텍스트 자동 축소를 지원하지 않아, 글자별 대략적인 폭(em)을 합산해
- * 주어진 폭에 맞는 글자 크기를 역산합니다. 한글은 1em, 숫자·기호는 그보다 좁게 봅니다.
- */
-private fun fitHeroFontSize(text: String, availableDp: Float): Float {
-    if (text.isEmpty() || availableDp <= 0f) return 30f
-    val em = text.fold(0.0) { acc, c ->
-        acc + when {
-            c.code in 0xAC00..0xD7A3 || c.code in 0x3131..0x318E -> 1.0 // 한글 음절/자모
-            c.isWhitespace() -> 0.35
-            c.isDigit() || c in ".-()·" -> 0.55
-            else -> 0.6
-        }
-    }
-    // 0.95: 폰트 메트릭 오차로 잘리지 않도록 여유를 둡니다
-    return (availableDp / (em * 0.95)).toFloat().coerceIn(14f, 30f)
-}
-
-/**
- * 3x1 등 세로가 짧은 크기용(정상 일정) — 상태 → 위치 히어로 → 다음 일정 → 시간 범위.
- */
-@Composable
-private fun NormalCompactContent(block: Block, nextTitle: String?, nextRoom: String?) {
-    val subtext = GlanceTheme.colors.onSurfaceVariant
-    val heroText = block.room ?: block.title
-
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        StatusRow(block, dotSize = 6.dp, gap = 6.dp, fontSize = 12.sp, text = statusText(block))
-
-        Spacer(GlanceModifier.defaultWeight())
-
-        HeroRow(
-            block = block,
-            heroText = heroText,
-            iconSize = 18.dp,
-            fontSize = 19.sp,
-            color = GlanceTheme.colors.onSurface,
-        )
-
-        if (!nextTitle.isNullOrEmpty()) {
-            Spacer(GlanceModifier.height(2.dp))
-            NextRow(nextTitle, nextRoom, 12.sp, maxLines = ((LocalSize.current.height.value - 90f) / 16f).toInt().coerceIn(1, 3))
-        }
-
-        Spacer(GlanceModifier.defaultWeight())
-
-        Text(
-            text = block.timeRangeText,
-            style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Medium),
-            maxLines = 1,
-        )
-    }
-}
-
-/**
- * 3x1 등 세로가 짧은 크기용(급식 창) — 상태·위치를 한 줄로, 아래에 메뉴.
- */
-@Composable
-private fun MealCompactContent(block: Block, mealText: String, allergyPrefix: String, supervisionText: String?) {
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        StatusRow(
-            block = block,
-            dotSize = 6.dp,
-            gap = 6.dp,
-            fontSize = 12.sp,
-            text = "${statusText(block)} · ${block.room ?: block.title}",
-        )
-
-        Spacer(GlanceModifier.defaultWeight())
-
-        // 가로형도 높이에 여유가 있으면 메뉴 줄 수를 늘립니다 (한 줄 ≈ 18dp).
-        val mealLines = ((LocalSize.current.height.value - 32f - 20f - 8f) / 18f).toInt().coerceIn(1, 4)
-        MealOrNextContent(mealText = mealText, nextTitle = null, nextRoom = null, fontSize = 13.sp, maxLines = mealLines, allergyPrefix = allergyPrefix)
-
-        if (supervisionText != null) {
-            Spacer(GlanceModifier.height(2.dp))
-            SupervisionLine(supervisionText, fontSize = 11.sp)
-        }
-    }
-}
-
-/**
- * 저녁 창에 덧붙는 면학감독 한 줄 — 메뉴/카운트다운과 구분되도록 보조 색·작은 글씨로 그립니다.
- * Glance Text 는 overflow 를 지원하지 않아 maxLines=1 로 잘라 폭을 지킵니다.
- */
-@Composable
-private fun SupervisionLine(text: String, fontSize: TextUnit) {
-    Text(
-        text = text,
-        style = TextStyle(
-            color = GlanceTheme.colors.onSurfaceVariant,
-            fontSize = fontSize,
-            fontWeight = FontWeight.Medium,
-        ),
-        maxLines = 1,
-    )
-}
-
-/**
- * 2x2처럼 세로 공간이 넉넉한 크기용(정상 일정) — 위치 히어로 + 다음 일정 + 카운트다운.
- * 저녁 창(18:50~19:00)에는 하단에 면학감독 한 줄이 더 붙습니다.
- *
- * Chronometer(AndroidRemoteViews)를 같은 Column 에 넣으면 defaultWeight 계산이 깨지므로,
- * 가중치가 걸린 내용은 안쪽 Column 에 두고 카운트다운은 바깥 Box 에 겹쳐 그립니다.
- */
-@Composable
-private fun NormalHeroContent(
-    block: Block,
-    nextTitle: String?,
-    nextRoom: String?,
-    supervisionText: String?,
-    countdownViews: RemoteViews?,
-) {
-    val heroText = block.room ?: block.title
-    val heroSpace = LocalSize.current.width.value - 32f - (if (block.iconKey.isNotEmpty()) 36f else 0f)
-
-    Box(modifier = GlanceModifier.fillMaxSize()) {
-        Column(modifier = GlanceModifier.fillMaxSize()) {
-            StatusRow(block, dotSize = 8.dp, gap = 8.dp, fontSize = 13.sp, text = statusText(block))
-
-            // 상단이 과하게 벌어지지 않도록 여기는 고정 간격, 가중치는 아래쪽에만 씁니다.
-            Spacer(GlanceModifier.height(12.dp))
-
-            HeroRow(
-                block = block,
-                heroText = heroText,
-                iconSize = 28.dp,
-                fontSize = fitHeroFontSize(heroText, heroSpace).sp,
-                color = GlanceTheme.colors.onSurface,
-            )
-
-            Spacer(GlanceModifier.defaultWeight())
-
-            // 세로 여유가 있으면 긴 과목명이 잘리지 않도록 줄 수를 높이에 맞춰 늘립니다 (2~4줄).
-            if (!nextTitle.isNullOrEmpty()) {
-                val nextLines = ((LocalSize.current.height.value - 150f) / 18f).toInt().coerceIn(2, 4)
-                NextRow(nextTitle, nextRoom, 13.sp, maxLines = nextLines)
-            }
-
-            Spacer(GlanceModifier.defaultWeight())
-
-            // 18:50~19:00(저녁 gap)에는 급식 레이아웃이 아니라 여기서 면학감독을 보여줍니다.
-            // 카운트다운 자리 바로 위에 조용히 얹어 겹치지 않게 합니다.
-            if (supervisionText != null) {
-                SupervisionLine(supervisionText, fontSize = 12.sp)
-                Spacer(GlanceModifier.height(2.dp))
-            }
-
-            // 26sp 카운트다운(약 34dp)이 잘리지 않도록 자리를 비워 둡니다.
-            Spacer(GlanceModifier.height(42.dp))
-        }
-
-        if (countdownViews != null) {
-            Box(
-                modifier = GlanceModifier.fillMaxSize(),
-                contentAlignment = Alignment.BottomStart,
-            ) {
-                AndroidRemoteViews(
-                    remoteViews = countdownViews,
-                    modifier = GlanceModifier.fillMaxWidth(),
-                )
-            }
-        }
-    }
-}
-
-/**
- * 2x2처럼 세로 공간이 넉넉한 크기용(급식 창) — 위치 히어로는 유지하고 하단을 메뉴로.
- */
-@Composable
-private fun MealHeroContent(
-    block: Block,
-    mealText: String,
-    allergyPrefix: String,
-    supervisionText: String?,
-    nextTitle: String?,
-    nextRoom: String?,
-) {
-    val heroText = block.room ?: block.title
-    val heroSpace = LocalSize.current.width.value - 32f - (if (block.iconKey.isNotEmpty()) 36f else 0f)
-
-    Column(modifier = GlanceModifier.fillMaxSize()) {
-        StatusRow(block, dotSize = 8.dp, gap = 8.dp, fontSize = 13.sp, text = statusText(block))
-
-        Spacer(GlanceModifier.height(12.dp))
-
-        HeroRow(
-            block = block,
-            heroText = heroText,
-            iconSize = 28.dp,
-            fontSize = fitHeroFontSize(heroText, heroSpace).sp,
-        )
-
-        Spacer(GlanceModifier.height(8.dp))
-
-        // 메뉴가 남는 세로 공간을 차지합니다 — 줄 수는 위젯 높이에서 상단(상태·히어로·여백)과 하단 여백을 뺀
-        // 만큼 계산해서, 공간이 남는데도 4줄에서 잘리지 않게 합니다 (한 줄 ≈ 20dp).
-        val hasNext = !nextTitle.isNullOrEmpty()
-        val fixedDp = 32f + 20f + 12f + 40f + 8f + (if (supervisionText != null) 20f else 0f) + (if (hasNext) 20f else 0f)
-        val mealLines = ((LocalSize.current.height.value - fixedDp) / 20f).toInt().coerceIn(2, 12)
-        Box(
-            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-            contentAlignment = Alignment.TopStart,
-        ) {
-            MealOrNextContent(
-                mealText = mealText,
-                nextTitle = null,
-                nextRoom = null,
-                fontSize = 15.sp,
-                maxLines = mealLines,
-                allergyPrefix = allergyPrefix,
-            )
-        }
-
-        // 급식 창에도 다음 일정(다음 수업·면학)을 한 줄 보여줍니다.
-        if (hasNext) {
-            Spacer(GlanceModifier.height(2.dp))
-            NextRow(nextTitle, nextRoom, 12.sp, maxLines = 1)
-        }
-
-        if (supervisionText != null) {
-            Spacer(GlanceModifier.height(2.dp))
-            SupervisionLine(supervisionText, fontSize = 12.sp)
-        }
-    }
 }
 
 /**

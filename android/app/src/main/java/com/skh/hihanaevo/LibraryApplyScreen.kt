@@ -113,7 +113,6 @@ fun LibraryApplyScreen(service: SeatService, onDismiss: () -> Unit, onChanged: (
     // 빠른 예약 — 미리 골라 둔 자리(최대 4개)를 맨 위 버튼으로. '+' 를 누른 뒤 좌석을 탭하면 저장, 버튼을 길게 누르면 제거.
     var quickSeats by remember { mutableStateOf(QuickSeatStore.get(context, service)) }
     var pickingQuick by remember { mutableStateOf(false) }
-    val view = androidx.compose.ui.platform.LocalView.current
     // 신청 기기 — 포털은 마지막으로 등록한 기기에서만 신청을 받습니다. 상태를 보여주고 버튼으로 이 기기를 등록합니다.
     var deviceRegistered by remember { mutableStateOf<Boolean?>(null) }
     var registering by remember { mutableStateOf(false) }

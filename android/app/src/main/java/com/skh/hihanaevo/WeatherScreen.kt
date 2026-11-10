@@ -263,6 +263,8 @@ private fun TopInfo(f: SeoulWeather.Forecast, today: LocalDate, now: LocalDateTi
                 else -> null
             }
             extra?.let { Text(it, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Rain, modifier = Modifier.padding(top = 2.dp)) }
+            // 지난 한 시간 동안 실제로 온 비 — 기상청 실황(가까운 관측소).
+            f.currentRain?.let { Text("지난 1시간 강수량 ${mm(it)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Rain, modifier = Modifier.padding(top = 2.dp)) }
             Text(
                 until?.let { "귀교 ${it.monthValue}/${it.dayOfMonth}(${it.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)}) ${hourLabel(it.hour)}까지" }
                     ?: "${now.monthValue}월 ${now.dayOfMonth}일 ${now.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN)}",
@@ -282,6 +284,15 @@ private fun TopInfo(f: SeoulWeather.Forecast, today: LocalDate, now: LocalDateTi
 }
 
 private fun androidx.compose.material3.ColorScheme.isDarkScheme(): Boolean = background.luminance() < 0.5f
+
+/** 바람이 불어오는 쪽(°, 0 = 북) → "북서풍" — 8방위. */
+private fun windFrom(deg: Int): String =
+    listOf("북", "북동", "동", "남동", "남", "남서", "서", "북서")[((deg % 360 + 360) % 360 + 22) / 45 % 8] + "풍"
+
+/** 강수량 — 1mm 미만은 "1mm 미만", 그 위는 소수 한 자리까지(".0"은 뗌). */
+private fun mm(v: Double): String = if (v < 1) "1mm 미만" else "%.1f".format(v).removeSuffix(".0") + "mm"
+
+private fun cm(v: Double): String = if (v < 1) "1cm 미만" else "%.1f".format(v).removeSuffix(".0") + "cm"
 
 /** 최고/최저 앞의 가는 화살표 — 삼성 날씨의 temp_high/low 자리. */
 @Composable
@@ -304,7 +315,7 @@ private fun TempArrow(up: Boolean, color: Color) {
  * 그 아래 칸 가운데를 잇는 기온 곡선 50dp. 귀교 시각 칸은 강조색 바탕과 "귀교" 표시. 줄 높이는 글자 크기를 따라가 잘리지 않습니다.
  */
 @Composable
-private fun HourlyStrip(hours: List<SeoulWeather.Hour>, now: LocalDateTime, until: LocalDateTime?, accent: Color) {
+internal fun HourlyStrip(hours: List<SeoulWeather.Hour>, now: LocalDateTime, until: LocalDateTime?, accent: Color) {
     val scheme = MaterialTheme.colorScheme
     val density = LocalDensity.current
     val known = hours.mapNotNull { it.temp }
@@ -379,6 +390,22 @@ private fun HourlyStrip(hours: List<SeoulWeather.Hour>, now: LocalDateTime, unti
                     }
                 }
             }
+            // 비·눈이 오는 시간에만 강수량 줄 — 한 칸도 없으면 줄을 두지 않습니다.
+            if (hours.any { it.rainText != null || it.snowText != null }) {
+                Row {
+                    hours.forEach { h ->
+                        Text(
+                            h.snowText ?: h.rainText.orEmpty(),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Rain,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(HourWidth),
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Row {
                 hours.forEach { h ->
@@ -437,11 +464,17 @@ private fun DayRow(d: SeoulWeather.Day, today: LocalDate, isReturn: Boolean) {
             Text(name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (isReturn) Text("귀교", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = scheme.primary)
         }
-        Row(Modifier.width(56.dp), verticalAlignment = Alignment.CenterVertically) {
-            d.pop?.takeIf { it > 0 }?.let {
-                Icon(painterResource(R.drawable.ic_weather_drop), contentDescription = null, tint = Rain, modifier = Modifier.size(11.dp))
-                Spacer(Modifier.width(2.dp))
-                Text("$it%", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Rain, maxLines = 1)
+        Column(Modifier.width(56.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                d.pop?.takeIf { it > 0 }?.let {
+                    Icon(painterResource(R.drawable.ic_weather_drop), contentDescription = null, tint = Rain, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("$it%", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Rain, maxLines = 1)
+                }
+            }
+            // 그날 예상 강수량(시간별 합) — 눈이면 적설.
+            (d.snow?.let { "약 ${cm(it)}" } ?: d.rain?.let { "약 ${mm(it)}" })?.let {
+                Text(it, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Rain, maxLines = 1)
             }
         }
         Spacer(Modifier.weight(1f))
@@ -457,7 +490,7 @@ private fun DayRow(d: SeoulWeather.Day, today: LocalDate, isReturn: Boolean) {
 
 /** 지표 타일 — 귀교 시각 날씨, 돌아오는 길 강수, 오늘 최고/최저 (귀가 기간이 아니면 최대 강수확률). 삼성 날씨 지표 카드의 꼴. */
 @Composable
-private fun IndexTiles(f: SeoulWeather.Forecast, today: LocalDate, hours: List<SeoulWeather.Hour>, until: LocalDateTime?) {
+internal fun IndexTiles(f: SeoulWeather.Forecast, today: LocalDate, hours: List<SeoulWeather.Hour>, until: LocalDateTime?) {
     val scheme = MaterialTheme.colorScheme
     data class Tile(val title: String, val value: String, val sub: String?, val icon: Int?, val valueColor: Color?)
     val tiles = buildList {
@@ -479,6 +512,34 @@ private fun IndexTiles(f: SeoulWeather.Forecast, today: LocalDate, hours: List<S
         }
         val maxPop = hours.mapNotNull { it.pop }.maxOrNull()
         if (maxPop != null && until == null) add(Tile("최대 강수확률", "$maxPop%", "앞으로 ${hours.size}시간", null, Rain))
+        // 지금 — 체감온도·습도·바람 (기상청 실황).
+        f.currentFeels?.let { feels ->
+            val gap = feels.roundToInt() - (f.currentTemp ?: feels).roundToInt()
+            add(Tile("체감온도", deg(feels), when {
+                gap <= -1 -> "실제보다 ${-gap}° 낮아요"
+                gap >= 1 -> "실제보다 $gap° 높아요"
+                else -> "실제 기온과 비슷해요"
+            }, null, null))
+        }
+        f.currentHumidity?.let { h ->
+            add(Tile("습도", "$h%", when {
+                h <= 35 -> "건조해요"
+                h <= 60 -> "적당해요"
+                h <= 80 -> "습해요"
+                else -> "매우 습해요"
+            }, null, null))
+        }
+        f.currentWind?.let { w ->
+            val strength = when {
+                w < 0.5 -> "거의 없어요"
+                w < 4 -> "약한 바람"
+                w < 9 -> "약간 강한 바람"
+                w < 14 -> "강한 바람"
+                else -> "매우 강한 바람"
+            }
+            val from = f.currentWindDir?.takeIf { w >= 0.5 }?.let { windFrom(it) }
+            add(Tile("바람", "%.1f".format(w).removeSuffix(".0") + "m/s", listOfNotNull(from, strength).joinToString(" · "), null, null))
+        }
     }
     if (tiles.isEmpty()) return
     tiles.chunked(2).forEach { pair ->

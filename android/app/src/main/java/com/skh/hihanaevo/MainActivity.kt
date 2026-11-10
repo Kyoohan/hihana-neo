@@ -90,6 +90,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
@@ -625,12 +626,18 @@ private fun HiHanaEvoAppContent(
     // 게시글에서 AI 가 뽑은 일정 + 안 낸 클래스룸 과제 마감 — 홈 '일정' 카드와 일정 탭이 학사일정과 섞어 보여 줍니다.
     var boardAgenda by remember { mutableStateOf<List<AgendaItem>>(emptyList()) }
     LaunchedEffect(BoardAgendaStore.revision.intValue) { boardAgenda = withContext(Dispatchers.IO) { BoardAgendaStore.items(context) } }
-    val agendaExtras = remember(boardAgenda, classroomSnapshot, classroomHidden, studentGrade) {
+    // 내 일정(직접 추가한 일정) — 학년 거르기 없이 그대로 섞습니다.
+    var userAgenda by remember { mutableStateOf<List<AgendaItem>>(emptyList()) }
+    LaunchedEffect(UserAgendaStore.revision.intValue) { userAgenda = withContext(Dispatchers.IO) { UserAgendaStore.items(context) } }
+    // 일정 추가·수정 화면 — (고칠 일정 또는 null, 새 일정의 날).
+    var editingUserEvent by remember { mutableStateOf<Pair<UserEvent?, LocalDate>?>(null) }
+    val agendaExtras = remember(boardAgenda, userAgenda, classroomSnapshot, classroomHidden, studentGrade) {
         // 숨긴 수업의 공지에서 뽑은 일정(cr:<글 id>:n)도 뺍니다. 다른 학년 대상 일정(1학년 수행평가 등)도 뺍니다.
         val hiddenPosts = ClassroomStore.snapshot.value?.posts?.filter { it.courseId in classroomHidden }?.map { it.id }?.toSet().orEmpty()
         boardAgenda.filter { it.forGrade(studentGrade) }
             .filterNot { it.source == AgendaSource.CLASSROOM && it.id.removePrefix("cr:").substringBefore(':') in hiddenPosts } +
-            (classroomSnapshot?.agenda() ?: emptyList())
+            (classroomSnapshot?.agenda() ?: emptyList()) +
+            userAgenda
     }
     // 신청·내역 블록 순서 편집 — 헤더의 연필(편집 중엔 체크) 아이콘. 다른 탭으로 가면 끝냅니다.
     var editingApplyOrder by remember { mutableStateOf(false) }
@@ -738,7 +745,7 @@ private fun HiHanaEvoAppContent(
         }
     }
 
-    /** 클래스룸 — 연결돼 있을 때만. 10분 안에 받은 스냅샷이 있으면 [force] 가 아니면 그대로 둡니다. 실패해도 마지막 스냅샷은 남습니다. */
+    /** 클래스룸 — 연결돼 있을 때만. 2분 안에 받은 스냅샷이 있으면 [force] 가 아니면 그대로 둡니다. 실패해도 마지막 스냅샷은 남습니다. */
     suspend fun loadClassroom(force: Boolean) {
         if (ClassroomStore.sampleMode.value) return
         // 연결됐거나, 브라우저에서 허용하러 갔다 돌아온 참(pending)이면 받아 봅니다.
@@ -786,6 +793,7 @@ private fun HiHanaEvoAppContent(
                 if (post != null) openClassroomPost(post, pane = false) else item.url?.let { openExternal(context, it) }
             }
             AgendaSource.ACADEMIC -> Unit
+            AgendaSource.MINE -> UserAgendaStore.find(context, item.id)?.let { editingUserEvent = it to it.date }
         }
     }
 
@@ -1000,6 +1008,16 @@ private fun HiHanaEvoAppContent(
         }
     }
 
+    // 공지 팝업(RemoteNotice) — 실행할 때와 앱으로 돌아올 때(15분에 한 번까지) 서버에 걸린 공지를 읽어 처음 보는 것이면 띄웁니다.
+    var remoteNotice by remember { mutableStateOf<RemoteNotice?>(null) }
+    suspend fun checkRemoteNotice() {
+        if (remoteNotice != null) return
+        runCatching { RemoteNoticeStore.pending(context) }
+            .onFailure { Log.w("RemoteNotice", "check failed", it) }
+            .getOrNull()?.let { remoteNotice = it }
+    }
+    LaunchedEffect(Unit) { checkRemoteNotice() }
+
 
     fun checkUpdateNow() {
         if (!AppUpdater.isConfigured) {
@@ -1086,7 +1104,11 @@ private fun HiHanaEvoAppContent(
             MainActivity.TAB_ACADEMIC, MainActivity.TAB_BOARD -> tab = TabIndex.BOARD
             MainActivity.TAB_TODAY -> tab = TabIndex.HOME
             // 투어의 클래스룸 연결 장에서 브라우저를 다녀온 것이면 투어를 이어 가도록 화면을 열지 않습니다.
-            MainActivity.TAB_CLASSROOM -> if (tourKind == null) tab = TabIndex.CLASSROOM
+            MainActivity.TAB_CLASSROOM -> {
+                if (tourKind == null) tab = TabIndex.CLASSROOM
+                // 브라우저에서 허용하고 돌아온 참 — 스크립트가 방금 올린 것을 2분 캐시를 건너뛰고 바로 받습니다(다시 허용한 과제 등).
+                if (classroomConnected) scope.launch { runCatching { loadClassroom(true) } }
+            }
         }
         openTabRequest.value = null
     }
@@ -1281,6 +1303,32 @@ private fun HiHanaEvoAppContent(
             now = LocalDateTime.now(PlanStore.seoulZone)
         }
     }
+    // 앱을 다시 펼치면 — 20초 틱을 기다리지 않고 바로 지금 시각으로(홈 '지금'·급식 칸·남은 시간이 한동안 옛것으로 남던 것).
+    // 날이 바뀌었으면 하루치(자리·급식)를 다시 읽고, 클래스룸은 2분 지난 사본이면 새로 받습니다.
+    val resumeLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(resumeLifecycle) {
+        var first = true
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event != androidx.lifecycle.Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            if (first) { first = false; return@LifecycleEventObserver }
+            now = LocalDateTime.now(PlanStore.seoulZone)
+            scope.launch {
+                if (PlanStore.today() != today) {
+                    reload()
+                    runCatching { loadMealDay(today, force = false) }
+                    runCatching { loadMealDay(today.plusDays(1), force = false) }
+                }
+                runCatching { loadClassroom(false) }
+                checkRemoteNotice()
+            }
+        }
+        resumeLifecycle.lifecycle.addObserver(observer)
+        onDispose { resumeLifecycle.lifecycle.removeObserver(observer) }
+    }
+    // 앱이 떠 있는 동안에도 3분마다 클래스룸 사본을 확인합니다(2분 TTL 이라 대부분 한 번 받고 끝).
+    LaunchedEffect(now.minute / 3, classroomConnected) {
+        if (classroomConnected) runCatching { loadClassroom(false) }
+    }
 
     // 시간표가 아직 한 번도 설치되지 않은 "로딩 중" 상태와, 설치된 뒤 정말 일정이 없는(블랭크)
     // 상태를 구분하기 위한 값 — 이게 없으면 로딩 중에도 "오늘 일정이 모두 끝났습니다"라는
@@ -1430,6 +1478,10 @@ private fun HiHanaEvoAppContent(
             OneUiActionButton(onClick = onClick, modifier = Modifier.alpha(if (dim) 0.4f else 1f), size = buttonSize) { icon() }
         }
         val toast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
+        // 학사일정 목록 — 내 일정 추가.
+        if (target == TabIndex.SCHEDULE && scheduleSubTab == 1) TabButton("일정 추가", { editingUserEvent = null to today }) {
+            Icon(Icons.Filled.Add, contentDescription = "일정 추가")
+        }
         when (target) {
             // 홈은 폰·태블릿 모두 칸 자리가 정해진 벤토라 순서 편집을 두지 않습니다.
             TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
@@ -1464,8 +1516,21 @@ private fun HiHanaEvoAppContent(
             TabIndex.BOARD -> TabButton("새 글 알림", { settingsStartPage = SettingsPage.NOTIFY; showingSettings = true }) {
                 Icon(AppIcons.bell(), contentDescription = "새 글 알림 설정")
             }
-            TabIndex.CLASSROOM -> if (classroomConnected) TabButton("검색", { showingClassroomSearch = true }) {
-                Icon(AppIcons.Search, contentDescription = "클래스룸 검색")
+            TabIndex.CLASSROOM -> if (classroomConnected) {
+                // 수동 새로고침 — 중계 서버의 가장 새 사본을 바로 받고, 스크립트가 언제 올린 것인지 알려 줍니다.
+                TabButton("새로고침", {
+                    if (!classroomLoading) scope.launch {
+                        runCatching { loadClassroom(true) }
+                        // '동기화' 시각은 학교 계정 스크립트가 마지막으로 바뀐 내용을 올린 때입니다 — 앱이 받은 때가 아니라.
+                        val label = ClassroomStore.snapshot.value?.syncedLabel()?.removeSuffix(" 동기화")
+                        toast(classroomError ?: label?.let { "새로 받음 · 학교 계정이 $it 올린 내용" } ?: "클래스룸을 새로 받았습니다")
+                    }
+                }, dim = classroomLoading) {
+                    Icon(AppIcons.Refresh, contentDescription = "클래스룸 새로고침")
+                }
+                TabButton("검색", { showingClassroomSearch = true }) {
+                    Icon(AppIcons.Search, contentDescription = "클래스룸 검색")
+                }
             }
             TabIndex.SCHEDULE -> if (!axisMode || scheduleSubTab == 1) TabButton("캘린더로", {
                 scope.launch {
@@ -2187,6 +2252,7 @@ private fun HiHanaEvoAppContent(
             Box(Modifier.fillMaxSize().padding(start = panelSpace)) {
                 TimeAxisScreen(
                     resetTick = timelineReset,
+                    onAddEvent = { day -> editingUserEvent = null to day },
                     today = today,
                     now = now,
                     kindColors = remember(widgetKindColors) { WidgetKindColors.resolve(widgetKindColors) },
@@ -2332,6 +2398,7 @@ private fun HiHanaEvoAppContent(
             ) {
                 TimeAxisScreen(
                     resetTick = timelineReset,
+                    onAddEvent = { day -> editingUserEvent = null to day },
                     today = today,
                     now = now,
                     kindColors = remember(widgetKindColors) { WidgetKindColors.resolve(widgetKindColors) },
@@ -2470,6 +2537,14 @@ private fun HiHanaEvoAppContent(
                 installUpdate()
             },
         )
+    }
+
+    // 업데이트 안내·투어가 떠 있으면 그 뒤에 — 팝업이 겹치지 않게.
+    remoteNotice?.takeIf { majorUpdatePrompt == null && tourKind == null }?.let { notice ->
+        RemoteNoticeDialog(notice, onDismiss = {
+            RemoteNoticeStore.markSeen(context, notice.id)
+            remoteNotice = null
+        })
     }
 
     if (axisWeather) SeoulWeatherScreen(until = null, onDismiss = { axisWeather = false })
@@ -2643,6 +2718,10 @@ private fun HiHanaEvoAppContent(
                 webPage = HanaWebPage(url, "게시글")
             },
         )
+    }
+
+    editingUserEvent?.let { (event, day) ->
+        UserEventScreen(edit = event, initialDate = day, onDismiss = { editingUserEvent = null })
     }
 
     webPage?.let { page ->
@@ -3295,8 +3374,8 @@ private fun SettingsScreen(
                                 subtitle = listOfNotNull(
                                     ClassroomBridge.email(context) ?: "학교 Google 계정",
                                     snap?.syncedLabel(),
-                                    if (stale) "15분마다 받아야 하는데 ${ClassroomSnapshot.STALE_MS / 3_600_000}시간 넘게 새로 오지 않았습니다."
-                                    else "15분마다 공지·과제를 받아 클래스룸 화면과 홈에, 과제 마감과 공지 속 일정을 학사일정에 보여 줍니다.",
+                                    if (stale) "5분마다 받아야 하는데 ${ClassroomSnapshot.STALE_MS / 3_600_000}시간 넘게 새로 오지 않았습니다."
+                                    else "5분마다 공지·과제를 받아 클래스룸 화면과 홈에, 과제 마감과 공지 속 일정을 학사일정에 보여 줍니다.",
                                 ).joinToString(" · "),
                                 titleColor = if (stale) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             )

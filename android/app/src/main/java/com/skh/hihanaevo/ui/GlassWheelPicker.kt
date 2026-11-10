@@ -7,16 +7,29 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -48,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.drop
 import java.time.LocalDate
@@ -70,6 +84,17 @@ fun GlassWheel(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     textAlign: TextAlign = TextAlign.Center,
+    /** 가운데 칸을 눌러 숫자로 입력 — 넣은 숫자를 칸 번호로(못 읽으면 null). null 이면 숫자 입력이 없습니다. */
+    typed: ((String) -> Int?)? = null,
+    /** 지금 이 휠의 가운데 칸이 입력 칸인지 — 여러 휠 사이를 대화상자가 옮겨 다닙니다. */
+    typing: Boolean = false,
+    onTypingChange: (Boolean) -> Unit = {},
+    /** 다 넣었을 때 — 다음 휠로 넘기기. */
+    onTypedFull: () -> Unit = {},
+    /** 입력 칸 최대 자릿수(연도는 4). */
+    typedDigits: Int = 2,
+    /** 다 넣은 것으로 볼지 — 기본은 자릿수를 다 채웠을 때. 월 '3'처럼 더 넣을 수 없는 한 자리도 바로 넘기려면 바꿉니다. */
+    typedComplete: (String) -> Boolean = { it.length >= typedDigits },
 ) {
     val state: LazyListState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)))
     val fling = rememberSnapFlingBehavior(lazyListState = state)
@@ -129,11 +154,14 @@ fun GlassWheel(
     }
 
     val scheme = MaterialTheme.colorScheme
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Box(modifier.height(WheelItemHeight * WheelVisible), contentAlignment = Alignment.Center) {
     LazyColumn(
         state = state,
         flingBehavior = fling,
         contentPadding = PaddingValues(vertical = WheelItemHeight * (WheelVisible / 2)),
-        modifier = modifier
+        modifier = Modifier
+            .fillMaxWidth()
             .height(WheelItemHeight * WheelVisible)
             // 위아래 끝으로 갈수록 투명하게 — 드럼이 안쪽으로 말려 들어가는 그늘.
             .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
@@ -169,7 +197,18 @@ fun GlassWheel(
                         scaleY = shrink
                         // 가운데에서 반 칸만 벗어나도 확 옅어져, 선택 칸만 또렷합니다.
                         alpha = (1f - abs(d).coerceAtMost(1f) * 0.5f - (abs(d) - 1f).coerceAtLeast(0f) * 0.25f).coerceIn(0.12f, 1f)
-                    },
+                    }
+                    .then(
+                        if (typed == null) Modifier
+                        else Modifier.clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            // 가운데 칸은 입력 칸으로, 위아래 칸은 그 칸으로 굴려 고릅니다.
+                            if (index == centered) onTypingChange(true)
+                            else scope.launch { go(index); latestSelect(index) }
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -184,6 +223,68 @@ fun GlassWheel(
             }
         }
     }
+    if (typing && typed != null) {
+        WheelTypingField(
+            initial = items.getOrNull(selectedIndex).orEmpty().filter { it.isDigit() },
+            digits = typedDigits,
+            complete = typedComplete,
+            onText = { text -> typed(text)?.let { latestSelect(it) } },
+            onFull = onTypedFull,
+            onClose = { onTypingChange(false) },
+        )
+    }
+    }
+}
+
+/**
+ * 휠 가운데 칸 자리에 뜨는 숫자 입력 칸 — 뜨자마자 숫자 키보드가 올라오고 원래 숫자가 전체 선택돼 바로 덮어씁니다.
+ * 넣는 대로 휠이 따라가고, 다 채우면 [onFull](다음 휠로), 완료 키·바깥을 누르면 [onClose].
+ */
+@Composable
+private fun WheelTypingField(
+    initial: String,
+    digits: Int,
+    complete: (String) -> Boolean,
+    onText: (String) -> Unit,
+    onFull: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
+    var hadFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.compose.foundation.text.BasicTextField(
+        value = field,
+        onValueChange = { input ->
+            val typedText = input.text.filter { it.isDigit() }.take(digits)
+            field = input.copy(text = typedText, selection = androidx.compose.ui.text.TextRange(typedText.length))
+            if (typedText.isNotEmpty()) onText(typedText)
+            if (typedText.isNotEmpty() && complete(typedText)) onFull()
+        },
+        singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurface, textAlign = TextAlign.Center),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(scheme.primary),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            // 그냥 숫자 — NumberPassword 로 두었더니 비밀번호 칸으로 읽혀 Bitwarden 같은 자동 완성 앱이 '비밀번호를 저장할까요'를 띄웠습니다.
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+            imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onClose() }),
+        decorationBox = { inner -> Box(contentAlignment = Alignment.Center) { inner() } },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .height(WheelItemHeight - 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.surfaceContainerHighest)
+            .border(1.5.dp, scheme.primary, RoundedCornerShape(12.dp))
+            .focusRequester(focus)
+            .onFocusChanged { state ->
+                if (state.isFocused) hadFocus = true
+                else if (hadFocus) onClose()
+            },
+    )
 }
 
 /**
@@ -296,8 +397,8 @@ fun GlassWheelFrame(modifier: Modifier = Modifier, wheels: @Composable RowScope.
 // MARK: - 날짜·시각 다이얼로그
 
 /**
- * 날짜 고르기 — 년·월·일 휠. 휠에는 [min]~[max] 안의 값만 나옵니다(오늘 이전 날·1년 뒤 이후는 아예 없음) —
- * 범위 밖을 골랐다가 되돌아오는 일이 없게. 달이 바뀌어 날이 넘치면 그 달 마지막 날로.
+ * 날짜 고르기 — 달력 한 장. 요일을 보며 날짜를 눌러 고르고, 양옆 화살표로 앞뒤 달. 머리줄엔 고른 날짜와 요일.
+ * [min]~[max] 밖의 날은 흐리고 눌리지 않습니다. (예전엔 아래에 년·월·일 휠도 있었는데 달력과 겹쳐 뺐습니다.)
  */
 @Composable
 fun GlassDatePickerDialog(
@@ -309,25 +410,6 @@ fun GlassDatePickerDialog(
     onDismiss: () -> Unit,
 ) {
     var date by remember { mutableStateOf(initial.coerceIn(min, max)) }
-    val years = remember(min, max) { (min.year..max.year).toList() }
-    val months = remember(date.year, min, max) {
-        val from = if (date.year == min.year) min.monthValue else 1
-        val to = if (date.year == max.year) max.monthValue else 12
-        (from..to).toList()
-    }
-    val days = remember(date.year, date.monthValue, min, max) {
-        val ym = YearMonth.of(date.year, date.monthValue)
-        val from = if (ym == YearMonth.from(min)) min.dayOfMonth else 1
-        val to = if (ym == YearMonth.from(max)) max.dayOfMonth else ym.lengthOfMonth()
-        (from..to).toList()
-    }
-    val yearLabels = remember(years) { years.map { "${it}년" } }
-    val monthLabels = remember(months) { months.map { "${it}월" } }
-    val dayLabels = remember(days) { days.map { "${it}일" } }
-    fun set(year: Int = date.year, month: Int = date.monthValue, day: Int = date.dayOfMonth) {
-        val first = LocalDate.of(year, month, 1)
-        date = first.withDayOfMonth(day.coerceAtMost(first.lengthOfMonth())).coerceIn(min, max)
-    }
     OneUiDialog(
         onDismissRequest = onDismiss,
         title = title,
@@ -336,14 +418,116 @@ fun GlassDatePickerDialog(
             OneUiDialogButton("확인", { onPick(date) }),
         ),
     ) {
-        // 고른 날짜는 휠 그대로라 위에 따로 적지 않습니다 (요일은 고른 뒤 양식의 날짜 버튼에 나옵니다).
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            GlassWheelFrame {
-                GlassWheel(yearLabels, years.indexOf(date.year), { years.getOrNull(it)?.let { y -> set(year = y) } }, Modifier.weight(1.3f))
-                GlassWheel(monthLabels, months.indexOf(date.monthValue), { months.getOrNull(it)?.let { m -> set(month = m) } }, Modifier.weight(1f))
-                GlassWheel(dayLabels, days.indexOf(date.dayOfMonth), { days.getOrNull(it)?.let { d -> set(day = d) } }, Modifier.weight(1f))
+            MonthCalendar(
+                date = date,
+                min = min,
+                max = max,
+                onPick = { date = it },
+                // 달을 넘기면 고른 날도 그 달의 같은 날로(없으면 그 달 마지막 날) — 머리줄이 늘 고른 날짜를 보여 줍니다.
+                onMonth = { ym -> date = ym.atDay(date.dayOfMonth.coerceAtMost(ym.lengthOfMonth())).coerceIn(min, max) },
+            )
+        }
+    }
+}
+
+private val CalendarCell = 34.dp
+private val WeekdayNames = listOf("일", "월", "화", "수", "목", "금", "토")
+
+/**
+ * 달력 한 달 — 요일을 보며 날짜를 눌러 고릅니다. 머리줄에 고른 날짜와 요일, 양옆 화살표로 앞뒤 달. [min]~[max] 밖의 날은
+ * 흐리고 눌리지 않습니다. 달마다 주 수가 달라도 늘 여섯 줄로 그려 대화상자 높이가 흔들리지 않습니다.
+ */
+@Composable
+private fun MonthCalendar(
+    date: LocalDate,
+    min: LocalDate,
+    max: LocalDate,
+    onPick: (LocalDate) -> Unit,
+    onMonth: (YearMonth) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val month = YearMonth.from(date)
+    val today = remember { LocalDate.now(java.time.ZoneId.of("Asia/Seoul")) }
+    // 일요일부터 — 1일 앞의 빈 칸 수.
+    val lead = month.atDay(1).dayOfWeek.value % 7
+    val canPrev = month > YearMonth.from(min)
+    val canNext = month < YearMonth.from(max)
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            CalendarArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달", canPrev) { onMonth(month.minusMonths(1)) }
+            Text(
+                "${date.year}년 ${date.monthValue}월 ${date.dayOfMonth}일 (${WeekdayNames[date.dayOfWeek.value % 7]})",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            CalendarArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달", canNext) { onMonth(month.plusMonths(1)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            WeekdayNames.forEachIndexed { i, name ->
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (i == 0) scheme.error.copy(alpha = 0.85f) else scheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
+        Spacer(Modifier.height(2.dp))
+        repeat(6) { week ->
+            Row(Modifier.fillMaxWidth()) {
+                repeat(7) { column ->
+                    val number = week * 7 + column - lead + 1
+                    Box(Modifier.weight(1f).height(CalendarCell), contentAlignment = Alignment.Center) {
+                        if (number in 1..month.lengthOfMonth()) {
+                            val day = month.atDay(number)
+                            val enabled = !day.isBefore(min) && !day.isAfter(max)
+                            val selected = day == date
+                            Box(
+                                Modifier
+                                    .size(CalendarCell - 2.dp)
+                                    .clip(CircleShape)
+                                    .then(
+                                        when {
+                                            selected -> Modifier.background(scheme.primary)
+                                            day == today -> Modifier.border(1.dp, scheme.primary.copy(alpha = 0.55f), CircleShape)
+                                            else -> Modifier
+                                        },
+                                    )
+                                    .clickable(enabled = enabled) { onPick(day) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "$number",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = when {
+                                        selected -> scheme.onPrimary
+                                        !enabled -> scheme.onSurface.copy(alpha = 0.28f)
+                                        column == 0 -> scheme.error.copy(alpha = 0.85f)
+                                        else -> scheme.onSurface
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarArrow(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(36.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.8f else 0.25f))
     }
 }
 
@@ -365,13 +549,28 @@ fun GlassTimePickerDialog(
             OneUiDialogButton("확인", { onPick(LocalTime.of(hour, minute)) }),
         ),
     ) {
-        // 시각은 휠에 보이는 그대로라 위에 따로 적지 않습니다 (날짜는 휠에 없는 요일 때문에 적어 둡니다).
+        // 가운데 숫자를 누르면 그 자리가 입력 칸이 되어 숫자 키보드로 넣을 수 있습니다 — 시를 두 자리 넣으면 분으로 넘어갑니다.
+        var typingWheel by remember { mutableStateOf<Int?>(null) }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             GlassWheelFrame {
-                GlassWheel(HourLabels, hour, { hour = it }, Modifier.weight(1f))
+                GlassWheel(
+                    HourLabels, hour, { hour = it }, Modifier.weight(1f),
+                    typed = { text -> text.toIntOrNull()?.coerceIn(0, 23) },
+                    typing = typingWheel == 0,
+                    onTypingChange = { on -> typingWheel = if (on) 0 else if (typingWheel == 0) null else typingWheel },
+                    onTypedFull = { typingWheel = 1 },
+                )
                 Text(":", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(12.dp), textAlign = TextAlign.Center)
-                GlassWheel(MinuteLabels, minute, { minute = it }, Modifier.weight(1f))
+                GlassWheel(
+                    MinuteLabels, minute, { minute = it }, Modifier.weight(1f),
+                    typed = { text -> text.toIntOrNull()?.coerceIn(0, 59) },
+                    typing = typingWheel == 1,
+                    onTypingChange = { on -> typingWheel = if (on) 1 else if (typingWheel == 1) null else typingWheel },
+                    onTypedFull = { typingWheel = null },
+                )
             }
+            Spacer(Modifier.height(6.dp))
+            Text("가운데 숫자를 누르면 키보드로 입력할 수 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

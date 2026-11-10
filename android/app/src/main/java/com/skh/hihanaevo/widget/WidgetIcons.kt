@@ -36,5 +36,7 @@ fun iconResFor(key: String): Int = when (key) {
     "directions_run" -> R.drawable.ic_directions_run
     "place" -> R.drawable.ic_place
     "bedtime" -> R.drawable.ic_bedtime
+    // 외출·외박 — 예전엔 빠져 있어 위젯·Now Bar 에 책 아이콘이 떴습니다.
+    "outing" -> R.drawable.ic_outing
     else -> R.drawable.ic_menu_book
 }
