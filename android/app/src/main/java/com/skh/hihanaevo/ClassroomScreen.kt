@@ -49,8 +49,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -94,6 +92,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.skh.hihanaevo.ui.OneUi
+import com.skh.hihanaevo.ui.isDark
 import com.skh.hihanaevo.ui.OneUiBadge
 import com.skh.hihanaevo.ui.OneUiButton
 import com.skh.hihanaevo.ui.OneUiButtonStyle
@@ -193,16 +192,20 @@ internal fun ClassroomTab(
     LaunchedEffect(resetTick) { scroll.scrollTo(0) }
     var page by rememberSaveable(state.courseFilter) { mutableIntStateOf(0) }
     var todoOpen by rememberSaveable { mutableStateOf(false) }
+    var showingHiddenTodo by remember { mutableStateOf(false) }
     // 쪽을 바꾸면 '스트림' 제목으로 — 그 위치(스크롤 안 y).
     var streamTop by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val snapshot = state.snapshot
     val now = remember(snapshot) { LocalDateTime.now() }
     val posts = remember(snapshot, state.courseFilter) { snapshot?.posts.orEmpty().filter { state.courseFilter == null || it.courseId == state.courseFilter } }
-    val todo = remember(posts, now) {
+    val todoAll = remember(posts, now) {
         posts.filter { it.kind == ClassroomKind.WORK && !it.submitted && (it.due == null || it.due.isAfter(now.minusDays(14))) }
             .sortedWith(compareBy<ClassroomPost> { it.due == null }.thenBy { it.due })
     }
+    // 손으로 숨긴 과제(마감 없음·지남인데 실은 끝난 것)는 빼고 셉니다.
+    val hiddenTodo = remember(ClassroomTodoHideStore.revision.intValue) { ClassroomTodoHideStore.ids(context) }
+    val todo = remember(todoAll, hiddenTodo) { todoAll.filter { it.id !in hiddenTodo } }
     // 읽은 글 — 줄마다 저장소를 읽지 않고 한 번에.
     val readIds = remember(ClassroomReadStore.revision.intValue) { ClassroomReadStore.readIds(context) }
     val pages = (posts.size + STREAM_PAGE - 1) / STREAM_PAGE
@@ -238,19 +241,49 @@ internal fun ClassroomTab(
                     Text("새로 받지 못해 마지막 받은 내용입니다 · ${state.error}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
                 }
                 if (snapshot.needsReconnect) ClassroomReconnectCard(onConnect)
-                if (todo.isNotEmpty()) {
+                if (todoAll.isNotEmpty()) {
                     // 오래된 미제출 과제가 쌓여 스트림이 한참 밀려서 — 처음엔 개수만, 눌러야 펼칩니다(앱을 다시 켜면 다시 접힘).
                     TodoHeader(todo.size, todoOpen) { todoOpen = !todoOpen }
                     AnimatedVisibility(todoOpen, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                        OneUiGroup(items = todo, modifier = Modifier.padding(vertical = 4.dp)) { post ->
-                            TodoRow(post, snapshot.course(post.courseId), now, selected = post.id == selectedId) { onOpen(post) }
+                        Column {
+                            if (todo.isNotEmpty()) OneUiGroup(items = todo, modifier = Modifier.padding(vertical = 4.dp)) { post ->
+                                // 다가오는 마감이 없는 과제(마감 없음·지남)만 숨길 수 있게 — 앞으로 낼 과제를 실수로 치우지 않도록.
+                                val hideable = post.due == null || post.due.isBefore(now)
+                                TodoRow(
+                                    post, snapshot.course(post.courseId), now, selected = post.id == selectedId,
+                                    onHide = if (hideable) ({ ClassroomTodoHideStore.hide(context, post.id) }) else null,
+                                ) { onOpen(post) }
+                            }
+                            val hiddenCount = todoAll.size - todo.size
+                            if (hiddenCount > 0) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                OneUiTextButton(
+                                    text = "숨긴 과제 ${hiddenCount}개 보기",
+                                    onClick = { showingHiddenTodo = true },
+                                    color = onPageVariantColor(),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                )
+                            }
                         }
                     }
                 }
                 if (posts.isEmpty()) {
                     EmptyBlock(if (snapshot.courses.isEmpty()) "보일 수업이 없습니다" else "글이 없습니다")
                 } else {
-                    Box(Modifier.onGloballyPositioned { streamTop = it.positionInParent().y.toInt() }) { OneUiSectionTitle("스트림") }
+                    // 스트림 제목 줄 오른쪽 끝에 '모두 읽음' — 지금 보이는 수업(드롭다운으로 고른 수업이면 그 수업)의 글을 모두 읽은 것으로.
+                    // 글자 아래 끝을 제목과 맞추려고 아래 정렬, 버튼 위아래 여백은 제목의 아래 여백(8dp)과 같게.
+                    Row(
+                        Modifier.fillMaxWidth().onGloballyPositioned { streamTop = it.positionInParent().y.toInt() },
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Box(Modifier.weight(1f)) { OneUiSectionTitle("스트림") }
+                        OneUiTextButton(
+                            text = "모두 읽음",
+                            onClick = { ClassroomReadStore.markRead(context, posts) },
+                            enabled = posts.any { it.id !in readIds },
+                            color = MaterialTheme.colorScheme.primary,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
                     val shown = posts.subList(current * STREAM_PAGE, minOf(posts.size, (current + 1) * STREAM_PAGE))
                     OneUiGroup(items = shown, modifier = Modifier.padding(vertical = 4.dp)) { post ->
                         StreamRow(post, snapshot.course(post.courseId), now, unread = post.id !in readIds, selected = post.id == selectedId) { onOpen(post) }
@@ -263,6 +296,20 @@ internal fun ClassroomTab(
                 }
             }
         }
+    }
+    if (showingHiddenTodo && snapshot != null) {
+        val hiddenPosts = todoAll.filter { it.id in hiddenTodo }
+        // 마지막 하나까지 되돌리면 목록이 비니 닫습니다.
+        if (hiddenPosts.isEmpty()) showingHiddenTodo = false
+        else HiddenTodoScreen(
+            posts = hiddenPosts,
+            meta = { post -> listOfNotNull(snapshot.course(post.courseId)?.name, dueText(post, now) ?: "마감 없음").joinToString(" · ") },
+            onRestore = { ids ->
+                ClassroomTodoHideStore.show(context, ids)
+                showingHiddenTodo = false
+            },
+            onDismiss = { showingHiddenTodo = false },
+        )
     }
     if (menuOpen) {
         BackHandler { menuOpen = false }
@@ -313,12 +360,16 @@ private fun CourseToolbar(label: String, open: Boolean, onClick: () -> Unit, onP
 @Composable
 private fun CourseMenu(courses: List<ClassroomCourse>, selected: String?, onSelect: (String?) -> Unit) {
     val shape = RoundedCornerShape(26.dp)
+    val scheme = MaterialTheme.colorScheme
+    // 메뉴는 할 일·스트림 글 바로 위에 뜹니다 — 카드처럼 반투명 서리면 뒤 글자가 비쳐 메뉴 글자와 겹쳤습니다. One UI 팝업처럼
+    // 불투명한 면으로, 다크에선 뒤 카드보다 한 단계 밝게 떠 보이게. (면 색을 카드 색과 다르게 주면 OneUiCard 가 서리 대신 그대로 칠합니다.)
+    val menuColor = androidx.compose.ui.graphics.lerp(scheme.surface, scheme.onSurface, if (scheme.isDark) 0.08f else 0.02f)
     OneUiCard(
-        // 뒤 카드와 같은 재질이라 옅은 그림자로 띄웁니다.
         modifier = Modifier
             .widthIn(min = 220.dp, max = 300.dp)
             .heightIn(max = 440.dp)
             .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.35f)),
+        color = menuColor,
         shape = shape,
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
@@ -410,13 +461,72 @@ internal fun ClassroomCourseDialog(courses: List<ClassroomCourse>, hidden: Set<S
     }
 }
 
+/**
+ * 숨긴 과제 — 다시 할 일에 보일 과제를 골라 되돌립니다. 시스템 알림창처럼 보이지 않게 일정 추가처럼 아래에서 올라오는 화면으로,
+ * 고르는 표시는 One UI 선택 모드의 동그란 체크. 처음엔 아무것도 고르지 않은 채로.
+ */
+@Composable
+private fun HiddenTodoScreen(posts: List<ClassroomPost>, meta: (ClassroomPost) -> String, onRestore: (Set<String>) -> Unit, onDismiss: () -> Unit) {
+    var picked by remember { mutableStateOf(emptySet<String>()) }
+    OneUiFullScreen(title = "숨긴 과제", onDismiss = onDismiss) { toolbar ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(top = toolbar.calculateTopPadding() + 4.dp, bottom = toolbar.calculateBottomPadding() + 24.dp)
+                .padding(horizontal = OneUi.PagePadding),
+        ) {
+            Text(
+                "다시 할 일에 보일 과제를 고르세요. 숨긴 과제는 이 기기에만 저장됩니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = onPageVariantColor(),
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 12.dp),
+            )
+            OneUiGroupColumn {
+                if (posts.size > 1) {
+                    val all = picked.size == posts.size
+                    PickRow("전체", null, all, bold = true) { picked = if (all) emptySet() else posts.map { it.id }.toSet() }
+                    OneUiDivider()
+                }
+                posts.forEachIndexed { i, p ->
+                    if (i > 0) OneUiDivider()
+                    PickRow(p.title, meta(p), p.id in picked) { picked = if (p.id in picked) picked - p.id else picked + p.id }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            OneUiButton(
+                text = if (picked.isEmpty()) "다시 보일 과제를 고르세요" else "${picked.size}개 다시 보이기",
+                onClick = { onRestore(picked) },
+                enabled = picked.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** 선택 모드 한 줄 — 왼쪽 동그란 체크, 제목(두 줄까지)과 회색 설명. 줄 전체를 누릅니다. */
+@Composable
+private fun PickRow(title: String, meta: String?, checked: Boolean, bold: Boolean = false, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = OneUi.RowPadding, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        com.skh.hihanaevo.ui.OneUiCheckbox(checked)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            meta?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = onPageVariantColor(), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+}
+
 @Composable
 private fun CourseCheckRow(name: String, section: String?, checked: Boolean, bold: Boolean = false, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(OneUi.CornerSmall)).clickable(onClick = onToggle).padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(OneUi.CornerSmall)).clickable(onClick = onToggle).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = { onToggle() }, colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary))
+        com.skh.hihanaevo.ui.OneUiCheckbox(checked, Modifier.padding(start = 4.dp, end = 14.dp))
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
             section?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = onPageVariantColor()) }
@@ -502,7 +612,15 @@ private fun rowBackground(selected: Boolean) =
     if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
 
 @Composable
-internal fun TodoRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDateTime, selected: Boolean, onClick: () -> Unit) {
+internal fun TodoRow(
+    post: ClassroomPost,
+    course: ClassroomCourse?,
+    now: LocalDateTime,
+    selected: Boolean,
+    /** 할 일에서 숨기기 — 마감이 없거나 지난 과제만(배지 자리에 버튼). null 이면 버튼 없음. */
+    onHide: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val overdue = post.due != null && post.due.isBefore(now)
     Row(
         Modifier.fillMaxWidth().background(rowBackground(selected)).clickable(onClick = onClick).padding(horizontal = OneUi.RowPadding, vertical = 12.dp),
@@ -521,6 +639,16 @@ internal fun TodoRow(post: ClassroomPost, course: ClassroomCourse?, now: LocalDa
                 container = if (days <= 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 content = if (days <= 1) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
             )
+        }
+        if (onHide != null) {
+            // 가려진 눈 — 글자 버튼보다 줄을 덜 차지하고, 누를 자리는 40dp 동그라미로.
+            Spacer(Modifier.width(4.dp))
+            Box(
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClickLabel = "할 일에서 숨기기", onClick = onHide),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_tour_eye_off), contentDescription = "할 일에서 숨기기", tint = onPageVariantColor(), modifier = Modifier.size(20.dp))
+            }
         }
     }
 }

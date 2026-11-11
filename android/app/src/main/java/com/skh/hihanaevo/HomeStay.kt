@@ -21,8 +21,11 @@ object HomeStaySchedule {
     var revision by mutableIntStateOf(0)
         private set
 
-    /** "귀가", "귀교(1,2,3)" 처럼 이름 전체가 귀가·귀교인 일정만 — "코람데오 귀가 예배" 같은 행사는 빼려고 전체를 맞춥니다. */
-    private val pattern = Regex("""^(귀가|귀교)\s*(?:\(([^)]*)\))?$""")
+    /**
+     * 이름이 귀가·귀교로 끝나는 일정 — "귀교(1,2,3)", "수능 귀가(1,2)" 처럼 앞에 말이 붙어도 됩니다.
+     * "코람데오 귀가 예배" 같은 행사는 귀가로 끝나지 않아 빠집니다.
+     */
+    private val pattern = Regex("""^.*?(귀가|귀교)\s*(?:\(([^)]*)\))?$""")
 
     /** 짝이 되는 귀가·귀교가 조회 범위 밖이라 안 보일 때 비울 최대 날 수. */
     private const val MAX_UNSEEN_DAYS = 10L
@@ -64,8 +67,10 @@ object HomeStaySchedule {
         val returns = sortedSetOf<LocalDate>()
         for (entry in entries) {
             val match = pattern.matchEntire(entry.name.trim()) ?: continue
-            val grades = match.groupValues[2].filter { it.isDigit() }.map { it.digitToInt() }
-            if (grades.isNotEmpty() && grade !in grades) continue
+            val note = match.groupValues[2]
+            val grades = note.filter { it.isDigit() }.map { it.digitToInt() }
+            // "(3학년 제외)" 는 3학년만 빼는 뜻입니다.
+            if (grades.isNotEmpty() && (grade in grades) == note.contains("제외")) continue
             if (match.groupValues[1] == "귀가") leaves += entry.date else returns += entry.date
         }
         val firstDay = entries.minOf { it.date }
@@ -75,12 +80,18 @@ object HomeStaySchedule {
         for (back in returns) {
             val previousReturn = returns.lower(back)
             val leave = leaves.lower(back)?.takeIf { previousReturn == null || it.isAfter(previousReturn) }
-            // 짝이 되는 귀가가 안 보이면(조회 범위 앞) 범위 첫날부터 비웁니다 — 이미 집에 가 있는 중입니다.
-            var day = leave?.plusDays(1) ?: maxOf(firstDay, back.minusDays(MAX_UNSEEN_DAYS))
+            // 짝이 되는 귀가가 안 보이면, 귀가가 조회 범위 앞에 있을 수 있을 때(범위가 귀교 앞 [MAX_UNSEEN_DAYS]일을 다 덮지
+            // 못할 때)만 범위 첫날부터 비웁니다 — 이미 집에 가 있는 중입니다. 범위가 그 앞을 다 덮는데도 귀가가 없으면
+            // 이름을 못 알아본 귀가라, 예전처럼 귀교 열흘 전부터 비우지 않고 귀교일만 표시합니다
+            // (11/22 귀교에 귀가를 못 읽어 11/12 평일부터 귀가 중으로 뜬 일).
+            val unseenLeave = leave == null && firstDay.isAfter(back.minusDays(MAX_UNSEEN_DAYS))
             if (leave != null) map[leave] = Timetable.HomeStay.LEAVE
-            while (day.isBefore(back)) {
-                map[day] = Timetable.HomeStay.AWAY
-                day = day.plusDays(1)
+            if (leave != null || unseenLeave) {
+                var day = leave?.plusDays(1) ?: firstDay
+                while (day.isBefore(back)) {
+                    map[day] = Timetable.HomeStay.AWAY
+                    day = day.plusDays(1)
+                }
             }
             map[back] = Timetable.HomeStay.RETURN
         }

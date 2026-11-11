@@ -727,6 +727,49 @@ fun OneUiRadio(selected: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * One UI 체크 — 선택 모드의 동그란 체크(내 파일·갤러리처럼): 비선택은 회색 링, 선택하면 강조색으로 채워지고 흰 체크가
+ * 그어집니다. 머티리얼 네모 체크박스 대신.
+ */
+@Composable
+fun OneUiCheckbox(checked: Boolean, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val fill by animateColorAsState(if (checked) scheme.primary else Color.Transparent, label = "checkFill")
+    val ring by animateColorAsState(if (checked) scheme.primary else OneUi.SwitchOff, label = "checkRing")
+    val mark by androidx.compose.animation.core.animateFloatAsState(
+        if (checked) 1f else 0f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 700f),
+        label = "checkMark",
+    )
+    androidx.compose.foundation.Canvas(modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 2.dp.toPx()
+        drawCircle(fill, radius = w / 2f)
+        drawCircle(ring, radius = w / 2f - stroke / 2f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+        if (mark > 0f) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w * 0.29f, h * 0.52f)
+                lineTo(w * 0.44f, h * 0.67f)
+                lineTo(w * 0.72f, h * 0.37f)
+            }
+            // 체크는 왼쪽 아래에서 오른쪽 위로 그어지듯 — 선택하는 순간만.
+            val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(path, false) }
+            val drawn = androidx.compose.ui.graphics.Path()
+            measure.getSegment(0f, measure.length * mark.coerceIn(0f, 1f), drawn, true)
+            drawPath(
+                drawn,
+                Color.White,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                ),
+            )
+        }
+    }
+}
+
 /** 라디오 행 — 그룹 컨테이너 안에서 쓰는 "Light / Dark" 같은 선택 항목. */
 @Composable
 fun OneUiRadioRow(

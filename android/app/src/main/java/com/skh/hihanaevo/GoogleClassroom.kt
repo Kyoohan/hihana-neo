@@ -494,6 +494,7 @@ object ClassroomStore {
         snapshot.value = null
         File(context.filesDir, FILE).delete()
         ClassroomReadStore.clear(context)
+        ClassroomTodoHideStore.clear(context)
         BoardAgendaStore.clear(context, prefix = "cr_")
     }
 
@@ -557,6 +558,35 @@ object ClassroomCourseStore {
     fun set(context: Context, ids: Set<String>) {
         hidden.value = ids
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY_HIDDEN, ids).apply()
+    }
+}
+
+/**
+ * 할 일에서 숨긴 과제 — 마감이 없거나 지났는데 클래스룸에선 계속 '안 냄'으로 남는 과제(제출이 필요 없던 과제, 종이로 낸 과제 등)를
+ * 손으로 치웁니다. 이 기기에만 적고 클래스룸에는 아무것도 보내지 않습니다.
+ */
+object ClassroomTodoHideStore {
+    private const val PREFS = "classroom_todo_hidden"
+    private const val KEY_IDS = "ids"
+    val revision = mutableIntStateOf(0)
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun ids(context: Context): Set<String> = prefs(context).getStringSet(KEY_IDS, emptySet()).orEmpty()
+
+    fun hide(context: Context, postId: String) {
+        prefs(context).edit().putStringSet(KEY_IDS, ids(context) + postId).apply()
+        revision.intValue++
+    }
+
+    fun show(context: Context, postIds: Collection<String>) {
+        prefs(context).edit().putStringSet(KEY_IDS, ids(context) - postIds.toSet()).apply()
+        revision.intValue++
+    }
+
+    fun clear(context: Context) {
+        prefs(context).edit().clear().apply()
+        revision.intValue++
     }
 }
 

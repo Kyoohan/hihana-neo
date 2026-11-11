@@ -31,6 +31,8 @@ object LiveActivity {
 
     const val CHANNEL_ID = "live_activity"
     private const val NOTIFICATION_ID = 7401
+    private const val GROUP_KEY = "live_activity"
+    private const val SUMMARY_ID = 7400
     private const val PREFS_NAME = "live_activity"
     private const val KEY_ENABLED = "enabled"
     private const val TICK_MS = 60_000L
@@ -148,7 +150,7 @@ object LiveActivity {
             prefs(app).edit().putBoolean(KEY_ENABLED, false).remove(KEY_TEMP_UNTIL).apply()
         }
         if (!isEnabled(app)) {
-            manager.cancel(NOTIFICATION_ID)
+            cancelNotification(manager)
             cancelTick(app)
             return
         }
@@ -162,7 +164,7 @@ object LiveActivity {
         val windowEnd = shown.maxOfOrNull { it.end }
 
         if (windowStart == null || windowEnd == null || now.isBefore(windowStart) || !now.isBefore(windowEnd)) {
-            manager.cancel(NOTIFICATION_ID)
+            cancelNotification(manager)
             // 다음 창 시작(오늘 아직 안 열렸으면 오늘, 아니면 내일)에 맞춰 한 번 깨웁니다.
             val nextStart = if (windowStart != null && now.isBefore(windowStart)) windowStart
             else nextWindowStart(app, today.plusDays(1))
@@ -174,7 +176,7 @@ object LiveActivity {
         // 전날 심야면학이 자정을 넘겨 이어지면 표시 창이 전날 밤부터 시작해, 그게 끝난 뒤의 새벽 빈 시간도 창 안에
         // 들어옵니다 — 빈 구간이면 알림을 내리고 다음 일정 시작에 다시 깨웁니다.
         if (block.isBlank) {
-            manager.cancel(NOTIFICATION_ID)
+            cancelNotification(manager)
             val nextStart = shown.firstOrNull { it.start.isAfter(now) }?.start
             scheduleAt(app, nextStart?.let { toMillis(it) } ?: (System.currentTimeMillis() + 6 * 3_600_000L), exact = false)
             return
@@ -183,6 +185,7 @@ object LiveActivity {
         ensureChannel(manager)
         val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(app) }.getOrDefault(emptyMap()))
         manager.notify(NOTIFICATION_ID, build(app, block, next, now, kindColors))
+        postSummary(app, manager, iconResFor(block.iconKey))
 
         // 1분 틱과 구간 경계 모두 정확한 알람으로 (알람 및 리마인더 권한이 있을 때) — 부정확 알람은 절전 상태에서
         // 5~15분씩 미뤄져 Now Bar 의 남은 시간이 실제와 어긋났습니다. 권한이 없으면 부정확 알람으로 폴백.
@@ -254,6 +257,8 @@ object LiveActivity {
                 .setSubText(text.takeIf { nextText != null })
                 .setStyle(style)
                 .setOngoing(true)
+                // 자동 묶음에서 빼려고 요약이 있는 자기 그룹에 둡니다 — [postSummary] 참고.
+                .setGroup(GROUP_KEY)
                 .setOnlyAlertOnce(true)
                 // 시스템이 직접 세는 카운트다운(구간 끝까지) — 알람이 밀려도 이 숫자는 실제 시간과 맞습니다.
                 // One UI 는 이 숫자를 제목 바로 뒤에 띄어쓰기 없이 붙여 그리므로("도서관 2-3457:14") 제목 끝에 공백을 둡니다.
@@ -281,6 +286,7 @@ object LiveActivity {
             .setSubText(nextText)
             .setProgress(total.toInt(), elapsed.toInt(), false)
             .setOngoing(true)
+            .setGroup(GROUP_KEY)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setSilent(true)
@@ -307,6 +313,30 @@ object LiveActivity {
 
     private fun placeFirst(place: StudyPlace?): String? =
         place?.let { listOfNotNull(it.name, it.detail?.takeIf { d -> d.isNotBlank() }).joinToString(" ") }
+
+    private fun cancelNotification(manager: NotificationManager) {
+        manager.cancel(NOTIFICATION_ID)
+        manager.cancel(SUMMARY_ID)
+    }
+
+    /**
+     * 실시간 일정만의 그룹 요약. 앱 알림(알리미·브리핑 등)이 둘 이상이면 Android 16+ 는 그룹 없는 알림, 그리고 요약 없는
+     * 그룹 알림까지 '알림 더보기' 자동 묶음으로 모읍니다. 실시간 일정이 그 안에 들어가 묶음을 지우면 함께 사라졌습니다.
+     * 요약과 자식이 함께 있는 그룹은 자동 묶음에서 빠지고, 자식이 하나뿐이라 화면에는 실시간 일정 알림만 보입니다.
+     */
+    private fun postSummary(context: Context, manager: NotificationManager, icon: Int) {
+        val summary = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(icon)
+            .setContentTitle("실시간 일정")
+            .setGroup(GROUP_KEY)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .build()
+        manager.notify(SUMMARY_ID, summary)
+    }
 
     private fun ensureChannel(manager: NotificationManager) {
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
