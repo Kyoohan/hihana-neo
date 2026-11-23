@@ -19,7 +19,7 @@
       "versions": [
         {
           "version": "15.0",
-          "buildVersion": "15.0",
+          "buildVersion": "498",
           "date": "2026-11-23",
           "localizedDescription": "• 외출·외박 승인 알림: 신청한 외출·외박이 승인되거나 반려되면 알림, 누르면 외출 내역 (설정 → 알림에서 끄기)\n• 앱 안에서 한 번에 업데이트 — HiHana Evo 정보 › 업데이트를 누르면 SideStore 가 받아 설치\n• 급식 사진: 화면 가운데에 크게, 아래로 밀어서 닫기\n• 아이패드: 고른 줄의 유리 판이 글자에 붙던 문제, 고른 줄을 다시 누르면 오른쪽이 비던 문제, 오른쪽에서 연 화면(정보 › 변경 사항 등)이 바꿔치기되어 돌아갈 수 없던 문제, 검색어를 지우면 보던 곳으로\n• 아이패드: 타임라인의 급식 칸을 누르면 급식 화면이 두 겹으로 쌓이던 문제",
           "downloadURL": "https://github.com/Kyoohan/hihana-neo/releases/download/v15.0/hihana-neo-15.0-ios.ipa",
