@@ -516,7 +516,7 @@ object Timetable {
 
     object Sessions {
         // 평일 0타임: 1인2기 신청이 있으면 1인2기, 없으면(수요일 · 1인2기 종료 후) 평범한 면학 위치로 씁니다.
-        // 시간은 hh.hana.hs.kr 의 period-defs.json 으로 확인했습니다.
+        // 시간은 hi.hana.hs.kr 의 period-defs.json 으로 확인했습니다.
         val weekday0 = StudySession("면학 0타임", 16 * 60 + 20, 17 * 60 + 50)
         val weekday1 = StudySession("면학 1타임", 19 * 60, 21 * 60)
         val weekday2 = StudySession("면학 2타임", 21 * 60 + 30, 23 * 60 + 10)

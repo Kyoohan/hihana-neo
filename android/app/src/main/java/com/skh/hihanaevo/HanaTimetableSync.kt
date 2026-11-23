@@ -13,10 +13,10 @@ import java.time.LocalDate
 // MARK: - 포털 시간표 조회
 
 /** 포털이 실제로 그리는 학생시간표 페이지 — 웹뷰 폴백과 파싱이 같은 URL 을 씁니다. */
-const val STUDENT_TIMETABLE_URL = "https://hh.hana.hs.kr/main/std/regularCourse/student-timetable.do"
+const val STUDENT_TIMETABLE_URL = "https://hi.hana.hs.kr/main/std/regularCourse/student-timetable.do"
 
 /**
- * hh.hana.hs.kr 학생 시간표 조회.
+ * hi.hana.hs.kr 학생 시간표 조회.
  *
  * 페이지가 JS 로 표를 그리므로 **숨은 웹뷰로 렌더링한 DOM 의 표**(`outerHTML`)를 가장 먼저
  * [ExamParser] 로 파싱해 요일 열 · 교시 행을 주간 그리드로 옮깁니다. 웹뷰가 없거나(워커 등)
@@ -29,7 +29,7 @@ const val STUDENT_TIMETABLE_URL = "https://hh.hana.hs.kr/main/std/regularCourse/
  */
 object HanaTimetableApi {
 
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
     private const val TAG = "HanaTimetable"
     private const val REFERER = "$BASE/main/std/regularCourse/student-timetable.do"
     private const val TIMETABLE_PAGE = "/main/std/regularCourse/student-timetable.do"

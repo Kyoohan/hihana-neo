@@ -105,7 +105,7 @@ private fun decodeHtml(raw: String?): String {
 }
 
 private fun normalizePortalUrl(raw: String?, bmtIdx: Int, bdIdx: Int): String {
-    val base = "https://hh.hana.hs.kr"
+    val base = "https://hi.hana.hs.kr"
     val fallback = "$base/main/board/$bmtIdx/$bdIdx/board_view.do"
     if (raw.isNullOrBlank()) return fallback
     return when {
@@ -152,7 +152,7 @@ private class SupervisionDiagnostics(private val maxRows: Int = 10) {
  */
 object HanaAcademicApi {
 
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
 
     /** 학사일정 파싱 실패를 진단할 때 쓰는 Logcat 태그 — 사용자가 원문을 그대로 신고할 수 있게 합니다. */
     private const val TAG = "HanaSchedule"
@@ -197,7 +197,7 @@ object HanaAcademicApi {
     private suspend fun alimReadRequest(context: Context, path: String, params: List<Pair<String, String>>): String? = try {
         val json = HanaPortalClient.get().authenticatedJson(
             context, path, params,
-            referer = "https://hh.hana.hs.kr/main/mypage_alert/received.do",
+            referer = "https://hi.hana.hs.kr/main/mypage_alert/received.do",
             isValid = { it.optString("result") == "success" },
         )
         // 포털이 돌려준 결과와 남은 안 읽음 수만 남깁니다(알리미 내용은 남기지 않음).

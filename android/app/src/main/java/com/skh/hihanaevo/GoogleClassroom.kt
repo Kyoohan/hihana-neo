@@ -463,14 +463,14 @@ object ClassroomStore {
         sampleMode.value = true
         val today = LocalDate.now()
         BoardAgendaStore.record(
-            context, "sample_1", "2학기 교내 수학경시대회 참가 신청 안내", "https://hh.hana.hs.kr/main/board/1/9001/view.do",
+            context, "sample_1", "2학기 교내 수학경시대회 참가 신청 안내", "https://hi.hana.hs.kr/main/board/1/9001/view.do",
             listOf(
                 PostEvent("수학경시대회 신청 마감", today.plusDays(3), deadline = true),
                 PostEvent("수학경시대회", today.plusDays(10), time = "15:10"),
             ),
         )
         BoardAgendaStore.record(
-            context, "sample_2", "학부모 상담 주간 안내", "https://hh.hana.hs.kr/main/board/4/9002/view.do",
+            context, "sample_2", "학부모 상담 주간 안내", "https://hi.hana.hs.kr/main/board/4/9002/view.do",
             listOf(PostEvent("학부모 상담 주간", today.plusDays(13), end = today.plusDays(17))),
         )
     }

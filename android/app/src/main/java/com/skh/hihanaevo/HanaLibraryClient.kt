@@ -100,7 +100,7 @@ object HanaLibraryApi {
     private const val APPLY_WAIT_MS = 90_000L
 
     private const val TAG = "HanaLibrary"
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
 
     /** 신청 페이지 응답이 안 읽힐 때의 기본값 — 포털 timeList 에서 확인된 값 (4 = 휴일A 그룹, 1 = 평일 그룹). */
     private val fallbackSlots = listOf(

@@ -72,7 +72,7 @@ import java.util.Locale
  * (로그인 페이지가 내려오면 요청이 처리되지 않은 것이라 다시 로그인한 뒤 한 번 더 보냅니다 — [HanaPortalClient.authenticatedRaw].)
  */
 private object PortalWrite {
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
     private const val WAIT_MS = 30_000L
 
     suspend fun send(context: Context, path: String, params: List<Pair<String, String>>, referer: String, failText: String): String =
@@ -93,7 +93,7 @@ private object PortalWrite {
         }
 }
 
-private const val PORTAL = "https://hh.hana.hs.kr"
+private const val PORTAL = "https://hi.hana.hs.kr"
 
 private fun JSONObject.text(key: String): String? =
     if (!has(key) || isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }

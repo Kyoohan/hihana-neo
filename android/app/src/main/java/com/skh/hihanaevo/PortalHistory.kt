@@ -214,7 +214,7 @@ object OutingApi {
 
 /** 포털 목록 JSON 공통 — 폼 POST, `result` 확인, `paging.result` 읽기. */
 private object PortalLists {
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
     private val stamp = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
     suspend fun post(context: Context, path: String, params: List<Pair<String, String>>, referer: String): JSONObject =

@@ -114,7 +114,7 @@ sealed class HanaPortalException(message: String) : Exception(message) {
 data class HanaRawResponse(val code: Int, val body: String)
 
 /**
- * hh.hana.hs.kr 이 돌려주는 한 타임 분량의 배정 원본 (도서관/면학실/생활관).
+ * hi.hana.hs.kr 이 돌려주는 한 타임 분량의 배정 원본 (도서관/면학실/생활관).
  * PlanSlot/StudyPlace 로의 해석은 [HanaAssignmentMapper] 가 맡습니다.
  */
 data class HanaStudyAssignment(
@@ -162,7 +162,7 @@ data class HanaDailySync(
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (has(key) && !isNull(key)) getString(key) else null
 
-// MARK: - hh.hana.hs.kr 클라이언트
+// MARK: - hi.hana.hs.kr 클라이언트
 
 /**
  * 로그인 후 세션 쿠키로 자기주도학습(면학실·도서관·생활관) 배정 위치를 가져옵니다.
@@ -180,7 +180,7 @@ class HanaPortalClient private constructor() {
         fun get(): HanaPortalClient =
             instance ?: synchronized(this) { instance ?: HanaPortalClient().also { instance = it } }
 
-        private const val BASE = "https://hh.hana.hs.kr"
+        private const val BASE = "https://hi.hana.hs.kr"
         private val TOKEN_REGEX = Regex("hanaLoginRequestToken\\s*=\\s*\"([^\"]+)\"")
         private val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         const val UA =

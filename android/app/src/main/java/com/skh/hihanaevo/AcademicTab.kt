@@ -98,7 +98,7 @@ internal fun scheduleLabel(code: String): String = when (code) {
 }
 
 /** 포털 알리미 화면에서 한 건을 미리 골라 여는 주소 — 번호는 [HanaAlim.portalIdx](att_idx). */
-internal fun alimUrl(aimIdx: String): String = "https://hh.hana.hs.kr/main/mypage_alert/received.do?aimIdx=$aimIdx"
+internal fun alimUrl(aimIdx: String): String = "https://hi.hana.hs.kr/main/mypage_alert/received.do?aimIdx=$aimIdx"
 
 internal fun shortDate(date: LocalDate): String {
     val dow = date.dayOfWeek.getDisplayName(JavaTextStyle.SHORT, Locale.KOREAN)

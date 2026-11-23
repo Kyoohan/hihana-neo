@@ -77,7 +77,7 @@ data class ClassroomOccupant(
 object HanaClassroomApi {
     private const val TAG = "HanaClassroom"
     private const val BASE = "/main/classroom"
-    private const val REFERER = "https://hh.hana.hs.kr/main/classroom/apply.do"
+    private const val REFERER = "https://hi.hana.hs.kr/main/classroom/apply.do"
 
     suspend fun times(context: Context): List<ClassroomTime> = withContext(Dispatchers.IO) {
         val body = HanaPortalClient.get().authenticatedText(context, "$BASE/apply.do")

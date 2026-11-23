@@ -43,7 +43,7 @@ const MAX_TEXT = 6000;
 /** 짧은 글도 요약합니다(목록의 한 줄 요약 길이·말투를 맞추려고). 본문도 이미지도 없으면 요약할 게 없습니다. */
 const MIN_TEXT = 1;
 /** 이미지 읽기 — 포털 업로드 파일만, 글당 몇 장까지만(무료 사용량 보호). */
-const IMAGE_URL = /^https:\/\/hh\.hana\.hs\.kr\/upfilePath\/[^?#]+\.(png|jpe?g|gif|webp|bmp)$/i;
+const IMAGE_URL = /^https:\/\/h[hi]\.hana\.hs\.kr\/upfilePath\/[^?#]+\.(png|jpe?g|gif|webp|bmp)$/i;
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 4_000_000;
 const OCR_PROMPT = `이 이미지는 한국 고등학교 공지문(가정통신문 등)의 일부다. 이미지 속 글자를 빠짐없이 한국어 원문 그대로 옮겨 적어라.

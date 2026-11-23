@@ -37,7 +37,7 @@ import com.skh.hihanaevo.ui.OneUiDivider
 import com.skh.hihanaevo.ui.OneUiGroupColumn
 import kotlinx.coroutines.launch
 
-internal const val PORTAL_BASE = "https://hh.hana.hs.kr"
+internal const val PORTAL_BASE = "https://hi.hana.hs.kr"
 
 // MARK: - 신청·내역
 

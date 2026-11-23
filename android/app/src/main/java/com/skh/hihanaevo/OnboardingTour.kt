@@ -1503,7 +1503,7 @@ private fun ColumnScope.LoginPage(onReady: (LoginAction?) -> Unit, onLinked: () 
         Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp).padding(top = 2.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            "비밀번호는 이 기기에 암호화되어 저장되고, 학사시스템(hh.hana.hs.kr)에만 보냅니다.",
+            "비밀번호는 이 기기에 암호화되어 저장되고, 학사시스템(hi.hana.hs.kr)에만 보냅니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

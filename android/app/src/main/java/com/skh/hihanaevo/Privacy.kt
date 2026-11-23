@@ -708,7 +708,7 @@ private fun HttpsSection() {
                 }
             }
         }
-        Fine("학사시스템과의 연결은 TLS 1.3 · AES-256-GCM으로 암호화됩니다(2026년 9월 확인). 인증서로 진짜 hh.hana.hs.kr인지도 확인합니다.")
+        Fine("학사시스템과의 연결은 TLS 1.3 · AES-256-GCM으로 암호화됩니다(2026년 11월 확인). 인증서로 진짜 hi.hana.hs.kr인지도 확인합니다.")
     }
 }
 
@@ -740,7 +740,7 @@ private fun FlowSection() {
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     FlowWire(PvGreen, phase)
                     FlowTag("HTTPS · TLS 1.3\n아이디·비밀번호", PvGreen)
-                    FlowNode(painterResource(R.drawable.ic_school), "학사시스템", "hh.hana.hs.kr", PvGreen)
+                    FlowNode(painterResource(R.drawable.ic_school), "학사시스템", "hi.hana.hs.kr", PvGreen)
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     FlowWire(PvPink, phase)

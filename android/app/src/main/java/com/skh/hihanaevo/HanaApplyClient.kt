@@ -49,7 +49,7 @@ sealed interface ClassroomHistory {
  */
 object HanaApplyApi {
 
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
 
     /** 진단용 — JSON 이 아닐 때 사용자가 원문을 신고할 수 있게 앞부분만 남깁니다. */
     private const val TAG = "HanaApply"

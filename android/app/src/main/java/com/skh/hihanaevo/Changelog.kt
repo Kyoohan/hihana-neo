@@ -8,6 +8,12 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "14.5",
+        listOf(
+            "긴급 수정: 학교가 하이하나 주소를 hi.hana.hs.kr 로 옮기면서 동기화·로그인이 '학사시스템 응답을 해석하지 못했습니다'로 실패하던 문제 — 새 주소로 바로 연결",
+        ),
+    ),
+    ChangelogEntry(
         "14.4",
         listOf(
             "긴급 수정: 귀가가 아닌 날(11월 12일~)에 홈·위젯·Now Bar 가 '귀가 중'으로 뜨던 문제 — 귀교 일정만 보이고 귀가 일정 이름을 못 알아봤을 때 귀교 열흘 전부터 비우던 것을 고침, '수능 귀가'처럼 앞에 말이 붙은 귀가·귀교도 알아봄",

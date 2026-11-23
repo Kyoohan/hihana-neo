@@ -5041,7 +5041,7 @@ private fun HanaAccountDialog(onDismiss: () -> Unit) {
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            "입력한 계정으로 hh.hana.hs.kr(하이하나)에 로그인해 평일1·2타임 면학 위치를 자동으로 가져옵니다. " +
+            "입력한 계정으로 hi.hana.hs.kr(하이하나)에 로그인해 평일1·2타임 면학 위치를 자동으로 가져옵니다. " +
                 "비밀번호는 이 기기에 암호화되어 저장됩니다.",
             style = MaterialTheme.typography.bodySmall,
             color = onPageVariantColor(),

@@ -139,7 +139,7 @@ data class HanaComment(
 )
 
 object HanaPostApi {
-    private const val BASE = "https://hh.hana.hs.kr"
+    private const val BASE = "https://hi.hana.hs.kr"
 
     /**
      * 댓글 목록 — 포털 글 화면이 열릴 때 스스로 부르는 조회(board_re_list.json, brtGubun=C)와 같은 요청입니다.
@@ -846,14 +846,14 @@ private fun PostBody(html: String, onImage: (String) -> Unit) {
                         }
                     }
                     tag = doc
-                    loadDataWithBaseURL("https://hh.hana.hs.kr/", doc, "text/html", "utf-8", null)
+                    loadDataWithBaseURL("https://hi.hana.hs.kr/", doc, "text/html", "utf-8", null)
                 }
             },
             // 앱 테마를 바꾸면 새 색으로 다시 그립니다.
             update = { view ->
                 if (view.tag != doc) {
                     view.tag = doc
-                    view.loadDataWithBaseURL("https://hh.hana.hs.kr/", doc, "text/html", "utf-8", null)
+                    view.loadDataWithBaseURL("https://hi.hana.hs.kr/", doc, "text/html", "utf-8", null)
                 }
             },
             modifier = Modifier.fillMaxWidth().height(if (heightDp > 0) heightDp.dp else 120.dp),
@@ -1034,7 +1034,7 @@ private fun ImageViewer(src: String, onDismiss: () -> Unit) {
                         settings.userAgentString = HanaPortalClient.UA
                         val escaped = src.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")
                         loadDataWithBaseURL(
-                            "https://hh.hana.hs.kr/",
+                            "https://hi.hana.hs.kr/",
                             """
                             <!doctype html><html><head>
                             <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=8, user-scalable=yes">

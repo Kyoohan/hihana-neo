@@ -81,7 +81,7 @@ import org.json.JSONObject
 data class SearchBoard(val bmtIdx: Int, val name: String, val total: Int)
 data class SearchOverview(val query: String, val total: Int, val boards: List<SearchBoard>)
 data class SearchHit(val bmtIdx: Int, val bdIdx: Int, val boardName: String, val titleHtml: String) {
-    val url: String get() = "https://hh.hana.hs.kr/main/board/$bmtIdx/$bdIdx/board_view.do"
+    val url: String get() = "https://hi.hana.hs.kr/main/board/$bmtIdx/$bdIdx/board_view.do"
     val plainTitle: String get() = HtmlCompat.fromHtml(titleHtml, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
 }
 data class SearchPage(val hits: List<SearchHit>, val total: Int)
@@ -89,7 +89,7 @@ data class SearchPage(val hits: List<SearchHit>, val total: Int)
 enum class SearchOrder(val label: String, val code: String) { NEWEST("최신순", "INPUTDATEDESC"), OLDEST("오래된순", "INPUTDATEASC") }
 
 object PortalSearchApi {
-    private const val SEARCH_PAGE = "https://hh.hana.hs.kr/main/search.do"
+    private const val SEARCH_PAGE = "https://hi.hana.hs.kr/main/search.do"
 
     suspend fun overview(context: Context, query: String): SearchOverview = withContext(Dispatchers.IO) {
         val text = HanaPortalClient.get().authenticatedText(
