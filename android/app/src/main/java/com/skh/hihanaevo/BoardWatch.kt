@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * 게시판 새 글을 빨리 알립니다 — 30분 주기 동기화와 따로, 알림을 켠 게시판만 5분마다 확인합니다.
+ * 승인을 기다리는 외출·외박 신청이 있으면 그 상태도 같이 확인합니다([OutingNotifier]).
  *
  * WorkManager 의 주기 작업은 15분 아래로 줄일 수 없어(실제론 30분 넘게 밀리기도) 알람으로 깨웁니다. Doze 중에도 울리는
  * allow-while-idle 알람이 짧은 일회성 작업(가능하면 바로 도는 우선 작업)을 맡기고 다음 알람을 겁니다. 기기가 깊이 잠들면
@@ -40,7 +41,7 @@ object BoardWatch {
      */
     fun schedule(context: Context, force: Boolean = false) {
         val app = context.applicationContext
-        if (BoardNotifier.enabledCategories(app).isEmpty() || !HanaCredentialStore.hasCredentials(app)) {
+        if ((BoardNotifier.enabledCategories(app).isEmpty() && !OutingNotifier.watching(app)) || !HanaCredentialStore.hasCredentials(app)) {
             cancel(app)
             return
         }
@@ -91,6 +92,8 @@ object BoardWatch {
             } catch (_: Exception) {
             }
         }
+        // 외출·외박 — 기다리는 신청이 있을 때만(내역 조회 한 번). 실패하면 다음 확인에서.
+        if (OutingNotifier.watching(context)) OutingSchedule.refresh(context)
     }
 }
 

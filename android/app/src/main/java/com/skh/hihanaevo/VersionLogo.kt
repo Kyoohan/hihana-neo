@@ -253,9 +253,22 @@ private val evoSilkPalette = SilkPalette(
     pink = Color(0xFFF24C9E),
 )
 
+// 15 · iOS 출시와 외출·외박 승인 알림 — 새벽 하늘(하늘색·남색)에서 복숭앗빛 아침으로.
+private val dawnSilkPalette = SilkPalette(
+    mint = Color(0xFF8FE3FF),
+    cyan = Color(0xFF4FB3FF),
+    blue = Color(0xFF3D7BFF),
+    indigo = Color(0xFF1E2A8C),
+    purple = Color(0xFF3A2E9E),
+    gold = Color(0xFFFFD9A8),
+    coral = Color(0xFFFF9E8A),
+    pink = Color(0xFFE86AA6),
+)
+
 /** 버전별 실크 색 — 새 버전은 한 줄을 더하고, 미정인 버전은 Evo 색을 씁니다. */
 private val silkPalettes = mapOf(
     14 to evoSilkPalette,
+    15 to dawnSilkPalette,
 )
 
 @Composable

@@ -1,0 +1,7 @@
+# xcodegen 이 project.yml 로 만들어 냅니다 — 'xcodegen generate'
+HiHanaEvo.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+Config/Secrets.xcconfig

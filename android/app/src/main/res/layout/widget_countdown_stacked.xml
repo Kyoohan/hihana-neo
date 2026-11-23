@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  좁은 위젯(2×2 등)의 카운트다운 — 설명("종료까지")을 위 줄, MM:SS 를 아래 줄에 따로 둡니다. 한 줄에 함께 두면
+  폭이 모자라 숫자가 "23:4 / 0"으로 꺾였습니다.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/widget_countdown_caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textSize="11sp" />
+
+    <Chronometer
+        android:id="@+id/widget_countdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="#E2E8F0" />
+</LinearLayout>

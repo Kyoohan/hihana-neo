@@ -152,3 +152,54 @@ fun Modifier.hazeSourceUnlessPerf(state: HazeState, zIndex: Float = 0f): Modifie
 
 // 참고: 성능 모드에서 주사율을 60Hz 로 낮추는 것도 시험했지만(2026-10-18, SM7635 기기) 오히려 나빠졌습니다 —
 // 부하가 줄어 GPU 클럭이 내려가면서 프레임이 16ms 를 넘겨 60Hz 에서도 프레임을 놓쳤고(p90 28ms), 터치 반응도 둔해졌습니다.
+
+/**
+ * 설정 분류 줄의 '새 설정' 점 — 업데이트로 그 분류에 새 설정이 생겼을 때만, 한 번 열 때까지.
+ * 어느 버전에서 올라왔는지([KEY_FROM])를 업데이트를 알아챈 순간 적어 두어, 그보다 새 버전에서 생긴 설정만 점을 띄웁니다.
+ * 처음 설치는 지금 버전에서 시작한 것으로 봐서 점이 없습니다.
+ */
+object NewSettingDots {
+    private const val PREFS = "new_setting_dots"
+    private const val KEY_INSTALLED = "installed"
+    private const val KEY_FROM = "from"
+    private const val KEY_OPENED = "opened"
+
+    private var from: String? = null
+    private var opened by mutableStateOf(emptySet<String>())
+
+    fun load(context: Context, version: String) {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val current = version.removeSuffix("-dev").removeSuffix("-alpha")
+        val installed = prefs.getString(KEY_INSTALLED, null)
+        // 이 기능 이전 버전에서 올라온 사람은 마지막으로 본 버전(새 버전 알림)을 출발점으로 씁니다.
+        val previous = installed ?: context.applicationContext.getSharedPreferences("whats_new", Context.MODE_PRIVATE)
+            .getString("seen_version", null)
+        if (installed != current) {
+            prefs.edit().putString(KEY_INSTALLED, current).putString(KEY_FROM, previous ?: current).apply()
+        }
+        from = prefs.getString(KEY_FROM, current)
+        opened = prefs.getStringSet(KEY_OPENED, emptySet()).orEmpty().toSet()
+    }
+
+    fun isNew(page: String, newIn: String?): Boolean {
+        val start = from ?: return false
+        if (newIn == null || "$page@$newIn" in opened) return false
+        return compare(newIn, start) > 0
+    }
+
+    fun open(context: Context, page: String, newIn: String?) {
+        if (newIn == null) return
+        opened = opened + "$page@$newIn"
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY_OPENED, opened).apply()
+    }
+
+    private fun compare(a: String, b: String): Int {
+        val x = a.split('.').map { it.toIntOrNull() ?: 0 }
+        val y = b.split('.').map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val d = x.getOrElse(i) { 0 } - y.getOrElse(i) { 0 }
+            if (d != 0) return d
+        }
+        return 0
+    }
+}

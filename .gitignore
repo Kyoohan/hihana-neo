@@ -11,3 +11,4 @@ android/.kotlin/
 # macOS
 .DS_Store
 android/app/src/debug/assets/students.bin
+dist/

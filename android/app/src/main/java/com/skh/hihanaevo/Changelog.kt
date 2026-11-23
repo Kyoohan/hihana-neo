@@ -8,6 +8,16 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "15.0",
+        listOf(
+            "외출·외박 승인 알림: 신청한 외출·외박이 승인되거나 반려되면 바로 알림, 누르면 외출 내역 — 승인을 기다리는 동안만 5분마다 확인 (설정 → 알림에서 끄기)",
+            "iPhone·iPad 판: SideStore 로 설치하고(무료 Apple ID) 앱 안에서 한 번에 업데이트",
+            "귀가: 귀가일은 1인2기가 끝나는 17:50부터, '1,2학년 귀가'처럼 학년이 붙은 일정도 알아보고 지난 귀가 일정을 기억해 귀가 중인 날을 놓치지 않게",
+            "설정: 업데이트할 때마다 '개인화'에 뜨던 빨간 점을 없애고, 새 설정이 들어간 분류에만 한 번",
+            "위젯: 좁은 위젯의 남은 시간을 다시 mm:ss 로",
+        ),
+    ),
+    ChangelogEntry(
         "14.5",
         listOf(
             "긴급 수정: 학교가 하이하나 주소를 hi.hana.hs.kr 로 옮기면서 동기화·로그인이 '학사시스템 응답을 해석하지 못했습니다'로 실패하던 문제 — 새 주소로 바로 연결",

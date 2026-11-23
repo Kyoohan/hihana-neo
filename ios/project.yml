@@ -1,0 +1,93 @@
+name: HiHanaEvo
+options:
+  bundleIdPrefix: com.skh
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "15.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    # 빌드 번호 스크립트가 git 을 읽도록.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  HiHanaEvo:
+    type: application
+    platform: iOS
+    sources:
+      - path: HiHanaEvo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.skh.hihanaevo
+        INFOPLIST_FILE: HiHanaEvo/Resources/Info.plist
+        # 팀 없이도 시뮬레이터 빌드에 서명 — 서명이 없으면 키체인 쓰기가 거절돼 로그인이 저장되지 않습니다.
+        "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: HiHanaEvo/Resources/HiHanaEvo.entitlements
+    dependencies:
+      - target: HiHanaEvoWidgets
+        embed: true
+    postBuildScripts:
+      - name: 빌드 번호를 커밋 수로
+        basedOnDependencyAnalysis: false
+        # Info.plist 를 만든 뒤에 돌도록(나란히 빌드할 때 먼저 돌아 덮이던 것).
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        script: |
+          # 빌드 번호(CFBundleVersion)는 이 저장소의 커밋 수 — 새로 빌드할 때마다 저절로 올라갑니다.
+          n=$(git -C "$SRCROOT" rev-list --count HEAD 2>/dev/null || echo 1)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+  # 위젯·실시간 활동 — 일과 계산(Core)과 블록 색(Theme)을 앱과 함께 씁니다.
+  HiHanaEvoWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: HiHanaEvo/Core
+      - path: HiHanaEvo/DesignSystem/Theme.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.skh.hihanaevo.widgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Widgets/Widgets.entitlements
+        "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+    postBuildScripts:
+      - name: 빌드 번호를 커밋 수로
+        basedOnDependencyAnalysis: false
+        # Info.plist 를 만든 뒤에 돌도록(나란히 빌드할 때 먼저 돌아 덮이던 것).
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        script: |
+          # 빌드 번호(CFBundleVersion)는 이 저장소의 커밋 수 — 새로 빌드할 때마다 저절로 올라갑니다.
+          n=$(git -C "$SRCROOT" rev-list --count HEAD 2>/dev/null || echo 1)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+  HiHanaEvoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: HiHanaEvo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.skh.hihanaevo.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  HiHanaEvo:
+    build:
+      targets:
+        HiHanaEvo: all
+    test:
+      targets:
+        - HiHanaEvoTests

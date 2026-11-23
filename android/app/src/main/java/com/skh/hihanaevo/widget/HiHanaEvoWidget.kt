@@ -195,7 +195,11 @@ class HiHanaEvoWidget : GlanceAppWidget() {
             val remaining = snap.remainingMillis
             val blockAccent = snap.block?.let { accentOverride ?: kindColors.getValue(it.accent) }
             if (remaining != null && blockAccent != null) {
-                countdownRemoteViews(context, remaining, blockAccent, snap.block.countdownCaption, if (isDark) 0xFFE2E8F0.toInt() else 0xFF475569.toInt())
+                val captionArgb = if (isDark) 0xFFE2E8F0.toInt() else 0xFF475569.toInt()
+                CountdownViews(
+                    wide = countdownRemoteViews(context, remaining, blockAccent, snap.block.countdownCaption, captionArgb),
+                    narrow = countdownRemoteViews(context, remaining, blockAccent, snap.block.countdownCaption, captionArgb, stacked = true),
+                )
             } else {
                 null
             }
@@ -219,7 +223,7 @@ internal fun WidgetRoot(
     wallpaperTint: Int?,
     accentOverride: Int?,
     kindColors: Map<Accent, Int>,
-    countdownViews: RemoteViews?,
+    countdownViews: CountdownViews?,
 ) {
     CompositionLocalProvider(LocalAccentOverride provides accentOverride, LocalKindColors provides kindColors) {
         GlanceTheme {
@@ -340,6 +344,9 @@ private fun openTabAction(tab: String): Action =
         actionParametersOf(ActionParameters.Key<String>(MainActivity.EXTRA_OPEN_TAB) to tab),
     )
 
+/** 넓은 폭(설명과 숫자 한 줄)·좁은 폭(설명 위, 숫자 아래) 카운트다운 — 어느 쪽을 쓸지는 위젯 크기를 아는 곳에서 고릅니다. */
+internal class CountdownViews(val wide: RemoteViews, val narrow: RemoteViews)
+
 /** MM:SS 카운트다운 — Chronometer는 RemoteViews로만 만들 수 있어 별도 레이아웃을 씁니다 */
 internal fun countdownRemoteViews(
     context: Context,
@@ -348,8 +355,10 @@ internal fun countdownRemoteViews(
     /** 숫자 앞의 작은 설명 — "종료까지", "다음 수업까지". 없으면 숫자만. */
     caption: String?,
     captionArgb: Int,
+    /** 좁은 위젯용 — 설명을 위 줄, 숫자를 아래 줄에. */
+    stacked: Boolean = false,
 ): RemoteViews {
-    val views = RemoteViews(context.packageName, R.layout.widget_countdown)
+    val views = RemoteViews(context.packageName, if (stacked) R.layout.widget_countdown_stacked else R.layout.widget_countdown)
     val id = R.id.widget_countdown
     views.setTextViewText(R.id.widget_countdown_caption, caption.orEmpty())
     views.setTextColor(R.id.widget_countdown_caption, captionArgb)
@@ -373,7 +382,7 @@ private fun WidgetContent(
     mealText: String?,
     mealAllergyPrefix: String,
     supervisionText: String?,
-    countdownViews: RemoteViews?,
+    countdownViews: CountdownViews?,
     remainingMillis: Long?,
     homeStay: HomeStayNotice?,
     homeStayExtras: HomeStayExtras?,
@@ -699,7 +708,7 @@ private fun ScheduleContent(
     mealText: String?,
     mealAllergyPrefix: String,
     supervisionText: String?,
-    countdownViews: RemoteViews?,
+    countdownViews: CountdownViews?,
     remainingMillis: Long?,
 ) {
     val compact = widgetHeight() == WidgetHeight.COMPACT
@@ -1033,8 +1042,8 @@ private fun MealCompactContent(block: Block, mealText: String, allergyPrefix: St
  * 두 칸 이상 높이용(정상 일정) — 상태 → 장소 히어로(넘치면 두 줄) → 다음 일정, 세 칸 이상이면 '이후 일정' 목록 → 남은 시간.
  * 저녁 창(18:50~19:00)에는 남은 시간 위에 면학감독 한 줄이 더 붙습니다.
  *
- * 남은 시간은 넓으면 초까지 세는 Chronometer("종료까지 23:40"), 좁으면 분 단위 글자("종료까지" / "23분") — 좁은 폭에선
- * 설명과 큰 숫자가 한 줄에 들어가지 않아 숫자가 "23:4 / 0"으로 꺾였습니다. 위젯은 1분마다 다시 그려집니다.
+ * 남은 시간은 초까지 세는 Chronometer(MM:SS) — 넓으면 설명과 한 줄("종료까지 23:40"), 좁으면 설명 위·숫자 아래 두 줄.
+ * 좁은 폭에서 한 줄로 두면 숫자가 "23:4 / 0"으로 꺾였습니다.
  * Chronometer(AndroidRemoteViews)를 같은 Column 에 넣으면 defaultWeight 계산이 깨지므로,
  * 가중치가 걸린 내용은 안쪽 Column 에 두고 카운트다운은 바깥 Box 에 겹쳐 그립니다.
  */
@@ -1045,7 +1054,7 @@ private fun NormalHeroContent(
     nextRoom: String?,
     upcoming: List<UpcomingRow>,
     supervisionText: String?,
-    countdownViews: RemoteViews?,
+    countdownViews: CountdownViews?,
     remainingMillis: Long?,
 ) {
     val narrow = isNarrow()
@@ -1065,7 +1074,7 @@ private fun NormalHeroContent(
             else -> 26f
         },
     )
-    val showCountdown = remainingMillis != null && (narrow || countdownViews != null)
+    val showCountdown = remainingMillis != null && countdownViews != null
     val countdownDp = when {
         !showCountdown -> 0f
         narrow -> lineDp(11f) + 22f * 1.25f
@@ -1122,36 +1131,21 @@ private fun NormalHeroContent(
                 Spacer(GlanceModifier.height(2.dp))
             }
 
-            if (showCountdown && narrow) {
-                block.countdownCaption?.let { Text(it, style = TextStyle(color = subtext, fontSize = 11.sp, fontWeight = FontWeight.Medium), maxLines = 1) }
-                Text(
-                    remainingText(remainingMillis!!),
-                    style = TextStyle(color = accentColor(block.accent), fontSize = 22.sp, fontWeight = FontWeight.Bold),
-                    maxLines = 1,
-                )
-            } else if (showCountdown) {
-                Spacer(GlanceModifier.height(countdownDp.dp))
-            }
+            if (showCountdown) Spacer(GlanceModifier.height(countdownDp.dp))
         }
 
-        if (showCountdown && !narrow && countdownViews != null) {
+        if (showCountdown && countdownViews != null) {
             Box(
                 modifier = GlanceModifier.fillMaxSize(),
                 contentAlignment = Alignment.BottomStart,
             ) {
                 AndroidRemoteViews(
-                    remoteViews = countdownViews,
+                    remoteViews = if (narrow) countdownViews.narrow else countdownViews.wide,
                     modifier = GlanceModifier.fillMaxWidth(),
                 )
             }
         }
     }
-}
-
-/** 분 단위 남은 시간 — "23분", "1시간 5분". 1분 안이면 "1분". */
-private fun remainingText(millis: Long): String {
-    val minutes = ((millis + 59_999) / 60_000).coerceAtLeast(1)
-    return if (minutes >= 60) "${minutes / 60}시간 ${minutes % 60}분" else "${minutes}분"
 }
 
 /**

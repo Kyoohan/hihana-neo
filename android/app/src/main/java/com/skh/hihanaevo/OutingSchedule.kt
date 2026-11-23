@@ -27,6 +27,9 @@ object OutingSchedule {
     /** 포털에서 새로 받습니다. 실패하면 캐시를 그대로 둡니다. */
     suspend fun refresh(context: Context) {
         val rows = runCatching { OutingApi.list(context, OutingFilter.ALL, 1).rows }.getOrNull() ?: run { ensureInstalled(context); return }
+        // 신청 → 승인·반려로 바뀐 것을 알리고, 기다리는 신청이 생기거나 없어지면 5분 확인을 켜고 끕니다.
+        OutingNotifier.process(context, rows)
+        BoardWatch.schedule(context)
         val spans = rows.mapNotNull { o ->
             if (o.state == 8 || o.state == 32) return@mapNotNull null
             val start = o.actualOut ?: o.plannedOut ?: return@mapNotNull null

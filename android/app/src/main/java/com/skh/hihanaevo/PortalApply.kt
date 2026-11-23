@@ -986,6 +986,8 @@ fun OutingApplyScreen(
                             OutingApplyApi.apply(context, form!!, out, back, cleanReason, transport!!, otherTransport)
                         }
                         succeeded = true
+                        // 방금 낸 신청을 '기다리는 중'으로 기억해 두고 승인·반려 확인을 켭니다.
+                        scope.launch { OutingSchedule.refresh(context.applicationContext) }
                         (if (edit != null) "수정했습니다" else "신청했습니다") to message
                     } catch (e: CancellationException) {
                         throw e

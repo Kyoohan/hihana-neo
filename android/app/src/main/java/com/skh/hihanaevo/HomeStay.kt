@@ -11,8 +11,8 @@ import java.util.Locale
 
 /**
  * 귀가 기간 — 학사일정의 "귀가(1,2,3)" · "귀교(1,2,3)" 로 날짜별 상태를 정해 [Timetable.installHomeStay] 로 넘깁니다.
- * 귀가일은 1타임부터, 귀교일은 마지막 타임(21:30) 전까지, 그 사이 날은 하루 종일 일정이 없어 Now Bar·위젯이 꺼지고
- * 홈에는 귀가 안내가 뜹니다. 괄호 안 학년에 내 학년이 없으면 그 귀가·귀교는 무시합니다.
+ * 귀가일은 0타임(1인2기)이 끝난 17:50부터, 귀교일은 마지막 타임(21:30) 전까지, 그 사이 날은 하루 종일 일정이 없어 Now Bar·위젯이 꺼지고
+ * 홈에는 귀가 안내가 뜹니다. 이름 앞이나 괄호 안 학년에 내 학년이 없으면 그 귀가·귀교는 무시합니다.
  * 같은 학사일정의 공휴일(빨간날)도 함께 [Timetable.installHolidays] 로 넘겨, 평일 공휴일에 휴일 일과가 뜨게 합니다.
  */
 object HomeStaySchedule {
@@ -22,13 +22,24 @@ object HomeStaySchedule {
         private set
 
     /**
-     * 이름이 귀가·귀교로 끝나는 일정 — "귀교(1,2,3)", "수능 귀가(1,2)" 처럼 앞에 말이 붙어도 됩니다.
-     * "코람데오 귀가 예배" 같은 행사는 귀가로 끝나지 않아 빠집니다.
+     * 귀가·귀교 일정 이름 — 학년은 앞("1,2학년 귀가")이나 괄호("귀교(1,2,3)")에, 앞에 다른 말이 붙어도 되지만("수능 귀가")
+     * 이름이 귀가·귀교로 끝나야 합니다("코람데오 귀가 예배" 같은 행사는 빠짐).
+     * 1: 앞의 학년, 2: 귀가|귀교, 3: 괄호 안.
      */
-    private val pattern = Regex("""^.*?(귀가|귀교)\s*(?:\(([^)]*)\))?$""")
+    private val pattern = Regex("""^(?:([1-3](?:\s*[,·]\s*[1-3])*)\s*학년\s*)?.*?(귀가|귀교)\s*(?:\(([^)]*)\))?$""")
 
-    /** 짝이 되는 귀가·귀교가 조회 범위 밖이라 안 보일 때 비울 최대 날 수. */
-    private const val MAX_UNSEEN_DAYS = 10L
+    /** 괄호 안의 학년 목록 — "1,2" · "1, 2학년" · "3학년 제외". 이 꼴이 아니면(전학년, 13시 이후 등) 학년 표기로 보지 않습니다. */
+    private val gradeNote = Regex("""^([1-3](?:\s*[,·]\s*[1-3])*)\s*(?:학년)?\s*(제외)?$""")
+
+    /**
+     * 귀가·귀교가 들어 있는 학사일정 분류 — 학사(SG01…)와 학교 행사(SG02010000)만. 장소 예약(SG02020000)·감독 배정(SG03…)
+     * 은 이름이 귀가로 끝나도 귀가 기간이 아닙니다.
+     */
+    private fun isAcademicCode(code: String) = code.startsWith("SG01") || code == "SG02010000"
+
+    /** 지나간 귀가·귀교를 기억하는 기간 — 이보다 오래된 건 버립니다. */
+    private const val HISTORY_DAYS = 45L
+    private const val HISTORY_CACHE = "homestay_history"
 
     /** 위젯·Now Bar 가 새 프로세스에서 떠도 귀가 기간이 반영되게, 아직 없으면 캐시에서 설치합니다. */
     suspend fun ensureInstalled(context: Context) {
@@ -37,6 +48,7 @@ object HomeStaySchedule {
 
     /** 캐시된 학사일정과 지금 학년으로 다시 계산합니다. 바뀌었으면 true. */
     suspend fun refresh(context: Context): Boolean = install(
+        context,
         HanaAcademicRepository.cachedSchedule(context),
         PlanStore.studentGrade(context),
     )
@@ -45,8 +57,9 @@ object HomeStaySchedule {
 
     @Volatile private var installedHolidays: Map<LocalDate, String>? = null
 
-    fun install(entries: List<HanaScheduleEntry>, grade: Int): Boolean {
-        val map = compute(entries, grade)
+    suspend fun install(context: Context, entries: List<HanaScheduleEntry>, grade: Int): Boolean {
+        val marks = rememberMarks(context, entries)
+        val map = compute(marks, grade)
         // 공휴일(학사일정 빨간날)도 같은 학사일정에서 — 평일이라도 휴일 일과(1~4타임)로 바뀝니다.
         val holidays = entries.filter { it.code == HOLIDAY_CODE }.associate { it.date to it.name.trim() }
         if (map == installed && holidays == installedHolidays && Timetable.homeStayInstalled()) return false
@@ -61,51 +74,92 @@ object HomeStaySchedule {
     /** 학사일정의 공휴일 분류 코드 — 학사 탭이 빨간색으로 칠하는 일정. */
     private const val HOLIDAY_CODE = "SG01020000"
 
-    internal fun compute(entries: List<HanaScheduleEntry>, grade: Int): Map<LocalDate, Timetable.HomeStay> {
-        if (entries.isEmpty()) return emptyMap()
-        val leaves = sortedSetOf<LocalDate>()
-        val returns = sortedSetOf<LocalDate>()
-        for (entry in entries) {
-            val match = pattern.matchEntire(entry.name.trim()) ?: continue
-            val note = match.groupValues[2]
-            val grades = note.filter { it.isDigit() }.map { it.digitToInt() }
-            // "(3학년 제외)" 는 3학년만 빼는 뜻입니다.
-            if (grades.isNotEmpty() && (grade in grades) == note.contains("제외")) continue
-            if (match.groupValues[1] == "귀가") leaves += entry.date else returns += entry.date
-        }
-        val firstDay = entries.minOf { it.date }
-        val lastDay = entries.maxOf { it.date }
-        val map = mutableMapOf<LocalDate, Timetable.HomeStay>()
+    /** 귀가·귀교 한 건 — 날짜, 종류, 해당 학년(빈 목록이면 모든 학년). */
+    internal data class Mark(val date: LocalDate, val leave: Boolean, val grades: Set<Int>, val name: String)
 
+    /** 학사일정 한 줄이 귀가·귀교면 그 뜻을, 아니면 null. */
+    internal fun parse(entry: HanaScheduleEntry): Mark? {
+        if (!isAcademicCode(entry.code)) return null
+        // 전각 괄호·쉼표 같은 글자도 보통 글자로 맞춘 뒤 읽습니다.
+        val name = java.text.Normalizer.normalize(entry.name, java.text.Normalizer.Form.NFKC).trim()
+        val match = pattern.matchEntire(name) ?: return null
+        val prefix = match.groupValues[1].filter { it.isDigit() }.map { it.digitToInt() }.toSet()
+        val note = gradeNote.matchEntire(match.groupValues[3].trim())
+        val noteGrades = note?.groupValues?.get(1)?.filter { it.isDigit() }?.map { it.digitToInt() }?.toSet().orEmpty()
+        val grades = when {
+            noteGrades.isNotEmpty() && note?.groupValues?.get(2)?.isNotEmpty() == true -> (1..3).toSet() - noteGrades
+            noteGrades.isNotEmpty() -> noteGrades
+            else -> prefix
+        }
+        return Mark(entry.date, match.groupValues[2] == "귀가", grades, name)
+    }
+
+    /**
+     * 받아 둔 학사일정의 귀가·귀교에, 전에 받았던 지나간 귀가·귀교를 더합니다. 학사일정은 어제부터만 받아서 귀가 기간
+     * 한가운데에 받으면 귀가일이 빠지는데, 그때도 기억해 둔 귀가일로 짝을 맞춥니다(예전엔 귀교 열흘 전부터 추정해 비웠다가
+     * 평일을 귀가로 띄웠습니다). 기억은 이번에 받은 범위보다 앞선 날짜만 쓰고, 범위 안은 새로 받은 일정만 믿습니다 —
+     * 학교가 지운 귀가가 남지 않게.
+     */
+    private suspend fun rememberMarks(context: Context, entries: List<HanaScheduleEntry>): List<Mark> {
+        val stored = runCatching { PlanStore.cachedJson(context, HISTORY_CACHE)?.value?.let(::decodeHistory) }.getOrNull().orEmpty()
+        val merged = mergeHistory(stored, entries, PlanStore.today())
+        if (merged != stored) runCatching { PlanStore.writeCachedJson(context, HISTORY_CACHE, encodeHistory(merged)) }
+        return merged.mapNotNull(::parse)
+    }
+
+    /** [rememberMarks] 의 계산 부분 — 기억할 귀가·귀교 학사일정 줄. */
+    internal fun mergeHistory(stored: List<HanaScheduleEntry>, entries: List<HanaScheduleEntry>, today: LocalDate): List<HanaScheduleEntry> {
+        val fresh = entries.filter { parse(it) != null }
+        val rangeStart = entries.minOfOrNull { it.date }
+        val keepFrom = today.minusDays(HISTORY_DAYS)
+        val older = stored.filter { rangeStart == null || it.date.isBefore(rangeStart) }
+        return (older + fresh)
+            .filter { !it.date.isBefore(keepFrom) }
+            .distinctBy { it.date to it.name }
+            .sortedWith(compareBy({ it.date }, { it.name }))
+    }
+
+    private fun encodeHistory(rows: List<HanaScheduleEntry>): String = org.json.JSONArray().apply {
+        rows.forEach { put(org.json.JSONObject().put("date", it.date.toString()).put("name", it.name).put("code", it.code)) }
+    }.toString()
+
+    private fun decodeHistory(json: String): List<HanaScheduleEntry> {
+        val array = org.json.JSONArray(json)
+        return (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            HanaScheduleEntry(
+                code = o.getString("code"),
+                name = o.getString("name"),
+                place = null,
+                startTime = null,
+                endTime = null,
+                allDay = true,
+                date = LocalDate.parse(o.getString("date")),
+            )
+        }
+    }
+
+    /**
+     * 날짜별 귀가 상태. 귀교마다 그 앞(직전 귀교 뒤)의 가장 가까운 귀가와 짝을 지어 귀가일·사이 날·귀교일을 표시합니다.
+     * 짝이 없으면 아는 날만 — 귀가만 있으면 귀가일만, 귀교만 있으면 귀교일만 — 표시하고 그 앞뒤를 추정해 비우지 않습니다.
+     */
+    internal fun compute(marks: List<Mark>, grade: Int): Map<LocalDate, Timetable.HomeStay> {
+        val mine = marks.filter { it.grades.isEmpty() || grade in it.grades }
+        val leaves = java.util.TreeSet(mine.filter { it.leave }.map { it.date })
+        val returns = java.util.TreeSet(mine.filter { !it.leave }.map { it.date })
+        val map = mutableMapOf<LocalDate, Timetable.HomeStay>()
+        for (leave in leaves) map[leave] = Timetable.HomeStay.LEAVE
         for (back in returns) {
             val previousReturn = returns.lower(back)
             val leave = leaves.lower(back)?.takeIf { previousReturn == null || it.isAfter(previousReturn) }
-            // 짝이 되는 귀가가 안 보이면, 귀가가 조회 범위 앞에 있을 수 있을 때(범위가 귀교 앞 [MAX_UNSEEN_DAYS]일을 다 덮지
-            // 못할 때)만 범위 첫날부터 비웁니다 — 이미 집에 가 있는 중입니다. 범위가 그 앞을 다 덮는데도 귀가가 없으면
-            // 이름을 못 알아본 귀가라, 예전처럼 귀교 열흘 전부터 비우지 않고 귀교일만 표시합니다
-            // (11/22 귀교에 귀가를 못 읽어 11/12 평일부터 귀가 중으로 뜬 일).
-            val unseenLeave = leave == null && firstDay.isAfter(back.minusDays(MAX_UNSEEN_DAYS))
-            if (leave != null) map[leave] = Timetable.HomeStay.LEAVE
-            if (leave != null || unseenLeave) {
-                var day = leave?.plusDays(1) ?: firstDay
+            if (leave != null) {
+                var day = leave.plusDays(1)
                 while (day.isBefore(back)) {
                     map[day] = Timetable.HomeStay.AWAY
                     day = day.plusDays(1)
                 }
             }
             map[back] = Timetable.HomeStay.RETURN
-        }
-        // 귀교가 아직 조회 범위 밖이면 귀가일 뒤로 범위 끝까지(길어도 [MAX_UNSEEN_DAYS]일) 비웁니다 —
-        // 캐시에는 두 달 뒤 정기고사도 섞여 있어 범위 끝만 믿으면 몇 주가 통째로 비었습니다.
-        for (leave in leaves) {
-            if (returns.higher(leave) != null) continue
-            map[leave] = Timetable.HomeStay.LEAVE
-            var day = leave.plusDays(1)
-            val until = minOf(lastDay, leave.plusDays(MAX_UNSEEN_DAYS))
-            while (!day.isAfter(until)) {
-                map[day] = Timetable.HomeStay.AWAY
-                day = day.plusDays(1)
-            }
         }
         return map
     }
@@ -114,7 +168,7 @@ object HomeStaySchedule {
 /** 홈 '지금' 카드·위젯에 띄우는 귀가 안내 — [shortDetail] 은 위젯 한 줄용. */
 data class HomeStayNotice(val title: String, val detail: String, val shortDetail: String)
 
-/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 1타임부터, 귀교일은 귀교 시각(밤 9시) 전까지만. */
+/** 지금 일정이 비어 있는 귀가 기간이면 안내를, 아니면 null — 귀가일은 17:50(휴일 13:30)부터, 귀교일은 귀교 시각(밤 9시) 전까지만. */
 fun homeStayNotice(today: LocalDate, now: LocalDateTime): HomeStayNotice? {
     val stay = Timetable.homeStay(today) ?: return null
     val minutes = if (now.toLocalDate() == today) now.hour * 60 + now.minute else 0

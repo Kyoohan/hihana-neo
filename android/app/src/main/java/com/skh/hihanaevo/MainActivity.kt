@@ -233,6 +233,7 @@ import com.skh.hihanaevo.ui.onPageColorFor
 import com.skh.hihanaevo.ui.PerformanceMode
 import com.skh.hihanaevo.ui.NavBarLabels
 import com.skh.hihanaevo.ui.FrostOpacity
+import com.skh.hihanaevo.ui.NewSettingDots
 import com.skh.hihanaevo.ui.WhatsNew
 import com.skh.hihanaevo.ui.OneUiPageBackdrop
 import com.skh.hihanaevo.ui.hazeSourceUnlessPerf
@@ -318,6 +319,7 @@ class MainActivity : ComponentActivity() {
         IconStyleStore.load(this)
         FrostOpacity.load(this)
         WhatsNew.load(this, BuildConfig.VERSION_NAME)
+        NewSettingDots.load(this, BuildConfig.VERSION_NAME)
         PageBackgroundAdjust.load(this)
         // 느린 기기면 프레임 시간을 재서 성능 모드를 자동으로 켭니다(기기당 한 번).
         AutoPerformance.watch(this)
@@ -374,6 +376,8 @@ class MainActivity : ComponentActivity() {
         const val TAB_MEAL = "meal"
         const val TAB_ACADEMIC = "academic"
         const val TAB_CLASSROOM = "classroom"
+        /** 외출·외박 승인 알림 — 외출 내역을 엽니다. */
+        const val TAB_OUTING_HISTORY = "outing_history"
     }
 }
 
@@ -495,14 +499,9 @@ private fun HiHanaEvoAppContent(
     var offline by remember { mutableStateOf(false) }
     var lastSyncAt by remember { mutableStateOf(0L) }
     var showingSettings by remember { mutableStateOf(false) }
-    // 설정을 열면 새 버전 알림(톱니의 N)은 본 것으로 — 안의 '화면' 줄 점은 설정을 닫을 때까지 남겨 둡니다.
-    var whatsNewInSettings by remember { mutableStateOf(false) }
+    // 설정을 열면 새 버전 알림(톱니의 N)은 본 것으로. 새 설정이 있는 분류의 점은 그 분류를 열 때까지 따로 남습니다(NewSettingDots).
     LaunchedEffect(showingSettings) {
-        if (showingSettings && WhatsNew.pending) {
-            whatsNewInSettings = true
-            WhatsNew.markSeen(context, BuildConfig.VERSION_NAME)
-        }
-        if (!showingSettings) whatsNewInSettings = false
+        if (showingSettings && WhatsNew.pending) WhatsNew.markSeen(context, BuildConfig.VERSION_NAME)
     }
     // 헤더 탭 버튼들이 쓰는 상태 — 설정을 특정 페이지로 열기, 홈 카드 순서 편집, 날씨, 게시판 검색.
     var settingsStartPage by remember { mutableStateOf<SettingsPage?>(null) }
@@ -697,7 +696,7 @@ private fun HiHanaEvoAppContent(
         try {
             scheduleEntries = HanaAcademicRepository.schedule(context, force)
             // 새 학사일정에 귀가·귀교가 생기거나 바뀌었으면 Now Bar·위젯도 바로 맞춥니다.
-            if (HomeStaySchedule.install(scheduleEntries, PlanStore.studentGrade(context))) {
+            if (HomeStaySchedule.install(context, scheduleEntries, PlanStore.studentGrade(context))) {
                 HiHanaEvoWidget().updateAll(context)
                 runCatching { LiveActivity.update(context) }
             }
@@ -1103,6 +1102,7 @@ private fun HiHanaEvoAppContent(
             // 예전 "학사" 요청(설치돼 있던 알림 등)은 게시판으로.
             MainActivity.TAB_ACADEMIC, MainActivity.TAB_BOARD -> tab = TabIndex.BOARD
             MainActivity.TAB_TODAY -> tab = TabIndex.HOME
+            MainActivity.TAB_OUTING_HISTORY -> quickHistory = ApplyService.OUTING
             // 투어의 클래스룸 연결 장에서 브라우저를 다녀온 것이면 투어를 이어 가도록 화면을 열지 않습니다.
             MainActivity.TAB_CLASSROOM -> {
                 if (tourKind == null) tab = TabIndex.CLASSROOM
@@ -1337,7 +1337,7 @@ private fun HiHanaEvoAppContent(
     val todayBlocks = remember(today, places, timetableRevision, MidnightSchedule.revision, HomeStaySchedule.revision, OutingSchedule.revision) {
         Timetable.blocks(today) { places[it] }
     }
-    // 귀가 기간 안내 — 귀가일 1타임 뒤, 그 사이 날, 귀교일 밤 9시 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
+    // 귀가 기간 안내 — 귀가일 17:50(휴일 13:30) 뒤, 그 사이 날, 귀교일 밤 9시 전에만 (revision 을 읽어 설치가 바뀌면 다시 계산).
     val homeStayNotice = remember(today, now, HomeStaySchedule.revision) { homeStayNotice(today, now) }
     // 귀가 기간이면 서울 날씨를 받아 두고(30분 캐시), 안내 아래 줄(날씨·귀교 후 첫 일정·시험)을 계산합니다.
     var weatherRevision by remember { mutableIntStateOf(0) }
@@ -2826,7 +2826,6 @@ private fun HiHanaEvoAppContent(
             },
             updateAvailable = updateAvailable,
             onOpenAppInfo = { showingAppInfo = true },
-            highlightDisplay = whatsNewInSettings,
             devContent = if (BuildConfig.DEV) ({
                 DevTab(
                     contentPadding = PaddingValues(0.dp),
@@ -2940,8 +2939,6 @@ private fun SettingsScreen(
     initialPage: SettingsPage? = null,
     /** 디버그 빌드의 개발자 페이지 내용 — null 이면 분류에 안 보입니다. */
     devContent: (@Composable () -> Unit)? = null,
-    /** 새 버전의 바뀐 점이 '화면'에 있을 때 그 줄에 점. */
-    highlightDisplay: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2989,8 +2986,6 @@ private fun SettingsScreen(
                     SettingsCategoryRow(
                         page = SettingsPage.PERSONALIZE,
                         summary = "하단 바 · 아이콘 ${IconStyleStore.style.label}",
-                        // 업데이트 뒤 처음 — 이번 버전의 새 설정(아이콘 결·홈 배치)이 여기 있습니다.
-                        badgeDot = highlightDisplay,
                         onClick = { page = SettingsPage.PERSONALIZE },
                     )
                     OneUiDivider(startIndent = SettingsCategoryIndent)
@@ -3330,6 +3325,26 @@ private fun SettingsScreen(
             }
                     }
                     item {
+            OneUiSectionTitle("외출·외박")
+            var outingNotify by remember { mutableStateOf(OutingNotifier.isEnabled(context)) }
+            OneUiGroupColumn {
+                OneUiListItem(
+                    title = "승인·반려 알림",
+                    subtitle = "신청한 외출·외박이 승인되거나 반려되면 알려 줍니다. 승인을 기다리는 신청이 있을 때만 5분마다 확인합니다",
+                    trailing = {
+                        OneUiSwitch(checked = outingNotify, onCheckedChange = { on ->
+                            OutingNotifier.setEnabled(context, on)
+                            outingNotify = on
+                        })
+                    },
+                    onClick = {
+                        OutingNotifier.setEnabled(context, !outingNotify)
+                        outingNotify = !outingNotify
+                    },
+                )
+            }
+                    }
+                    item {
             OneUiSectionTitle("게시판 새 글")
             // 게시판별 새 글 알림 — 켜진 게시판은 30분 주기 동기화 때 확인해 새 글만 알립니다.
             var boardNotify by remember { mutableStateOf(BoardNotifier.enabledCategories(context)) }
@@ -3581,12 +3596,16 @@ internal fun BackgroundPhotoRows(hasBackgroundPhoto: Boolean, onBackgroundChange
  * 색은 One UI 9 설정 앱 아이콘에서 그대로 따왔습니다(계정 파랑, 디스플레이 연두, 테마 분홍, 알림 주황,
  * 보안·소리 보라, 유용한 기능 노랑, 폰 정보 회보라).
  */
-private enum class SettingsPage(val title: String, val icon: Int?, val tint: Color) {
+/**
+ * 설정 분류. [newIn] 은 그 분류에 새 설정이 들어간 버전 — 그보다 옛 버전에서 업데이트한 사람에게만 분류 줄에 점이 뜨고,
+ * 한 번 열면 사라집니다. 새 설정을 넣을 때 그 분류의 [newIn] 을 그 버전으로 바꿉니다(처음 설치는 점 없음).
+ */
+private enum class SettingsPage(val title: String, val icon: Int?, val tint: Color, val newIn: String? = null) {
     ACCOUNT("계정·학년", R.drawable.ic_settings_person, Color(0xFF387AFF)),
     DISPLAY("화면", R.drawable.ic_settings_display, Color(0xFFA4D925)),
     PERSONALIZE("개인화", R.drawable.ic_settings_personalize, Color(0xFF14A8B8)),
     WIDGET("위젯", R.drawable.ic_widgets, Color(0xFFEC5881)),
-    NOTIFY("알림", null, Color(0xFFE65B17)),
+    NOTIFY("알림", null, Color(0xFFE65B17), newIn = "15.0"),
     BOARD("게시판", R.drawable.ic_settings_book, Color(0xFF715AFF)),
     CLASSROOM("클래스룸", R.drawable.ic_school, Color(0xFF2FB67C)),
     MEAL("급식", R.drawable.ic_settings_meal, Color(0xFFFDBE4E)),
@@ -3613,11 +3632,13 @@ private fun SettingsCategoryRow(
 ) {
     // 큰 화면 두 칸에서 오른쪽에 열린 분류는 옅은 강조색 바탕.
     val selected = LocalSettingsSelection.current == page
+    val context = LocalContext.current
+    val newSetting = NewSettingDots.isNew(page.name, page.newIn)
     Box(Modifier.background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)) {
     OneUiListItem(
         title = title,
         subtitle = summary,
-        badgeDot = badgeDot,
+        badgeDot = badgeDot || newSetting,
         leadingSize = SettingsIconCircle,
         leading = {
             Box(
@@ -3644,7 +3665,7 @@ private fun SettingsCategoryRow(
                 tint = onPageVariantColor(),
             )
         },
-        onClick = onClick,
+        onClick = { if (newSetting) NewSettingDots.open(context, page.name, page.newIn); onClick() },
     )
     }
 }

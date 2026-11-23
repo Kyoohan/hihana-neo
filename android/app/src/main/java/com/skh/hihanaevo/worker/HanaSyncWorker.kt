@@ -54,6 +54,8 @@ class HanaSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
             HanaSyncApplier.apply(applicationContext, sync, today)
             // 장소 배정과 함께 시간표도 강제로 새로 받아 설치합니다 (실패 시 캐시 유지).
             HanaTimetableSync.refresh(applicationContext, today, force = true)
+            // 외출·외박 — 위젯·Now Bar 의 외출 블록과 승인·반려 알림. 실패하면 받아 둔 것을 그대로 둡니다.
+            com.skh.hihanaevo.OutingSchedule.refresh(applicationContext)
             HanaSyncGate.clear(applicationContext)
             PlanStore.markSynced(applicationContext)
             HiHanaEvoWidget().updateAll(applicationContext)

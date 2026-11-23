@@ -175,7 +175,12 @@ class WidgetPreviewActivity : ComponentActivity() {
                     row.addView(cell)
                     val accent = snapshot.block?.let { WidgetKindColors.defaults.getValue(it.accent) } ?: 0xFFFFFFFF.toInt()
                     val countdown = snapshot.remainingMillis?.takeIf { snapshot.block != null }?.let {
-                        countdownRemoteViews(this@WidgetPreviewActivity, it, accent, snapshot.block?.countdownCaption, if (dark) 0xFFE2E8F0.toInt() else 0xFF475569.toInt())
+                        val captionArgb = if (dark) 0xFFE2E8F0.toInt() else 0xFF475569.toInt()
+                        val caption = snapshot.block?.countdownCaption
+                        CountdownViews(
+                            wide = countdownRemoteViews(this@WidgetPreviewActivity, it, accent, caption, captionArgb),
+                            narrow = countdownRemoteViews(this@WidgetPreviewActivity, it, accent, caption, captionArgb, stacked = true),
+                        )
                     }
                     runCatching {
                         val views = glance.compose(this@WidgetPreviewActivity, size) {

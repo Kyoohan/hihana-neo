@@ -178,7 +178,7 @@ fun DevTab(
         var homeStayPreview by remember { mutableStateOf<Pair<String, HomeStayExtras?>?>(null) }
         OneUiGroupColumn {
             listOf(
-                Triple("귀가일 (오늘 19:00 이후로)", Timetable.HomeStay.LEAVE, java.time.LocalTime.of(19, 30)),
+                Triple("귀가일 (오늘 17:50 이후로)", Timetable.HomeStay.LEAVE, java.time.LocalTime.of(18, 0)),
                 Triple("귀가 중 (내일 귀교로)", Timetable.HomeStay.AWAY, null),
                 Triple("귀교일 (오늘 귀교로)", Timetable.HomeStay.RETURN, null),
             ).forEachIndexed { index, (title, stay, at) ->
