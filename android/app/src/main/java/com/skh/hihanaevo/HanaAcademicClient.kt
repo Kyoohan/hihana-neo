@@ -239,19 +239,22 @@ object HanaAcademicApi {
      * 자격증명 없음/로그인 실패는 15일 × 변형 수만큼 반복하면 계정 잠금 위험이 있어
      * 즉시 중단하고 그대로 던집니다. 그 외 오류는 하루라도 성공하면 부분 결과를 돌려줍니다.
      */
-    suspend fun fetchSchedule(context: Context, start: LocalDate, end: LocalDate): List<HanaScheduleEntry> {
+    /** 받은 일정과 조회가 실패한 날 — 실패한 날은 일정이 없는 날과 구별해야 받아 둔 그날 일정을 지우지 않습니다. */
+    data class ScheduleFetch(val entries: List<HanaScheduleEntry>, val failedDays: Set<LocalDate>)
+
+    suspend fun fetchSchedule(context: Context, start: LocalDate, end: LocalDate): ScheduleFetch {
         val rememberedBefore = ScheduleVariantStore.get(context, scheduleVariants.size)
         val first = fetchScheduleRange(context, start, end)
         // 기억해 둔 요청 형식이 범위 내내 빈 응답만 주면(학생 필터 형식처럼 응답 모양은 맞는데 일정이 안 오는 형식을
         // 한 번 기억하면 그 기기에서는 학사일정·귀가 기간이 계속 비었습니다) 기억을 지우고 형식을 처음부터 다시 찾습니다.
-        if (first.isEmpty() && rememberedBefore != null) {
+        if (first.entries.isEmpty() && rememberedBefore != null) {
             ScheduleVariantStore.clear(context)
             return fetchScheduleRange(context, start, end)
         }
         return first
     }
 
-    private suspend fun fetchScheduleRange(context: Context, start: LocalDate, end: LocalDate): List<HanaScheduleEntry> = kotlinx.coroutines.coroutineScope {
+    private suspend fun fetchScheduleRange(context: Context, start: LocalDate, end: LocalDate): ScheduleFetch = kotlinx.coroutines.coroutineScope {
         // 진단 로그는 이 한 번의 조회 전체에서 최대 10행만 남깁니다.
         val supervisionDiagnostics = SupervisionDiagnostics()
         val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
@@ -267,7 +270,10 @@ object HanaAcademicApi {
             }
         }
         if (results.none { it.isSuccess }) results.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { throw it }
-        results.flatMap { it.getOrDefault(emptyList()) }
+        ScheduleFetch(
+            entries = results.flatMap { it.getOrDefault(emptyList()) },
+            failedDays = days.filterIndexed { i, _ -> results[i].isFailure }.toSet(),
+        )
     }
 
     /** 정기고사(중간·기말) 판별 — 공백을 뺀 이름에 들어 있으면 시험입니다. */
@@ -598,35 +604,58 @@ object HanaAcademicRepository {
         val name = "academic_schedule_4w"
         val stored = PlanStore.cachedJson(context, name)
         if (!force && stored != null && System.currentTimeMillis() - stored.at <= TTL_SCHEDULE) {
-            return decodeSchedule(stored.value)
+            return withExams(decodeSchedule(stored.value), cachedExams(context))
         }
         val fallback = stored ?: PlanStore.cachedJson(context, "academic_schedule")
 
-        val fresh = try {
+        val fetched = try {
             // 어제 ~ 이번 주부터 4주째 일요일까지 하루씩 질의합니다 — 요약이 아닌 상세 학사일정. 타임라인 '주' 배율이 4주를 봅니다.
             HanaAcademicApi.fetchSchedule(context, today.minusDays(1), scheduleEnd(today))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            fallback?.let { return decodeSchedule(it.value) }
+            fallback?.let { return withExams(decodeSchedule(it.value), cachedExams(context)) }
             throw e
         }
 
+        // 정기고사는 어느 경로로 돌려주든 덧붙입니다 — 받기가 실패하거나 빈 응답이면 지난 4주치만 돌아가 시험이 빠졌습니다.
+        val exams = runCatching { upcomingExams(context, today, force) }.getOrElse {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            cachedExams(context)
+        }
+        val previous = fallback?.let { decodeSchedule(it.value) }.orEmpty()
         // 새 응답이 비었으면(파라미터가 안 맞는 날 등) 캐시를 덮어쓰지 않고, 있던 일정이라도 돌려줍니다.
-        if (fresh.isEmpty()) return fallback?.let { decodeSchedule(it.value) } ?: emptyList()
-        // 다음 달 중간·기말고사처럼 4주 범위 밖의 정기고사를 덧붙입니다 (실패해도 4주치 일정은 그대로).
-        val exams = runCatching { upcomingExams(context, today, force) }.getOrDefault(emptyList())
-        val merged = fresh + exams.filter { exam -> fresh.none { it.date == exam.date && it.name == exam.name } }
-        PlanStore.writeCachedJson(context, name, encodeSchedule(merged))
+        if (fetched.entries.isEmpty()) return withExams(previous, exams)
+        val merged = withExams(fillFailedDays(fetched, previous), exams)
+        // 하루라도 실패했으면 30분 뒤 다시 받게 — 하루 동안 구멍 난 채로 두지 않습니다.
+        val now = System.currentTimeMillis()
+        PlanStore.writeCachedJson(context, name, encodeSchedule(merged), at = if (fetched.failedDays.isEmpty()) now else now - (TTL_SCHEDULE - 30 * 60 * 1000L))
         return merged
     }
+
+    /**
+     * 조회가 실패한 날은 받아 둔 그날 일정으로 메웁니다 — 예전엔 실패한 날이 '일정 없음'으로 저장돼, 조회 실패로
+     * 12/14~17 이 빠지면 기말고사 D-day 가 마지막 날(12/18)로 떴습니다.
+     */
+    fun fillFailedDays(fetched: HanaAcademicApi.ScheduleFetch, stored: List<HanaScheduleEntry>): List<HanaScheduleEntry> =
+        fetched.entries + stored.filter { it.date in fetched.failedDays }
+
+    /** [list] 에 없는 정기고사만 덧붙입니다(같은 날·같은 이름은 하나). */
+    fun withExams(list: List<HanaScheduleEntry>, exams: List<HanaScheduleEntry>): List<HanaScheduleEntry> =
+        list + exams.filter { exam -> list.none { it.date == exam.date && it.name == exam.name } }
+
+    private suspend fun cachedExams(context: Context): List<HanaScheduleEntry> =
+        PlanStore.cachedJson(context, "academic_exams")?.let { decodeSchedule(it.value) }.orEmpty()
 
     private const val TTL_EXAMS = 12 * 60 * 60 * 1000L
 
     /** 상세 학사일정을 받는 끝 날 — 이번 주 월요일부터 4주째 일요일. */
     fun scheduleEnd(today: LocalDate): LocalDate = today.with(java.time.DayOfWeek.MONDAY).plusWeeks(4).minusDays(1)
 
-    /** 상세 범위 다음 날 ~ 오늘+75일 사이의 정기고사 — 12시간 캐시. */
+    /**
+     * 오늘 ~ 75일 뒤의 정기고사 — 12시간 캐시. 4주 상세 범위 안도 함께 찾습니다: 상세 조회가 하루라도 비거나 실패하면
+     * 그날 시험이 빠진 채 저장돼, 4주 범위 밖만 찾던 예전엔 시험 주간이 코앞인데 D-day 가 사라졌습니다.
+     */
     private suspend fun upcomingExams(context: Context, today: LocalDate, force: Boolean): List<HanaScheduleEntry> {
         val name = "academic_exams"
         val stored = PlanStore.cachedJson(context, name)
@@ -635,7 +664,7 @@ object HanaAcademicRepository {
         }
         // 새로 고침 중 실패하거나 잠깐 빈 응답이 와도 받아 둔 시험을 버리지 않습니다 — 버리면 홈이 '다가오는 시험 없음'이 됐습니다.
         val fresh = try {
-            HanaAcademicApi.fetchUpcomingExams(context, scheduleEnd(today).plusDays(1), today.plusDays(75))
+            HanaAcademicApi.fetchUpcomingExams(context, today, today.plusDays(75))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -653,8 +682,9 @@ object HanaAcademicRepository {
      */
     suspend fun cachedSchedule(context: Context): List<HanaScheduleEntry> {
         val stored = PlanStore.cachedJson(context, "academic_schedule_4w")
-            ?: PlanStore.cachedJson(context, "academic_schedule") ?: return emptyList()
-        return decodeSchedule(stored.value)
+            ?: PlanStore.cachedJson(context, "academic_schedule")
+        // 따로 받아 둔 정기고사도 덧붙입니다 — 위젯·귀가 안내의 시험 D-day 가 빠지지 않게.
+        return withExams(stored?.let { decodeSchedule(it.value) }.orEmpty(), cachedExams(context))
     }
 
     /**

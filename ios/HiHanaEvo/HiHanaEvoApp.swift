@@ -47,17 +47,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let id = response.notification.request.identifier
         await MainActor.run {
             let nav = Navigator.shared
+            // 떠 있던 시트(내 일정 편집·계정 연결 등)는 닫습니다 — 안 닫으면 옮겨 간 화면이 시트 뒤에 가려졌습니다.
+            nav.sheet = nil
             switch info["open"] as? String {
             case "alim":
-                nav.tab = .home
-                nav.paths[.home] = [.alim]
+                // 아이패드는 사이드바의 그 칸으로(홈 스택에 쌓으면 사이드바엔 '홈'이 고른 채로 보였습니다).
+                if isPad { nav.open(.alim) } else { nav.tab = .home; nav.paths[.home] = [.alim] }
             case "outing":
-                nav.tab = .home
-                nav.paths[.home] = [.history(.outing)]
+                if isPad { nav.open(.history(.outing)) } else { nav.tab = .home; nav.paths[.home] = [.history(.outing)] }
             case "post":
                 if let url = info["url"] as? String {
-                    nav.tab = .home
-                    nav.paths[.home] = [.boardPost(url: url, title: nil)]
+                    if isPad { nav.tab = .board; nav.select(.boardPost(url: url, title: nil)) }
+                    else { nav.tab = .home; nav.paths[.home] = [.boardPost(url: url, title: nil)] }
                 }
             default:
                 // 데일리 브리핑 — 홈 맨 위의 브리핑으로.

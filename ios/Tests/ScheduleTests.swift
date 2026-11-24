@@ -155,4 +155,50 @@ final class MealTests: XCTestCase {
     func testNoMealsAnywhere() {
         XCTAssertNil(MealRules.current(today: day, todayMeals: nil, tomorrowMeals: nil, now: day.at(minutes: 600)))
     }
+
+    /// 받아 둔 4주치에 시험이 빠져 있어도(지난주 캐시·하루 조회 실패) 따로 받아 둔 정기고사가 붙어 D-day 가 뜹니다.
+    func testExamsMergedIntoStaleSchedule() {
+        func e(_ name: String, _ m: Int, _ day: Int) -> HanaScheduleEntry {
+            HanaScheduleEntry(code: "", name: name, place: nil, startTime: nil, endTime: nil, allDay: true, date: LocalDate(year: 2026, month: m, day: day))
+        }
+        let today = LocalDate(year: 2026, month: 11, day: 24)
+        let stale = [e("교내 체육대회", 11, 27), e("학부모 상담", 12, 4)]
+        XCTAssertNil(examDday(stale, today: today))
+        let exams = [e("기말고사(1,2)", 12, 14), e("기말고사(1,2)", 12, 15)]
+        let merged = AcademicRepository.withExams(stale + [exams[0]], exams)
+        XCTAssertEqual(merged.filter { $0.name.hasPrefix("기말") }.count, 2)  // 같은 날·같은 이름은 하나
+        let dday = examDday(merged, today: today)
+        XCTAssertEqual(dday?.date, LocalDate(year: 2026, month: 12, day: 14))
+        XCTAssertEqual(dday?.days, 20)
+    }
+
+    /// 하루씩 받다 실패한 날은 받아 둔 그날 일정으로 — 실패한 날을 '일정 없음'으로 저장하면 시험 첫날이 사라졌습니다.
+    func testFailedDaysKeepStoredEntries() {
+        func e(_ name: String, _ day: Int) -> HanaScheduleEntry {
+            HanaScheduleEntry(code: "", name: name, place: nil, startTime: nil, endTime: nil, allDay: true, date: LocalDate(year: 2026, month: 12, day: day))
+        }
+        let stored = (14...18).map { e("기말고사(1,2)", $0) } + [e("교직원 연수", 14)]
+        let failed = Set((14...17).map { LocalDate(year: 2026, month: 12, day: $0) })
+        let fetched = AcademicAPI.ScheduleFetch(entries: [e("귀가(1,2)", 18), e("기말고사(1,2)", 18)], failedDays: failed)
+        let merged = AcademicRepository.fillFailedDays(fetched, stored: stored)
+        XCTAssertEqual(merged.count, 7)  // 18일은 새로 받은 것만(받아 둔 18일 것과 겹치지 않게)
+        XCTAssertEqual(examDday(merged, today: LocalDate(year: 2026, month: 11, day: 24))?.date, LocalDate(year: 2026, month: 12, day: 14))
+        // 실패한 날이 없으면 받은 그대로.
+        XCTAssertEqual(AcademicRepository.fillFailedDays(AcademicAPI.ScheduleFetch(entries: [e("귀가(1,2)", 18)], failedDays: []), stored: stored).count, 1)
+    }
+
+    /// 게시글에서 뽑은 일정은 오늘부터 90일 안의 것만 — 해외 대학 '학기 개강'(2027-09-01) 같은 먼 날짜가 목록 끝에 남던 것.
+    func testBoardAgendaHorizon() {
+        let store = BoardAgendaStore.shared
+        let key = "test_horizon"
+        let today = LocalDate(year: 2026, month: 11, day: 24)
+        store.record(key: key, title: "[해외 진학] 2027학년도 홍콩중문대학교", url: nil, events: [
+            PostEvent(title: "홍콩중문대 정규 전형 마감", date: LocalDate(year: 2027, month: 1, day: 7), deadline: true),
+            PostEvent(title: "학기 개강", date: LocalDate(year: 2027, month: 9, day: 1)),
+        ])
+        defer { store.record(key: key, title: "", url: nil, events: []) }
+        let titles = store.items(today: today).filter { $0.id.hasPrefix("b:\(key):") }.map(\.title)
+        XCTAssertEqual(titles, ["홍콩중문대 정규 전형 마감"])
+        XCTAssertEqual(today.adding(days: BoardAgendaStore.horizonDays), LocalDate(year: 2027, month: 2, day: 22))
+    }
 }

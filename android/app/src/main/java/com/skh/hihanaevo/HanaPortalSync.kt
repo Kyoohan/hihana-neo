@@ -498,6 +498,8 @@ class HanaPortalClient private constructor() {
                 kotlinx.coroutines.delay(250L * attempt)
             } catch (e: HanaPortalException.UnexpectedResponse) {
                 break
+            } catch (e: HanaPortalException.LoginPage) {
+                break
             }
         }
         transient?.let { throw it }
@@ -518,6 +520,9 @@ class HanaPortalClient private constructor() {
             if (text.isBlank()) throw HanaPortalException.Transient("[$path] HTTP ${resp.code} 빈 응답")
             val json = runCatching { JSONObject(text) }.getOrNull()
                 ?: throw nonJsonResponse(path, resp.code)
+            // 세션이 끝나면 포털은 로그인 HTML 대신 {"result":"expired","resMsg":"Login session is required."} 를 줍니다 —
+            // 정상 JSON 으로 넘기면 다시 로그인하지 않고 영어 문구가 그대로 화면에 떴습니다(iOS 와 같은 수정).
+            if (isExpiredJson(json)) throw HanaPortalException.LoginPage
             return json
         }
     }
@@ -662,6 +667,8 @@ class HanaPortalClient private constructor() {
      * 로그인 페이지 HTML 이거나, 세션이 끝났을 때 포털이 돌려주는 짧은 JSON(`{"result":"expired",...}`)이면
      * 로그인 후 재요청 대상입니다 — 후자를 못 잡으면 그 JSON 이 게시글 본문으로 그대로 화면에 찍혔습니다.
      */
+    internal fun isExpiredJson(json: JSONObject): Boolean = json.optString("result") == "expired"
+
     private fun looksLikeLoginPage(body: String): Boolean =
         body.contains("hanaLoginRequestToken") ||
             (body.length < 200 && body.contains("\"result\"") && body.contains("\"expired\""))

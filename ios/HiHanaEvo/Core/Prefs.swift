@@ -39,9 +39,12 @@ enum JSONCache {
         return Entry(value: value, at: at)
     }
 
-    static func write<T: Encodable>(_ value: T, _ name: String) {
+    /// [at] 을 주면 저장 시각을 그때로 — 일부만 받은 캐시를 일찍 만료시킬 때.
+    static func write<T: Encodable>(_ value: T, _ name: String, at: Date? = nil) {
         guard let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: dir.appendingPathComponent(name + ".json"), options: .atomic)
+        let url = dir.appendingPathComponent(name + ".json")
+        try? data.write(to: url, options: .atomic)
+        if let at { try? FileManager.default.setAttributes([.modificationDate: at], ofItemAtPath: url.path) }
     }
 
     static func remove(_ name: String) {

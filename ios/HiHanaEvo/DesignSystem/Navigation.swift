@@ -104,6 +104,7 @@ enum AppTab: String, Hashable, CaseIterable {
         case .apply: "신청이나 내역을 고르세요"
         case .alim: "알림을 고르세요"
         case .settings: "항목을 고르세요"
+        case .search: "결과를 고르세요"
         default: ""
         }
     }

@@ -8,6 +8,16 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "15.1",
+        listOf(
+            "시험까지: 학사일정을 하루씩 받다 실패한 날이 '일정 없음'으로 저장돼 시험 D-day 가 사라지거나 마지막 날로 뜨던 문제 — 실패한 날은 받아 둔 일정으로 메우고 30분 뒤 다시 받기",
+            "시험까지: 다가오는 중간·기말고사를 따로 받아 두어, 학사일정을 새로 받지 못한 날에도 D-day 가 보이게",
+            "로그인: 하이하나 접속이 끊긴 뒤 다시 로그인하지 않고 영어 'Login session is required.' 가 뜨던 문제",
+            "일정: 게시글에서 뽑은 일정은 오늘부터 90일 안의 것만 — 해외 대학 개강일 같은 먼 날짜가 목록 끝에 남지 않게",
+            "안내: 이미 새 버전을 쓰는 기기에는 '업데이트 요망' 안내가 뜨지 않게",
+        ),
+    ),
+    ChangelogEntry(
         "15.0",
         listOf(
             "외출·외박 승인 알림: 신청한 외출·외박이 승인되거나 반려되면 바로 알림, 누르면 외출 내역 — 승인을 기다리는 동안만 5분마다 확인 (설정 → 알림에서 끄기)",

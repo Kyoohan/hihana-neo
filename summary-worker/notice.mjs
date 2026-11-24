@@ -8,6 +8,7 @@
  *   node notice.mjs "제목" "본문" --to public              일반 빌드에만
  *   node notice.mjs "제목" "본문" --link https://… --button "열기"
  *   node notice.mjs "제목" "본문" --until 2026-11-20       그날이 지나면 안 띄움
+ *   node notice.mjs "제목" "본문" --below 14.5             14.5 보다 낮은 버전의 앱에만(업데이트 안내용 — 15.1 이후 앱이 거릅니다)
  *   node notice.mjs --show                                  지금 걸린 공지 보기
  *   node notice.mjs --clear                                 내리기
  *
@@ -45,12 +46,13 @@ for (let i = 0; i < argv.length; i++) {
 }
 const [title, body = ""] = positional;
 if (!title) fail('사용법: node notice.mjs "제목" "본문" [--to dev|public] [--link URL --button 글자] [--until YYYY-MM-DD]\n       node notice.mjs --show | --clear');
-const unknown = Object.keys(opts).filter((k) => !["to", "link", "button", "until"].includes(k));
+const unknown = Object.keys(opts).filter((k) => !["to", "link", "button", "until", "below"].includes(k));
 if (unknown.length) fail(`모르는 옵션: ${unknown.map((k) => "--" + k).join(" ")}`);
 if (opts.to && !["dev", "public"].includes(opts.to)) fail("--to 는 dev, public 중 하나");
 if (opts.link && !/^https:\/\//.test(opts.link)) fail("--link 는 https:// 로 시작해야 합니다");
 if (opts.button && !opts.link) fail("--button 은 --link 와 함께");
 if (opts.until && !/^\d{4}-\d{2}-\d{2}$/.test(opts.until)) fail("--until 은 YYYY-MM-DD");
+if (opts.below && !/^\d+(\.\d+)*$/.test(opts.below)) fail("--below 는 14.5 같은 버전 숫자");
 
 const notice = {
   // 올린 시각이 곧 id — 같은 글을 다시 올려도 새 공지로 한 번 더 뜹니다.
@@ -60,6 +62,7 @@ const notice = {
   ...(opts.to ? { to: opts.to } : {}),
   ...(opts.link ? { link: opts.link, button: opts.button || "열기" } : {}),
   ...(opts.until ? { until: opts.until } : {}),
+  ...(opts.below ? { below: opts.below } : {}),
 };
 console.log(JSON.stringify(notice, null, 2));
 wrangler("put", KEY, JSON.stringify(notice));

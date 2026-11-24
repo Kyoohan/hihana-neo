@@ -53,14 +53,14 @@ enum Sample {
 
     /// 지금 걸쳐 있는 외출 하나(승인, 한 시간 전 ~ 세 시간 뒤) — 타임라인·홈 확인용.
     static func outings(_ today: LocalDate) -> [OutingRow] {
-        let h = Date().minutesOfDay / 60
+        let h = Clock.now.minutesOfDay / 60
         return [OutingRow(osmNo: 1, stdMemNo: "", state: 4, stateLabel: "승인", plannedOut: today.at(minutes: (h - 1) * 60), plannedBack: today.at(minutes: (h + 3) * 60),
                    actualOut: nil, actualBack: nil, duration: nil, reason: "병원 진료", appliedAt: nil, group: false)]
     }
 
     static func board(_ today: LocalDate) -> [HanaBoardPost] {
         [
-            HanaBoardPost(bmtIdx: 1, bdIdx: -1, title: "2026 국제교류 프로그램 신청 기간 연장 안내", writer: "국제교류부", date: "\(today.iso) 10:19:00", isNew: true, grades: [], url: "https://hi.hana.hs.kr/main/board/1/-1/board_view.do"),
+            HanaBoardPost(bmtIdx: 1, bdIdx: -1, title: "2026 국제교류 프로그램 신청 기간 연장 안내", writer: "국제교류부", date: "\(today.iso) 07:40:00", isNew: true, grades: [], url: "https://hi.hana.hs.kr/main/board/1/-1/board_view.do"),
             HanaBoardPost(bmtIdx: 1, bdIdx: -2, title: "2학기 방과후학교 강의 시간 변경", writer: "교무부", date: "\(today.adding(days: -1).iso) 16:40:00", isNew: false, grades: ["2학년"], url: "https://hi.hana.hs.kr/main/board/1/-2/board_view.do"),
             HanaBoardPost(bmtIdx: 1, bdIdx: -3, title: "도서관 야간 개방 안내", writer: "도서관", date: "\(today.adding(days: -2).iso) 09:05:00", isNew: false, grades: [], url: "https://hi.hana.hs.kr/main/board/1/-3/board_view.do"),
         ]

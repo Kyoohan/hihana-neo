@@ -98,6 +98,9 @@ object RemoteNoticeStore {
         if (!forThisBuild) return null
         val until = o.optString("until").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         if (until != null && LocalDate.now(KST).isAfter(until)) return null
+        // 버전 대상 — "below": "14.5" 면 14.5 보다 낮은 앱에만(이미 그 버전 이상이면 '업데이트하세요' 안내가 맞지 않음).
+        val below = o.optString("below").takeIf { it.isNotBlank() }
+        if (below != null && !AppUpdater.isNewer(below, BuildConfig.VERSION_NAME)) return null
         val link = o.optString("link").takeIf { it.startsWith("https://") }
         return RemoteNotice(
             id = id,

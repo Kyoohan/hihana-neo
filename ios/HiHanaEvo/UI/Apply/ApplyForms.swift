@@ -218,8 +218,12 @@ struct OutingApplyView: View {
         self.onEdited = onEdited
         let now = Date()
         let hour = Seoul.calendar.date(bySetting: .minute, value: 0, of: now) ?? now
-        _out = State(initialValue: edit?.out ?? hour)
-        _back = State(initialValue: edit?.back ?? LocalDate.today().at(minutes: 20 * 60))
+        let out = edit?.out ?? hour
+        // 복귀 기본값은 오늘 20:00 — 19시 넘어 열면 출발(다음 정각)보다 앞서 처음부터 빨간 오류가 떴습니다.
+        // 그럴 땐 출발을 바꿀 때와 같은 규칙(출발 + 1시간)으로 맞춥니다.
+        let evening = LocalDate.today().at(minutes: 20 * 60)
+        _out = State(initialValue: out)
+        _back = State(initialValue: edit?.back ?? (evening > out ? evening : out.addingTimeInterval(3600)))
         _reason = State(initialValue: edit.map { OutingApplyAPI.cleanReason($0.reason) } ?? "")
         let known = edit?.transport.flatMap { t in OutingTransport.allCases.first { $0 != .other && $0.rawValue == t } }
         _transport = State(initialValue: edit?.transport == nil ? nil : known ?? .other)

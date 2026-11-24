@@ -16,6 +16,8 @@ struct RootView: View {
     @State private var started = false
     /// 아이패드 사이드바 검색을 시작하기 전에 보던 칸 — 검색어를 지우면 돌아갑니다.
     @State private var beforeSearch: AppTab?
+    /// 백그라운드에 다녀왔는지 — 돌아와 active 가 될 때 한 번 새로 고칩니다.
+    @State private var wasBackground = false
     /// 앱을 열 때 띄우는 창 하나 — 서버 공지(15분에 한 번까지 물어 처음 보는 것만) 또는 새 버전.
     @State private var prompt: AppPrompt?
     @Environment(\.openURL) private var openURL
@@ -82,8 +84,11 @@ struct RootView: View {
         .onChange(of: background.version) { _, _ in updateOnPage() }
         .onChange(of: prefs.backgroundStyle) { _, _ in updateOnPage() }
         .onChange(of: sizeClass, initial: true) { _, c in if isPad { nav.setNarrow(c == .compact) } }
-        .onChange(of: scenePhase) { old, new in
-            if old == .background && new == .active { Task { await model.resumed(); await checkPrompts() } }
+        .onChange(of: scenePhase) { _, new in
+            // 돌아올 땐 background → inactive → active 로 두 번 바뀌어 'old == .background && new == .active' 는 맞지 않을 수 있습니다
+            // — 백그라운드에 다녀왔는지를 따로 기억해 두고 active 가 될 때 새로 고칩니다.
+            if new == .background { wasBackground = true }
+            if new == .active && wasBackground { wasBackground = false; Task { await model.resumed(); await checkPrompts() } }
             // 백그라운드로 갈 때마다 다음 새로 고침을 예약해 둡니다(iOS 가 정한 때에 깨웁니다).
             if new == .background { BackgroundWork.scheduleRefresh(); BackgroundWork.scheduleMorningBrief() }
         }
@@ -132,15 +137,20 @@ struct RootView: View {
     /// 나머지는 사이드바 | 화면 두 칸. 칸마다 제 막대를 가져 제목·단추가 섞이지 않습니다.
     @ViewBuilder private var padRoot: some View {
         let tab = nav.tab
+        // 틀(세 칸 | 두 칸)은 검색 중에도 검색 전에 보던 칸을 따릅니다 — 검색어 첫 글자에서 틀이 바뀌면 사이드바가 새로 만들어져
+        // 검색창 포커스·키보드가 닫히고 한글 조합(ㅁ+ㅏ)이 끊겼습니다. 세 칸이면 가운데 칸에 검색 결과, 연 결과는 오른쪽에.
+        let layout = tab == .search ? (beforeSearch ?? .search) : tab
         // 좁은 창(compact)에선 세 칸이 접혀 오른쪽 칸이 뜨지 않으므로 — 목록을 한 칸 스택으로 그리고 글은 그 위에 밀어 넣습니다.
-        if tab.isSplit, !nav.sectionNarrow, let root = tab.root {
+        if layout.isSplit, !nav.sectionNarrow, let root = layout.root {
             NavigationSplitView {
                 sidebar
             } content: {
                 NavigationStack {
-                    RouteView(route: root)
-                        .environment(\.listPane, true)
-                        .pageBackground()
+                    Group {
+                        if tab == .search { UnifiedSearchView() } else { RouteView(route: root) }
+                    }
+                    .environment(\.listPane, true)
+                    .pageBackground()
                 }
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 460)
             } detail: {
@@ -153,7 +163,7 @@ struct RootView: View {
                     .navigationDestination(for: Route.self) { RouteView(route: $0).pageBackground() }
                 }
             }
-            .id("split-\(tab.rawValue)")
+            .id("split-\(layout.rawValue)")
         } else {
             NavigationSplitView {
                 sidebar
@@ -187,8 +197,9 @@ struct RootView: View {
         .searchable(text: $nav.searchQuery, placement: .sidebar, prompt: "통합 검색")
         // 검색어를 지우거나 취소하면 검색 전에 보던 칸으로(설정 앱처럼).
         .onChange(of: nav.searchQuery) { _, q in
-            if !q.isEmpty && nav.tab != .search { beforeSearch = nav.tab; nav.tab = .search }
-            else if q.isEmpty && nav.tab == .search, let back = beforeSearch { nav.tab = back; beforeSearch = nil }
+            // 시작할 때와 지울 때 검색 칸에 쌓인 화면을 비웁니다 — 지난 검색에서 연 글이 새 결과 대신 먼저 보이지 않게.
+            if !q.isEmpty && nav.tab != .search { beforeSearch = nav.tab; nav.paths[.search] = []; nav.tab = .search }
+            else if q.isEmpty && nav.tab == .search, let back = beforeSearch { nav.tab = back; beforeSearch = nil; nav.paths[.search] = [] }
         }
         .toolbar(removing: .title)
         .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)

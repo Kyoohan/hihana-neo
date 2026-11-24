@@ -182,10 +182,15 @@ struct SeatHistoryView: View {
         let today = LocalDate.today()
         do {
             let r = try await SeatHistoryAPI.fetch(SeatHistoryPlace(service), from: today.adding(days: -range.rawValue), to: today.adding(days: 7), page: next)
+            // 기간·상태를 바꿔 이 작업이 취소됐으면 — 늦게 온 예전 결과·'취소됨' 오류로 새 목록을 덮지 않습니다.
+            guard !Task.isCancelled else { return }
             rows = next == 1 ? r.rows : rows + r.rows
             total = r.total
             page = next
-        } catch { self.error = applyErrorText(error) }
+        } catch {
+            guard !Task.isCancelled else { return }
+            self.error = applyErrorText(error)
+        }
         loading = false
     }
 }
@@ -342,10 +347,15 @@ struct OutingHistoryView: View {
         error = nil
         do {
             let r = try await OutingAPI.list(filter, page: next)
+            // 기간·상태를 바꿔 이 작업이 취소됐으면 — 늦게 온 예전 결과·'취소됨' 오류로 새 목록을 덮지 않습니다.
+            guard !Task.isCancelled else { return }
             rows = next == 1 ? r.rows : rows + r.rows
             total = r.total
             page = next
-        } catch { self.error = applyErrorText(error) }
+        } catch {
+            guard !Task.isCancelled else { return }
+            self.error = applyErrorText(error)
+        }
         loading = false
     }
 

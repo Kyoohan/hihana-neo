@@ -64,21 +64,29 @@ struct AcademicView: View {
     private enum Row { case academic(HanaScheduleEntry, [String]), agenda(AgendaItem) }
 
     /// 같은 날 같은 선생님의 면학감독(0·1타임 등)은 한 줄에 시간만 이어 붙입니다.
+    /// 줄 순서 — 종일 일정을 맨 위에(iOS 캘린더·삼성 캘린더 목록처럼), 그 아래는 [Agenda.merge] 가 정한 시각순(면학감독은 맨 아래).
+    /// 예전엔 학사일정을 모두 먼저 놓아 오후 4시 게시글 일정이 저녁 면학감독 아래로 밀렸습니다.
     private func rows(_ items: [AgendaItem]) -> [Row] {
-        var keys: [String] = []
+        var slots: [(key: String?, row: Row?)] = []
         var grouped: [String: [HanaScheduleEntry]] = [:]
-        for (n, e) in items.compactMap(\.academic).enumerated() {
-            let k = e.code == supervisionCode ? "sv:" + ScheduleKind.title(e) : "e:\(n)"
-            if grouped[k] == nil { keys.append(k) }
-            grouped[k, default: []].append(e)
+        let allDay = items.filter { $0.time == nil && !$0.isSupervision }
+        for i in allDay + items.filter({ !($0.time == nil && !$0.isSupervision) }) {
+            if let e = i.academic, e.code == supervisionCode {
+                let k = "sv:" + ScheduleKind.title(e)
+                if grouped[k] == nil { slots.append((k, nil)) }
+                grouped[k, default: []].append(e)
+            } else if let e = i.academic {
+                slots.append((nil, .academic(e, ScheduleKind.time(e).map { [$0] } ?? [])))
+            } else {
+                slots.append((nil, .agenda(i)))
+            }
         }
-        var seen = Set<String>()
-        let academic: [Row] = keys.map { k in
-            let g = grouped[k]!
-            seen = []
+        return slots.map { slot in
+            if let row = slot.row { return row }
+            let g = grouped[slot.key!]!
+            var seen = Set<String>()
             return .academic(g[0], g.compactMap(ScheduleKind.time).filter { seen.insert($0).inserted })
         }
-        return academic + items.filter { $0.academic == nil }.map { .agenda($0) }
     }
 }
 

@@ -155,18 +155,21 @@ enum AcademicAPI {
     // MARK: 학사일정
 
     /// [start]~[end] 를 하루씩(네 개씩 함께) 질의해 각 행에 그 날짜를 붙입니다. 계정 문제는 바로 멈춥니다(계정 잠금 방지).
-    static func fetchSchedule(start: LocalDate, end: LocalDate) async throws -> [HanaScheduleEntry] {
+    /// 받은 일정과 조회가 실패한 날 — 실패한 날은 일정이 없는 날과 구별해야 받아 둔 그날 일정을 지우지 않습니다.
+    struct ScheduleFetch { var entries: [HanaScheduleEntry]; var failedDays: Set<LocalDate> }
+
+    static func fetchSchedule(start: LocalDate, end: LocalDate) async throws -> ScheduleFetch {
         let rememberedBefore = ScheduleVariantStore.get()
         let first = try await fetchRange(start: start, end: end)
         // 기억한 형식이 범위 내내 빈 응답만 주면 기억을 지우고 처음부터 다시 찾습니다.
-        if first.isEmpty && rememberedBefore != nil {
+        if first.entries.isEmpty && rememberedBefore != nil {
             ScheduleVariantStore.clear()
             return try await fetchRange(start: start, end: end)
         }
         return first
     }
 
-    private static func fetchRange(start: LocalDate, end: LocalDate) async throws -> [HanaScheduleEntry] {
+    private static func fetchRange(start: LocalDate, end: LocalDate) async throws -> ScheduleFetch {
         var days: [LocalDate] = []
         var d = start
         while d <= end { days.append(d); d = d.adding(days: 1) }
@@ -191,7 +194,8 @@ enum AcademicAPI {
         if !ordered.contains(where: { if case .success = $0 { true } else { false } }) {
             if let firstError = ordered.compactMap({ if case .failure(let e) = $0 { e } else { nil } }).first { throw firstError }
         }
-        return ordered.flatMap { (try? $0.get()) ?? [] }
+        let failed = Set(days.indices.filter { if case .failure = results[$0] { true } else { false } }.map { days[$0] })
+        return ScheduleFetch(entries: ordered.flatMap { (try? $0.get()) ?? [] }, failedDays: failed)
     }
 
     static func isExamName(_ name: String) -> Bool {
@@ -386,49 +390,67 @@ enum AcademicRepository {
     static func cachedAlim() -> [HanaAlim] { JSONCache.read([HanaAlim].self, "academic_alim")?.value ?? [] }
 
     /// 학사일정 — 빈 응답으로 기존 캐시를 덮어쓰지 않습니다. 로그인 전이면 묻지 않고 바로 실패.
+    /// 어느 경로로 돌려주든(새로 받음·받아 둔 것·실패 후 받아 둔 것) 따로 받아 둔 정기고사를 덧붙입니다 —
+    /// 예전엔 새로 받은 경우에만 덧붙여, 받기가 실패하거나 빈 응답이면 지난주 4주치만 돌아가 홈이 '다가오는 시험 없음'이 됐습니다.
     static func schedule(force: Bool = false) async throws -> [HanaScheduleEntry] {
         guard Credentials.hasAny else { throw PortalError.missingCredentials }
         let today = LocalDate.today()
         let name = "academic_schedule_4w"
         let stored = JSONCache.read([HanaScheduleEntry].self, name)
         if !force, let stored, JSONCache.isFresh(stored.at, ttl: ttlSchedule) {
-            // 받아 둔 일정에 시험이 빠져 있으면(예전에 시험 조회만 실패했던 캐시) 따로 받아 둔 시험을 덧붙입니다.
-            let exams = JSONCache.read([HanaScheduleEntry].self, "academic_exams")?.value ?? []
-            return stored.value + exams.filter { e in !stored.value.contains { $0.date == e.date && $0.name == e.name } }
+            return withExams(stored.value, cachedExams())
         }
-        let fresh: [HanaScheduleEntry]
+        let fetched: AcademicAPI.ScheduleFetch
         do {
             // 어제 ~ 이번 주부터 4주째 일요일까지 하루씩 — 타임라인 '주' 배율이 4주를 봅니다.
-            fresh = try await AcademicAPI.fetchSchedule(start: today.adding(days: -1), end: scheduleEnd(today))
+            fetched = try await AcademicAPI.fetchSchedule(start: today.adding(days: -1), end: scheduleEnd(today))
         } catch {
-            if let stored { return stored.value }
+            if let stored { return withExams(stored.value, cachedExams()) }
             throw error
         }
-        if fresh.isEmpty { return stored?.value ?? [] }
-        let exams = (try? await upcomingExams(today: today, force: force)) ?? []
-        let merged = fresh + exams.filter { e in !fresh.contains { $0.date == e.date && $0.name == e.name } }
-        JSONCache.write(merged, name)
+        let exams = (try? await upcomingExams(today: today, force: force)) ?? cachedExams()
+        if fetched.entries.isEmpty { return withExams(stored?.value ?? [], exams) }
+        let merged = withExams(fillFailedDays(fetched, stored: stored?.value ?? []), exams)
+        // 하루라도 실패했으면 30분 뒤 다시 받게 — 하루 동안 구멍 난 채로 두지 않습니다.
+        JSONCache.write(merged, name, at: fetched.failedDays.isEmpty ? Date() : Date().addingTimeInterval(-(ttlSchedule - 30 * 60)))
         return merged
+    }
+
+    /// 조회가 실패한 날은 받아 둔 그날 일정으로 메웁니다 — 예전엔 실패한 날이 '일정 없음'으로 저장돼, 조회 실패로
+    /// 12/14~17 이 빠지면 기말고사 D-day 가 마지막 날(12/18)로 떴습니다.
+    static func fillFailedDays(_ fetched: AcademicAPI.ScheduleFetch, stored: [HanaScheduleEntry]) -> [HanaScheduleEntry] {
+        fetched.entries + stored.filter { fetched.failedDays.contains($0.date) }
     }
 
     /// 상세 학사일정을 받는 끝 날 — 이번 주 월요일부터 4주째 일요일.
     static func scheduleEnd(_ today: LocalDate) -> LocalDate { today.monday.adding(days: 27) }
 
+    /// [list] 에 없는 정기고사만 덧붙입니다(같은 날·같은 이름은 하나).
+    static func withExams(_ list: [HanaScheduleEntry], _ exams: [HanaScheduleEntry]) -> [HanaScheduleEntry] {
+        list + exams.filter { e in !list.contains { $0.date == e.date && $0.name == e.name } }
+    }
+
+    private static func cachedExams() -> [HanaScheduleEntry] { JSONCache.read([HanaScheduleEntry].self, "academic_exams")?.value ?? [] }
+
+    /// 오늘 ~ 75일 뒤의 정기고사 — 12시간 캐시. 4주 상세 범위 안도 함께 찾습니다: 상세 조회가 하루라도 비거나 실패하면
+    /// 그날 시험이 빠진 채 저장돼, 4주 범위 밖만 찾던 예전엔 시험 주간이 코앞인데 D-day 가 사라졌습니다.
     private static func upcomingExams(today: LocalDate, force: Bool) async throws -> [HanaScheduleEntry] {
         let name = "academic_exams"
         if !force, let stored = JSONCache.read([HanaScheduleEntry].self, name), JSONCache.isFresh(stored.at, ttl: ttlExams) { return stored.value }
         let stored = JSONCache.read([HanaScheduleEntry].self, name)
         // 새로 고침 중 실패하거나(취소·세션) 잠깐 빈 응답이 와도 받아 둔 시험을 버리지 않습니다 — 버리면 홈이 '다가오는 시험 없음'이 됐습니다.
         let fresh: [HanaScheduleEntry]
-        do { fresh = try await AcademicAPI.fetchUpcomingExams(start: scheduleEnd(today).adding(days: 1), end: today.adding(days: 75)) }
+        do { fresh = try await AcademicAPI.fetchUpcomingExams(start: today, end: today.adding(days: 75)) }
         catch { if let stored { return stored.value }; throw error }
         if fresh.isEmpty, let previous = stored?.value, previous.contains(where: { $0.date >= today }) { return previous }
         JSONCache.write(fresh, name)
         return fresh
     }
 
-    /// 네트워크 없이 받아 둔 학사일정만 — 위젯처럼 기다릴 수 없는 곳.
-    static func cachedSchedule() -> [HanaScheduleEntry] { JSONCache.read([HanaScheduleEntry].self, "academic_schedule_4w")?.value ?? [] }
+    /// 네트워크 없이 받아 둔 학사일정만 — 위젯처럼 기다릴 수 없는 곳. 따로 받아 둔 정기고사도 덧붙입니다.
+    static func cachedSchedule() -> [HanaScheduleEntry] {
+        withExams(JSONCache.read([HanaScheduleEntry].self, "academic_schedule_4w")?.value ?? [], cachedExams())
+    }
 
     /// 새 응답이 비었을 때 이전의 비어 있지 않은 캐시를 덮어쓰지 않습니다 — 세션 문제로 잠깐 빈 목록이 와도 '없음'으로 굳지 않게.
     private static func cached<T: Codable>(_ name: String, ttl: TimeInterval, force: Bool, fetch: () async throws -> [T]) async throws -> [T] {

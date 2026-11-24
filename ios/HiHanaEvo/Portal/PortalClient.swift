@@ -192,6 +192,9 @@ actor PortalClient {
             let reason = code == 405 ? "POST 방식이 필요합니다" : (code == 401 || code == 403) ? "로그인이 만료되었습니다" : "JSON 응답이 아닙니다"
             throw PortalError.unexpected("[\(path)] HTTP \(code) · \(reason)")
         }
+        // 세션이 끝나면 포털은 로그인 HTML 대신 {"result":"expired","resMsg":"Login session is required."} 를 줍니다.
+        // 이걸 정상 JSON 으로 넘기면 다시 로그인하지 않고 영어 문구가 그대로 화면에 떴습니다 — 로그인 페이지와 같게.
+        if json.str("result") == "expired" { throw PortalError.loginPage }
         return json
     }
 

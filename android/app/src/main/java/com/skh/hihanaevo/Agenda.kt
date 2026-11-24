@@ -172,8 +172,15 @@ object BoardAgendaStore {
         revision.intValue++
     }
 
-    /** 보관한 모든 글의 일정 — 날짜 거르기는 [Agenda.merge] 가 합니다. */
-    fun items(context: Context): List<AgendaItem> {
+    /**
+     * 오늘부터 이 날수 안의 일정만 — 글에 적힌 먼 훗날 날짜(해외 대학 '학기 개강' 2027-09-01 등)가 목록 끝에 남지 않게.
+     * 중요한지는 따지지 않고 날짜로만 거릅니다.
+     */
+    const val HORIZON_DAYS = 90L
+
+    /** 보관한 글의 일정 중 오늘부터 [HORIZON_DAYS] 일 안에 시작하는 것 — 지난 일정 거르기는 [Agenda.merge] 가 합니다. */
+    fun items(context: Context, today: LocalDate = PlanStore.today()): List<AgendaItem> {
+        val horizon = today.plusDays(HORIZON_DAYS)
         val out = ArrayList<AgendaItem>()
         prefs(context).all.forEach { (k, v) ->
             if (!k.startsWith("e_") || v !is String) return@forEach
@@ -193,6 +200,7 @@ object BoardAgendaStore {
                 // 신청 기간(10/22~10/26)으로 적힌 마감은 끝날이 마감 — 기간 내내 '오늘 마감'으로 보이지 않게 끝날 하루로.
                 val deadline = e.optBoolean("deadline")
                 val date = if (deadline && end != null && end.isAfter(start)) end else start
+                if (date.isAfter(horizon)) continue
                 out += AgendaItem(
                     id = if (classroom) "cr:${key.removePrefix("cr_")}:$i" else "b:$key:$i",
                     source = if (classroom) AgendaSource.CLASSROOM else AgendaSource.BOARD,

@@ -77,7 +77,7 @@ enum Agenda {
         let academic: [AgendaItem] = Supervision.filterByGrade(schedule, grade)
             .filter { $0.code != "SG02020000" && $0.date >= today }
             .map { e in
-                AgendaItem(id: "a:\(e.date.iso):\(e.code):\(e.name):\(e.teacher ?? "")", source: .academic, title: ScheduleKind.title(e),
+                AgendaItem(id: "a:\(e.date.iso):\(e.code):\(e.name):\(e.teacher ?? ""):\(e.startTime ?? "")", source: .academic, title: ScheduleKind.title(e),
                            date: e.date, time: ScheduleKind.time(e), academic: e)
             }
         let academicKeys = academic.map { ($0.date, normalize($0.title)) }
@@ -133,6 +133,9 @@ final class BoardAgendaStore {
     private let max = 300
     /// 일정이라 하기 어려운 것 — 급식·식단 운영 안내.
     private let notAnEvent = #"급식|식단|조식|중식|석식"#
+    /// 오늘부터 이 날수 안의 일정만 — 글에 적힌 먼 훗날 날짜(해외 대학 '학기 개강' 2027-09-01 등)가 목록 끝에 남지 않게.
+    /// 중요한지는 따지지 않고 날짜로만 거릅니다.
+    static let horizonDays = 90
     /// 바뀔 때마다 1씩.
     private(set) var revision = 0
     @ObservationIgnored private var box: Box
@@ -162,9 +165,10 @@ final class BoardAgendaStore {
         revision += 1
     }
 
-    /// 보관한 모든 글의 일정 — 날짜 거르기는 Agenda.merge 가.
-    func items() -> [AgendaItem] {
+    /// 보관한 글의 일정 중 오늘부터 [horizonDays] 일 안에 시작하는 것 — 지난 일정 거르기는 Agenda.merge 가.
+    func items(today: LocalDate = .today()) -> [AgendaItem] {
         _ = revision
+        let horizon = today.adding(days: Self.horizonDays)
         var out: [AgendaItem] = []
         for (key, r) in box.records {
             // cr_ 는 클래스룸 공지에서 뽑은 일정 — 출처를 클래스룸으로.
@@ -174,6 +178,7 @@ final class BoardAgendaStore {
                 if e.title.range(of: notAnEvent, options: .regularExpression) != nil { continue }
                 // 신청 기간으로 적힌 마감은 끝날이 마감 — 기간 내내 '오늘 마감'으로 보이지 않게 끝날 하루로.
                 let date = e.deadline && e.end.map({ $0 > e.date }) == true ? e.end! : e.date
+                if date > horizon { continue }
                 out.append(AgendaItem(
                     id: classroom ? "cr:\(key.dropFirst(3)):\(i)" : "b:\(key):\(i)",
                     source: classroom ? .classroom : .board,

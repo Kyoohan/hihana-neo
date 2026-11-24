@@ -44,12 +44,16 @@ enum RemoteNoticeStore {
 
     private static func seen() -> [String] { SharedContainer.defaults.stringArray(forKey: seenKey) ?? [] }
 
-    static func parse(_ o: [String: Any], today: LocalDate) -> RemoteNotice? {
+    private static var version: String { (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0" }
+
+    static func parse(_ o: [String: Any], today: LocalDate, version: String = version) -> RemoteNotice? {
         guard let id = (o["id"] as? String).flatMap({ $0.isEmpty ? nil : $0 }),
               let title = (o["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return nil }
         // 대상 — dev·alpha·public 은 안드로이드 빌드 구분이라, 아이폰은 '모두에게'(대상 없음)만 띄웁니다.
         guard ((o["to"] as? String) ?? "").isEmpty else { return nil }
         if let until = (o["until"] as? String).flatMap(LocalDate.init(iso:)), today > until { return nil }
+        // 버전 대상 — "below": "14.5" 면 14.5 보다 낮은 앱에만(이미 그 버전 이상이면 '업데이트하세요' 안내가 맞지 않음).
+        if let below = (o["below"] as? String).flatMap({ $0.isEmpty ? nil : $0 }), !AppUpdater.isNewer(below, than: version) { return nil }
         let posted = ISO8601DateFormatter().date(from: id)?.localDate
         if let posted, posted < iosSince { return nil }
         let link = (o["link"] as? String).flatMap { $0.hasPrefix("https://") ? URL(string: $0) : nil }

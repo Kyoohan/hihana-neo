@@ -291,6 +291,8 @@ struct SettingsPageView: View {
             ForEach(Allergens.legend, id: \.0) { code, name in
                 Button {
                     if prefs.allergyCodes.contains(code) { prefs.allergyCodes.remove(code) } else { prefs.allergyCodes.insert(code) }
+                    // 위젯의 급식 ⚠ 는 위젯이 그릴 때 계산해 두므로 — 바꾸면 바로 다시 그리게(안 그러면 다음 타임라인까지 예전 표시).
+                    WidgetBridge.reload()
                 } label: {
                     HStack {
                         Text(name).foregroundStyle(.primary)

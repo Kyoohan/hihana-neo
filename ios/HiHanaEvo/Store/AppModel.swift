@@ -218,7 +218,12 @@ final class AppModel {
                 guard let self else { return }
                 self.now = Clock.now
                 let day = LocalDate.today(now: self.now)
-                if day != self.today { self.today = day; self.reloadPlaces() }
+                if day != self.today {
+                    self.today = day
+                    self.reloadPlaces()
+                    // 자정을 넘기면 새 '내일' 급식도 — 앱을 켜 둔 채 하루가 지나면 밤 간식 뒤 홈·위젯의 다음 급식 칸이 비었습니다.
+                    if !self.isDemo { Task { await self.loadMealDay(day, force: false); await self.loadMealDay(day.adding(days: 1), force: false) } }
+                }
                 self.publishSurfaces()
             }
         }
@@ -230,6 +235,7 @@ final class AppModel {
         today = LocalDate.today(now: now)
         guard !isDemo, hasCredentials else { return }
         await loadMealDay(today, force: true)
+        await loadMealDay(today.adding(days: 1), force: false)
         await syncFromHana()
         // 앱을 다시 펼치면 클래스룸도 바로 — 스크립트가 5분마다 올리니 2분 넘은 사본이면 새로 받습니다(안드로이드 14.3).
         await loadClassroom(force: bridge.pending)
@@ -583,6 +589,7 @@ final class AppModel {
         await loadSchedule(force: true)
         await loadHomeBoard(force: true)
         await loadAlim(force: true)
+        await loadOutings()
         await ensureBrief()
     }
 
@@ -595,9 +602,12 @@ final class AppModel {
         boardPosts = []
         alims = []
         alimUnread = 0
+        // 외출·외박도 — 남아 있으면 로그아웃(다른 계정으로 바꾸기) 뒤에도 이전 계정의 외출이 타임라인·위젯·실시간 활동에 떴습니다.
+        outings = []
         for name in ["timetable_latest", "places", "academic_schedule_4w", "academic_exams", "academic_alim"] { JSONCache.remove(name) }
         for c in BoardCategory.allCases { JSONCache.remove("academic_board_\(c.bmtIdx)") }
         reloadPlaces()
+        publishSurfaces()
         Task { await PortalClient.shared.resetSession() }
     }
 }

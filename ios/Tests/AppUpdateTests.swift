@@ -30,3 +30,21 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, u.ipa.absoluteString)
     }
 }
+
+final class RemoteNoticeTests: XCTestCase {
+    private let today = LocalDate(year: 2026, month: 11, day: 23)
+    private func notice(_ extra: [String: Any] = [:]) -> [String: Any] {
+        ["id": "2026-11-23T07:25:18Z", "title": "(중요) 업데이트 요망", "body": "최신 업데이트(14.5)를 설치하세요"].merging(extra) { $1 }
+    }
+
+    func testBelowHidesFromUpdatedApps() {
+        XCTAssertNil(RemoteNoticeStore.parse(notice(["below": "14.5"]), today: today, version: "15.0"))
+        XCTAssertNil(RemoteNoticeStore.parse(notice(["below": "14.5"]), today: today, version: "14.5"))
+        XCTAssertNotNil(RemoteNoticeStore.parse(notice(["below": "14.5"]), today: today, version: "14.4"))
+    }
+
+    func testWithoutBelowShowsToEveryone() {
+        XCTAssertNotNil(RemoteNoticeStore.parse(notice(), today: today, version: "15.0"))
+        XCTAssertNil(RemoteNoticeStore.parse(notice(["to": "dev"]), today: today, version: "15.0"), "안드로이드 빌드 대상 공지는 아이폰에 띄우지 않습니다")
+    }
+}
