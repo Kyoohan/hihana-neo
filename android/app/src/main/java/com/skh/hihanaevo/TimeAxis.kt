@@ -5,6 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -342,8 +345,9 @@ internal fun TimeAxisScreen(
         // 바탕은 홈과 같은 배경 사진 그대로(사진이 없으면 기본 그라데이션).
         com.skh.hihanaevo.ui.OneUiPageBackdrop()
         Column(Modifier.fillMaxSize()) {
-            // 머리 — 날짜, 배율 칩, 지금으로.
-            Column(Modifier.padding(start = 20.dp, end = 16.dp, top = top + 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 머리 — 날짜, 배율 칩, 지금으로. 타임라인은 '지금'에서 열려 목록 맨 위(어제)가 멀어서, 머리를 잡고 당겨도
+            // 새로고침되게 — 아무것도 스크롤하지 않는 세로 스크롤이라 당긴 만큼이 그대로 바깥 새로고침 상자로 갑니다.
+            Column(Modifier.scrollable(rememberScrollableState { 0f }, Orientation.Vertical).padding(start = 20.dp, end = 16.dp, top = top + 14.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN), style = MaterialTheme.typography.labelLarge, color = com.skh.hihanaevo.ui.onPageVariantColor())

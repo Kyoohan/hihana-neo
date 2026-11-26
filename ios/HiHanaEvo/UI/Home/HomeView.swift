@@ -57,16 +57,14 @@ struct HomeView: View {
         .navigationTitle("홈")
         .homeSubtitle(subtitle)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                // 통합 검색 — 알리미 왼쪽. 아이패드는 사이드바의 '통합 검색'으로 옮겨 갑니다(입력은 사이드바 검색창).
-                Button { model.nav.open(.search) } label: { Label("통합 검색", systemImage: "magnifyingglass") }
-                Button { model.openAlimScreen() } label: {
-                    Label("알리미", systemImage: model.alimUnread > 0 ? "tray.full" : "tray")
-                        .contentTransition(.symbolEffect(.replace))
+            // 칸 폭을 줄인 묶음(BarButton) — 시스템 묶음은 칸 간격이 넓어 좁은 iPhone 에서 가운데까지 왔습니다.
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 0) {
+                    // 통합 검색 — 알리미 왼쪽. 아이패드는 사이드바의 '통합 검색'으로 옮겨 갑니다(입력은 사이드바 검색창).
+                    BarButton(title: "통합 검색", symbol: "magnifyingglass") { model.nav.open(.search) }
+                    BarButton(title: "알리미", symbol: model.alimUnread > 0 ? "tray.full" : "tray", badge: model.alimUnread) { model.openAlimScreen() }
+                    BarButton(title: "설정", symbol: "gearshape", badge: WhatsNew.shared.pending ? 1 : 0) { model.nav.open(.settings(nil)) }
                 }
-                .badgeIfAvailable(model.alimUnread)
-                Button { model.nav.open(.settings(nil)) } label: { Label("설정", systemImage: "gearshape") }
-                    .badgeIfAvailable(WhatsNew.shared.pending ? 1 : 0)
             }
         }
         .onAppear { briefSeen = model.brief.seen(today) }
@@ -300,11 +298,20 @@ private struct TileLabel: View {
     var body: some View {
         // 카드가 밝으면 칸 색을 짙게 — 노랑·하늘이 밝은 판 위에서 거의 안 보였습니다.
         let onLight = palette.onSurface.luminance < 0.5
+        // 좁으면(iPhone 17e 두 칸 등) 오른쪽 시각을 빼고 제목을 온전히 — 시각이 자리를 먹어 '클래…'처럼 제목이 잘렸습니다.
+        // 시각은 카드 안 목록에도 있어 빠져도 정보는 남습니다.
+        ViewThatFits(in: .horizontal) {
+            row(trailing: trailing, onLight: onLight)
+            row(trailing: nil, onLight: onLight)
+        }
+    }
+
+    private func row(trailing: String?, onLight: Bool) -> some View {
         HStack(spacing: 4) {
             Label(label, systemImage: symbol).font(.subheadline.weight(.semibold))
-                .foregroundStyle(onLight ? accent.mix(.black, 0.3) : accent).lineLimit(1)
+                .foregroundStyle(onLight ? accent.mix(.black, 0.3) : accent).lineLimit(1).fixedSize()
             Spacer(minLength: 4)
-            if let trailing { Text(trailing).font(.footnote).foregroundStyle(palette.onSurfaceVariant).lineLimit(1) }
+            if let trailing { Text(trailing).font(.footnote).foregroundStyle(palette.onSurfaceVariant).lineLimit(1).fixedSize() }
             if chevron { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(palette.onSurfaceVariant.opacity(0.6)) }
         }
     }

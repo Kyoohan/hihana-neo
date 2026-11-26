@@ -489,6 +489,8 @@ object Timetable {
     fun midnightInstalled(): Boolean = midnightByDate != null
 
     private fun midnightFor(date: LocalDate): List<MidnightBooking> = midnightByDate?.get(date).orEmpty()
+    /** 그날 심야면학 신청 — 신청·내역 화면의 심야면학 칸에. */
+    fun midnightBookings(date: LocalDate): List<MidnightBooking> = midnightFor(date)
 
     // ---------- 시간 구획 (자정 기준 분) ----------
 
@@ -548,6 +550,8 @@ object Timetable {
 
     fun installOutings(list: List<OutingSpan>) { outings = list }
     fun outingsInstalled(): Boolean = outings != null
+    /** 설치된 외출·외박 구간 — 신청·내역 화면의 '다가오는 외출' 줄에. */
+    fun outingList(): List<OutingSpan> = outings.orEmpty()
 
     /** 외출·외박에 걸치는 블록을 빼고, 그 날에 걸친 만큼의 외출 블록을 넣습니다. */
     private fun applyOutings(date: LocalDate, blocks: List<Block>): List<Block> {

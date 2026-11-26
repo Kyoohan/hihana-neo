@@ -229,7 +229,7 @@ internal fun AppInfoScreen(
         Dialog(
             onDismissRequest = { easterEgg = null },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-        ) { EvoOpening(onFinish = { easterEgg = null }, handoff = handoff) }
+        ) { EvoOpeningAuto(onFinish = { easterEgg = null }, handoff = handoff) }
     }
     // 받는 동안 업데이트 창 — 뒤로 가기로 숨기면 이번 받기 동안은 다시 띄우지 않습니다.
     var updaterHidden by remember { mutableStateOf(false) }

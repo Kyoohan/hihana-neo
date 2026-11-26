@@ -55,15 +55,39 @@ enum PostAPI {
     }
 
     /// board_view.do 는 인증된 요청에 JSON(boardVo)으로 답합니다.
+    /// 가끔 열리지 않던 것(2026-11-25 제보, 안드로이드와 같은 수정) 대비로 한 번 더 시도합니다 — 응답을 읽지 못하면 새로 로그인한 뒤 다시,
+    /// 연결 문제면 잠깐 쉬고 그대로 다시. 비밀번호가 틀렸거나 자동 로그인을 멈춘 상태(5회 실패 잠금 방지)면 다시 로그인하지 않습니다.
     static func detail(_ url: String) async throws -> HanaPostDetail {
         let path = url.hasPrefix(PortalClient.base) ? String(url.dropFirst(PortalClient.base.count)) : url
-        let raw = try await PortalClient.shared.authenticatedText(path, method: "GET", referer: url)
-        return try parse(raw)
+        func load() async throws -> HanaPostDetail {
+            try parse(try await PortalClient.shared.authenticatedText(path, method: "GET", referer: url))
+        }
+        do {
+            return try await load()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let e as PortalError where [.missingCredentials, .suspended].contains(e) {
+            throw e
+        } catch PortalError.loginFailed(let m) {
+            throw PortalError.loginFailed(m)
+        } catch is URLError {
+            try await Task.sleep(for: .milliseconds(600))
+            return try await load()
+        } catch {
+            try await PortalClient.shared.relogin()
+            return try await load()
+        }
     }
 
+    /// 글이 없는 응답은 화면에 문구가 그대로 보이게 rejected 로(unexpected 는 '학사시스템 응답을 해석하지 못했습니다' 가 앞에 붙음).
     static func parse(_ raw: String) throws -> HanaPostDetail {
-        guard let root = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any], let vo = root.dict("boardVo") else {
-            throw PortalError.unexpected("게시글 응답을 읽지 못했습니다")
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw PortalError.rejected("학교 서버가 빈 응답을 보냈습니다") }
+        guard let root = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
+            throw PortalError.rejected("게시글 응답을 읽지 못했습니다")
+        }
+        guard let vo = root.dict("boardVo") else {
+            // 포털이 이유를 문장으로 주면(삭제된 글 등) 그 문장을.
+            throw PortalError.rejected(root.str("resMsg").flatMap { $0 == "null" ? nil : $0 } ?? "게시글 응답을 읽지 못했습니다")
         }
         let html = vo.str("bd_content") ?? ""
         let files: [HanaPostFile] = (vo.array("fileList") ?? []).compactMap { f in

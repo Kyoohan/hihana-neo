@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
@@ -59,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -75,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
@@ -1138,7 +1141,7 @@ private fun highlight(t: Float, out: FloatArray): Boolean {
  * → 매 프레임 재구성 없음.
  */
 @Composable
-internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, handoff: EvoHandoff? = null) {
+internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, handoff: EvoHandoff? = null, video: String? = null) {
     val view = LocalView.current
     val context = LocalContext.current
     val latestOnFinish by rememberUpdatedState(onFinish)
@@ -1153,8 +1156,24 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, han
     val reduceMotion = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
+    // 영상 오프닝([OpeningVideo]): 0 = 재생 중, 1 = 끝남 → 영상 속 로고 자리에 앱이 그리는 로고로 바꿔 끼우고 글자·첫 장 잇기는
+    // 코드 오프닝 끝부분 그대로, 2 = 영상 없음·재생 실패 → 처음부터 코드 애니메이션.
+    var vPhase by remember { mutableStateOf(if (video != null && !reduceMotion) 0 else 2) }
+    var vSize by remember { mutableStateOf(IntArray(0)) }
+    var vStarted by remember { mutableStateOf(false) }
+    val logoIn = remember { Animatable(if (video != null && !reduceMotion) 0f else 1f) }
+    val vplace = remember { FloatArray(3) }
+    val vtmp = remember { FloatArray(3) }
+    fun videoMode(): Boolean = vPhase != 2 && vSize.size == 2
 
-    LaunchedEffect(scene != null) {
+    // 정한 시간 안에 화면이 움직이기 시작하지 않으면(인터넷 없음·느림) 처음부터 예전 코드 애니메이션(2026-11-25 사용자 요청).
+    LaunchedEffect(Unit) {
+        if (video == null || vPhase != 0) return@LaunchedEffect
+        delay(OpeningVideo.START_MS)
+        if (vPhase == 0 && !vStarted) vPhase = 2
+    }
+
+    LaunchedEffect(scene != null, vPhase) {
         if (scene == null) return@LaunchedEffect
         if (reduceMotion) {
             time.snapTo(T_STILL)                               // 완성된 로고 + 글자를 잠깐 보여 주고 끝
@@ -1162,6 +1181,17 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, han
             finish()
             return@LaunchedEffect
         }
+        if (vPhase == 0) return@LaunchedEffect              // 영상이 도는 동안 시계는 0(첫 장 잇기 진행도도 0)
+        if (vPhase == 1) {
+            // 영상이 끝난 자리: 로고가 완성된 순간(TEXT_T0)부터 — 0.25초에 걸쳐 앱이 그리는 로고가 영상 속 로고 위에 겹쳐지고,
+            // 글자가 떠오른 뒤 첫 장 로고 자리로 옮겨 갑니다(코드 오프닝의 끝부분과 같은 연출).
+            time.snapTo(TEXT_T0)
+            launch { logoIn.animateTo(1f, tween(250)) }
+            time.animateTo(END, tween(((END - TEXT_T0) * 1000).roundToInt(), easing = LinearEasing))
+            finish()
+            return@LaunchedEffect
+        }
+        logoIn.snapTo(1f)
         var last = 0f
         time.animateTo(END, tween((END * 1000).roundToInt(), easing = LinearEasing)) {
             // 각 갈래가 제자리에 멈추는 순간 짧은 틱
@@ -1181,8 +1211,30 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, han
     // 첫 장 로고 자리를 아는 동안만 잇기 — 모르면(첫 장이 아직 안 그려짐) 예전처럼 전체가 페이드아웃.
     fun active(): Boolean = handoff != null && (handoff.stay || handoff.target != null)
     fun handing(): Boolean = active() && time.value > HANDOFF_T0
+    // 바탕(영상 또는 그라데이션) — 로고가 첫 장으로 떠나기 시작하면 걷힘. 코드 오프닝은 아래 drawBehind 가 그대로 그립니다.
+    val backdrop: () -> Float = {
+        if (active()) 1f - smootherstep(0.05f, 0.8f, handoff!!.progress()) else fadeOut(time.value)
+    }
+    Box(modifier.fillMaxSize()) {
+    if (video != null && vPhase != 2) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = backdrop() }.drawBehind { drawRect(BACKGROUND) })
+        OpeningVideoLayer(
+            url = video,
+            alpha = backdrop,
+            onPrepared = { w, h -> vSize = intArrayOf(w, h) },
+            onStart = { vStarted = true },
+            onEnd = { if (vPhase == 0) vPhase = 1 },
+            onError = { if (vPhase == 0 && !vStarted) vPhase = 2 },
+        )
+        // 영상이 시작되기 전 — 로딩 표시.
+        if (vPhase == 0 && !vStarted) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f), strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+            }
+        }
+    }
     Box(
-        modifier
+        Modifier
             .fillMaxSize()
             .onGloballyPositioned { origin = it.positionInRoot() }
             .graphicsLayer { alpha = if (active()) 1f else fadeOut(time.value) }    // 마지막 0.6초 전체 페이드아웃
@@ -1194,27 +1246,37 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, han
                 val ho = handoff
                 val target = ho?.target
                 val p = if (active()) ho!!.progress() else 0f
-                // 바탕은 로고가 떠나기 시작하면 걷혀, 아래 투어 첫 장이 드러납니다.
-                drawRect(BACKGROUND, alpha = 1f - smootherstep(0.05f, 0.8f, p))
+                // 바탕은 로고가 떠나기 시작하면 걷혀, 아래 투어 첫 장이 드러납니다(영상 오프닝은 바깥 층이 영상을 깔아 둠).
+                if (video == null || vPhase == 2) drawRect(BACKGROUND, alpha = 1f - smootherstep(0.05f, 0.8f, p))
+                if (vPhase == 0) return@drawBehind                     // 영상이 도는 동안은 영상만
+                val vid = videoMode()
+                if (vid) openingVideoLogoPlace(size.width, size.height, vSize[0], vSize[1], LOGO_BOUNDS.width(), LOGO_BOUNDS.height(), vplace)
                 val sc = scene ?: return@drawBehind
                 // 바탕만 걷히는 경우(stay) — 바꿔 끼우는 동안 로고·글자는 위에 겹친 첫 장(EvoFinalFrame)이 그려 함께 움직입니다.
                 if (ho?.stay == true && p > 0f) return@drawBehind
                 if (target == null || ho.stay || p <= 0f) {
-                    drawIntoCanvas { sc.draw(it.nativeCanvas, time.value, size.width, size.height) }
+                    drawIntoCanvas {
+                        val n = it.nativeCanvas
+                        val a = logoIn.value
+                        if (a < 1f) n.saveLayerAlpha(0f, 0f, size.width, size.height, (a * 255).roundToInt())
+                        sc.draw(n, time.value, size.width, size.height, if (vid) vplace else null)
+                        if (a < 1f) n.restore()
+                    }
                     return@drawBehind
                 }
                 // 출발: 화면 가운데(세로 40%)의 완성 로고. 도착: 첫 장 로고 자리 — 같은 H 면 그 상자에 꼭 맞게, 버전 로고 판이면
                 // 판 높이의 절반 크기로 판 가운데에서 스며듭니다.
                 val b = LOGO_BOUNDS
                 val unit0 = 0.5f * min(size.width, size.height) / 440f
-                val x0 = size.width / 2f + (b.centerX() - LOGO_CX) * unit0
-                val y0 = 0.4f * size.height + (b.centerY() - LOGO_CY) * unit0
+                val x0 = if (vid) vplace[0] else size.width / 2f + (b.centerX() - LOGO_CX) * unit0
+                val y0 = if (vid) vplace[1] else 0.4f * size.height + (b.centerY() - LOGO_CY) * unit0
                 val fit = min(target.width / b.width(), target.height / b.height())
                 val unit1 = if (ho.exact) fit else fit * 0.5f
                 place[0] = x0 + (target.center.x - origin.x - x0) * p
                 place[1] = y0 + (target.center.y - origin.y - y0) * p
                 // 배율은 곱으로 보간 — 크기가 크게 바뀌어도 줄어드는 빠르기가 고르게 보입니다.
-                place[2] = unit0 * (unit1 / unit0).pow(p)
+                val u0 = if (vid) vplace[2] else unit0
+                place[2] = u0 * (unit1 / u0).pow(p)
                 val fade = if (ho.exact) 1f else 1f - smootherstep(0.55f, 1f, p)
                 if (fade <= 0f) return@drawBehind
                 drawIntoCanvas {
@@ -1229,13 +1291,32 @@ internal fun EvoOpening(onFinish: () -> Unit, modifier: Modifier = Modifier, han
         val outFade: GraphicsLayerScope.(Float) -> Unit = { end ->
             if (handing()) alpha *= if (handoff!!.stay) 0f else 1f - smootherstep(0f, end, handoff.progress())
         }
+        val onVideo = video != null && vPhase != 2
         EvoTitleColumn(
-            title = Color.White.copy(alpha = 0.86f),
-            tagline = Color.White.copy(alpha = 0.66f),
+            title = Color.White.copy(alpha = if (onVideo) 0.95f else 0.86f),
+            tagline = Color.White.copy(alpha = if (onVideo) 0.85f else 0.66f),
             titleLayer = { reveal(time.value, TEXT_T0, rise); outFade(if (handoff?.stay == true) 0.9f else 0.35f) },
             taglineLayer = { reveal(time.value, TEXT_T0 + TEXT_STAGGER, rise); outFade(if (handoff?.stay == true) 0.9f else 0.3f) },
+            // 영상 위에서는 글자를 영상 속 로고 바로 아래에, 밝은 건물 위에서도 읽히게 옅은 그림자.
+            logoBottom = if (onVideo && vSize.size == 2) { w, h ->
+                openingVideoLogoPlace(w, h, vSize[0], vSize[1], LOGO_BOUNDS.width(), LOGO_BOUNDS.height(), vtmp)
+                vtmp[1] + (LOGO_BOUNDS.bottom - LOGO_BOUNDS.centerY()) * vtmp[2]
+            } else null,
+            shadow = if (onVideo) Shadow(Color.Black.copy(alpha = 0.45f), androidx.compose.ui.geometry.Offset(0f, 2f), 14f) else null,
         )
     }
+    }
+}
+
+/**
+ * 오프닝 입구 — 영상([OpeningVideo])을 스트리밍해 보고, [OpeningVideo.START_MS] 안에 재생이 시작되지 않으면 코드 애니메이션.
+ */
+@Composable
+internal fun EvoOpeningAuto(onFinish: () -> Unit, modifier: Modifier = Modifier, handoff: EvoHandoff? = null) {
+    val context = LocalContext.current
+    val url = remember { OpeningVideo.url(context) }
+    // 데이터 절약 모드면(url 이 null) 받지 않고 바로 예전 코드 애니메이션.
+    EvoOpening(onFinish, modifier, handoff, video = url)
 }
 
 /** 오프닝 끝의 글자 두 줄 — 로고 아래 가장자리 + 28dp(가로 화면·큰 글꼴에서도 화면 안). 오프닝과 [EvoFinalFrame] 이 같이 씁니다. */
@@ -1245,6 +1326,8 @@ private fun EvoTitleColumn(
     tagline: Color,
     titleLayer: GraphicsLayerScope.() -> Unit = {},
     taglineLayer: GraphicsLayerScope.() -> Unit = {},
+    logoBottom: ((Float, Float) -> Float)? = null,
+    shadow: Shadow? = null,
 ) {
     Column(
         Modifier
@@ -1253,18 +1336,21 @@ private fun EvoTitleColumn(
                 val p = measurable.measure(constraints.copy(minHeight = 0))
                 val w = constraints.maxWidth.toFloat(); val h = constraints.maxHeight.toFloat()
                 val unit = 0.5f * min(w, h) / 440f
-                val top = min(0.4f * h + (440f - LOGO_CY) * unit + 28.dp.toPx(), h - p.height - 8.dp.toPx())
+                val bottom = logoBottom?.invoke(w, h) ?: (0.4f * h + (440f - LOGO_CY) * unit)
+                val top = min(bottom + 28.dp.toPx(), h - p.height - 8.dp.toPx())
                 layout(constraints.maxWidth, constraints.maxHeight) { p.place(0, top.roundToInt()) }
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(Modifier.graphicsLayer(titleLayer), verticalAlignment = Alignment.Bottom) {
-            Text("HiHana ", color = title, fontSize = 38.sp, fontFamily = OUTFIT_LIGHT, letterSpacing = (-0.5).sp, modifier = Modifier.alignByBaseline())
+            Text("HiHana ", color = title, fontSize = 38.sp, fontFamily = OUTFIT_LIGHT, letterSpacing = (-0.5).sp, modifier = Modifier.alignByBaseline(),
+                style = TextStyle(shadow = shadow))
             Text("Evo", fontSize = 38.sp, fontFamily = OUTFIT_SEMIBOLD, letterSpacing = (-0.5).sp, modifier = Modifier.alignByBaseline(),
-                style = TextStyle(brush = EVO_BRUSH))
+                style = TextStyle(brush = EVO_BRUSH, shadow = shadow))
         }
         Spacer(Modifier.height(10.dp))
-        Text(EVO_TAGLINE, color = tagline, fontSize = 18.sp, fontFamily = PRETENDARD, letterSpacing = (-0.2).sp, modifier = Modifier.graphicsLayer(taglineLayer))
+        Text(EVO_TAGLINE, color = tagline, fontSize = 18.sp, fontFamily = PRETENDARD, letterSpacing = (-0.2).sp, modifier = Modifier.graphicsLayer(taglineLayer),
+            style = TextStyle(shadow = shadow))
     }
 }
 

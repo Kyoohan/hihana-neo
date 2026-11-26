@@ -23,8 +23,8 @@ android {
         applicationId = "com.yhjang.timetable"
         minSdk = 26
         targetSdk = 37
-        versionCode = 151
-        versionName = "15.1"
+        versionCode = 152
+        versionName = "15.2"
 
         // 앱 내 업데이트가 최신 릴리스를 읽을 GitHub 저장소(owner/repo). gradle.properties 의 updateRepo 로 지정하며,
         // 비어 있으면 업데이트 확인을 건너뜁니다.
@@ -112,6 +112,8 @@ kotlin {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // 단위 테스트에서 안드로이드의 빈 org.json 대신 실제 구현(게시글 응답 읽기 테스트).
+    testImplementation("org.json:json:20240303")
     implementation(project(":shared"))
 
     // 버전은 실제로 들어가는 값에 맞춥니다 — Compose BOM 이 더 새 버전을 끌어와 예전 숫자(1.15·1.9.3·2.8.7)는 쓰이지 않았습니다.

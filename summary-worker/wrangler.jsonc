@@ -10,5 +10,9 @@
   "kv_namespaces": [{ "binding": "SUMMARIES", "id": "035d5e8deb934d1abda5dacfff23a839" }],
   // 클래스룸 중계 암호문 (src/bridge.ts) — 15분마다 쓰기가 많아 KV 대신 D1.
   "d1_databases": [{ "binding": "BRIDGE", "database_name": "hihana-bridge", "database_id": "5029d8ba-7182-4c72-850e-26dc44886dfd" }],
+  // 첫 실행 오프닝 영상 — assets/opening/opening-v1.mp4 를 src/opening.ts 가 /opening/opening-v1.mp4 로 내보냅니다.
+  // 앱은 저장하지 않고 스트리밍하는데, 아이폰 재생기는 구간(Range) 요청이 되어야 재생하므로 워커가 먼저 받아 구간을 잘라 줍니다.
+  // R2 는 계정에서 켜려면 결제 수단이 필요해 쓰지 않습니다. 파일 하나 25MB 까지. 영상 파일은 git 에 넣지 않습니다(.gitignore).
+  "assets": { "directory": "./assets", "binding": "ASSETS", "run_worker_first": ["/opening/*"] },
   "observability": { "enabled": true }
 }

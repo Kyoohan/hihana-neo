@@ -846,6 +846,10 @@ struct EvoTitle: View {
     var tagline: Color = .white.opacity(0.66)
     var titleReveal: Double = 1
     var taglineReveal: Double = 1
+    /// 영상 위에서 밝은 건물 위에서도 읽히게 옅은 그림자.
+    var shadow: Bool = false
+    /// 로고 아래 가장자리(화면 pt) — 영상 오프닝은 영상 속 로고 바로 아래에. 없으면 코드 오프닝의 로고 자리.
+    var logoBottom: ((CGSize) -> CGFloat)? = nil
 
     var body: some View {
         GeometryReader { g in
@@ -859,15 +863,29 @@ struct EvoTitle: View {
                     .opacity(taglineReveal).offset(y: (1 - taglineReveal) * 16)
             }
             .frame(maxWidth: .infinity)
-            .offset(y: min(0.4 * g.size.height + CGFloat(440 - LOGO_CY) * unit + 28, g.size.height - 110))
+            .shadow(color: .black.opacity(shadow ? 0.45 : 0), radius: 7, y: 2)
+            .offset(y: min((logoBottom?(g.size) ?? 0.4 * g.size.height + CGFloat(440 - LOGO_CY) * unit) + 28, g.size.height - 110))
         }
     }
+}
+
+/// 오프닝 입구 — 영상(OpeningVideo)을 스트리밍합니다. OpeningVideo.startSeconds 안에 재생이 시작되지 않으면 예전 코드 애니메이션.
+struct EvoOpeningAuto: View {
+    let onFinish: () -> Void
+
+    var body: some View { EvoOpening(onFinish: onFinish, video: OpeningVideo.url) }
 }
 
 /// 첫 실행 투어 맨 앞의 오프닝. 0.6초 뒤부터 탭하면 건너뜁니다. 끝에서 바탕이 걷히고 투어 첫 장(같은 자리의 로고·글자)이 이어받습니다.
 struct EvoOpening: View {
     let onFinish: () -> Void
+    /// 오프닝 영상(OpeningVideo) 주소 — 있으면 스트리밍해 보고, 영상이 끝난 뒤 그 속 로고 자리에서 이어받습니다.
+    var video: URL? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 영상: -1 아직 모름, 0 재생 중, 1 끝남(앱 로고로 이어받음), 2 영상 없음·실패(처음부터 코드 애니메이션).
+    @State private var vPhase = -1
+    @State private var vSize: CGSize = .zero
+    @State private var vStarted = false
     @State private var scene: EvoScene?
     @State private var start: Date?
     @State private var finished = false
@@ -876,21 +894,34 @@ struct EvoOpening: View {
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: nil, paused: scene == nil || finished)) { tl in
+        TimelineView(.animation(minimumInterval: nil, paused: scene == nil || finished || vPhase == 0)) { tl in
             let t = currentTime(tl.date)
+            let back = Double(1 - smootherstep(0.05, 0.8, handoff(t)))
             ZStack {
-                evoBackground.ignoresSafeArea().opacity(Double(1 - smootherstep(0.05, 0.8, handoff(t))))
+                evoBackground.ignoresSafeArea().opacity(back)
+                if let video, vPhase == 0 || vPhase == 1 {
+                    OpeningVideoLayer(url: video, onReady: { vSize = $0 }, onStart: { vStarted = true }, onEnd: { videoEnded() }, onError: { if vStarted { videoEnded() } else { videoFailed() } })
+                        .ignoresSafeArea()
+                        .opacity(back)
+                }
                 Canvas { ctx, size in
-                    guard let scene, handoff(t) <= 0 else { return }
+                    // 영상 오프닝은 영상 마지막 장면의 로고를 그대로 둡니다(앱이 로고를 겹쳐 그리면 모양·자리가 조금씩 달라 두 개로 보였음).
+                    guard let scene, handoff(t) <= 0, vPhase == 2 else { return }
                     scene.draw(&ctx, t: t, size: size)
                 }
                 .ignoresSafeArea()
-                EvoTitle(titleReveal: reveal(t, TEXT_T0), taglineReveal: reveal(t, TEXT_T0 + TEXT_STAGGER))
+                if video != nil, vPhase == 0, !vStarted {
+                    // 영상이 시작되기 전 — 로딩 표시.
+                    ProgressView().tint(.white.opacity(0.8)).controlSize(.large)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                EvoTitle(titleReveal: reveal(t, TEXT_T0), taglineReveal: reveal(t, TEXT_T0 + TEXT_STAGGER), shadow: vPhase == 1,
+                         logoBottom: vPhase == 1 && vSize.width > 0 ? { OpeningVideo.logoRect(size: $0, video: vSize).maxY } : nil)
                     .ignoresSafeArea()
-                    .opacity(handoff(t) > 0 ? 0 : 1)
+                    .opacity(handoff(t) > 0 || vPhase == 0 ? 0 : 1)
             }
             .onChange(of: t) { old, new in
-                for m in LAND_MARKS where old < m && new >= m { haptic.impactOccurred(intensity: 0.6) }
+                if vPhase == 2 { for m in LAND_MARKS where old < m && new >= m { haptic.impactOccurred(intensity: 0.6) } }
                 if new >= EVO_END { finish() }
             }
         }
@@ -902,13 +933,34 @@ struct EvoOpening: View {
             scene = s
             haptic.prepare()
             if reduceMotion {
+                vPhase = 2
                 start = Date().addingTimeInterval(-TimeInterval(T_STILL))
                 try? await Task.sleep(for: .seconds(1.4))
                 finish()
+            } else if video != nil {
+                vPhase = 0                                  // 영상이 끝나면 videoEnded() 가 시계를 켭니다
+                // 정한 시간 안에 화면이 움직이기 시작하지 않으면(인터넷 없음·느림) 예전 코드 애니메이션으로.
+                try? await Task.sleep(for: .seconds(OpeningVideo.startSeconds))
+                if !vStarted { videoFailed() }
             } else {
+                vPhase = 2
                 start = Date()
             }
         }
+    }
+
+    /// 영상이 끝난 순간 — 글자가 0.2초 뒤 떠오르도록 시계를 맞춥니다(로고는 영상 마지막 장면 그대로).
+    /// 재생 전 실패·시간 초과 — 처음부터 예전 코드 애니메이션(2026-11-25 사용자 요청: 안내 문구 대신).
+    private func videoFailed() {
+        guard vPhase == 0, !vStarted else { return }
+        vPhase = 2
+        start = Date()
+    }
+
+    private func videoEnded() {
+        guard vPhase == 0 else { return }
+        vPhase = 1
+        start = Date().addingTimeInterval(-TimeInterval(TEXT_T0 - 0.2))
     }
 
     private func currentTime(_ now: Date) -> Float {

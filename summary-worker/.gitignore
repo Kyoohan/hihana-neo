@@ -1,2 +1,5 @@
 node_modules/
 .wrangler/
+
+# 오프닝 영상(배포 때만 올림, 저장소에는 넣지 않음)
+assets/

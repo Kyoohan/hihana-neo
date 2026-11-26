@@ -46,7 +46,7 @@ struct OnboardingView: View {
             if opening {
                 ZStack {
                     PageBackdrop()
-                    EvoOpening { withAnimation(.easeOut(duration: 0.35)) { opening = false } }
+                    EvoOpeningAuto { withAnimation(.easeOut(duration: 0.35)) { opening = false } }
                 }
                 .transition(.opacity)
             }

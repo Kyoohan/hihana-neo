@@ -11,15 +11,15 @@ struct QuickLink: Identifiable {
     var id: String { key }
 
     static let all: [QuickLink] = [
-        QuickLink(key: "library", label: "도서관 좌석", symbol: "books.vertical.fill", color: .brown, route: .seats(.library)),
-        QuickLink(key: "study_room", label: "면학실 좌석", symbol: "chair.fill", color: .blue, route: .seats(.studyRoom)),
-        QuickLink(key: "classroom", label: "교과교실", symbol: "door.left.hand.open", color: .teal, route: .quickApply(.classroom)),
-        QuickLink(key: "outing", label: "외출·외박", symbol: "figure.walk", color: .green, route: .quickApply(.outing)),
-        QuickLink(key: "midnight", label: "심야면학", symbol: "moon.zzz.fill", color: .indigo, route: .midnight),
-        QuickLink(key: "library_history", label: "도서관 내역", symbol: "book.fill", color: .brown, route: .history(.library)),
-        QuickLink(key: "study_history", label: "면학실 내역", symbol: "chart.line.uptrend.xyaxis", color: .blue, route: .history(.studyRoom)),
-        QuickLink(key: "outing_history", label: "외출 내역", symbol: "house.fill", color: .green, route: .history(.outing)),
-        QuickLink(key: "classroom_status", label: "교실별 현황", symbol: "square.grid.3x3.fill", color: .teal, route: .classroomStatus),
+        QuickLink(key: "library", label: "도서관 좌석", symbol: "books.vertical.fill", color: Color(argb: 0xFF8E7CFF), route: .seats(.library)),
+        QuickLink(key: "study_room", label: "면학실 좌석", symbol: "chair.fill", color: Color(argb: 0xFF5C7CFA), route: .seats(.studyRoom)),
+        QuickLink(key: "classroom", label: "교과교실", symbol: "door.left.hand.open", color: Color(argb: 0xFF14A8B8), route: .quickApply(.classroom)),
+        QuickLink(key: "outing", label: "외출·외박", symbol: "figure.walk", color: Color(argb: 0xFF34B27D), route: .quickApply(.outing)),
+        QuickLink(key: "midnight", label: "심야면학", symbol: "moon.zzz.fill", color: Color(argb: 0xFF4B4FC9), route: .midnight),
+        QuickLink(key: "library_history", label: "도서관 내역", symbol: "book.fill", color: Color(argb: 0xFF9B8AE6), route: .history(.library)),
+        QuickLink(key: "study_history", label: "면학실 내역", symbol: "chart.line.uptrend.xyaxis", color: Color(argb: 0xFF6F8BE8), route: .history(.studyRoom)),
+        QuickLink(key: "outing_history", label: "외출 내역", symbol: "house.fill", color: Color(argb: 0xFF4FAE85), route: .history(.outing)),
+        QuickLink(key: "classroom_status", label: "교실별 현황", symbol: "square.grid.3x3.fill", color: Color(argb: 0xFF2E9FAE), route: .classroomStatus),
     ]
 }
 

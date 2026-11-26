@@ -26,6 +26,9 @@ import java.time.format.DateTimeFormatter
  *
  * 표시 창: 그날의 첫 구간(평일 아침시간, 주말 1타임)부터 마지막 구간(평일 2타임, 주말 4타임) 끝까지. 창 안에서는
  * 1분마다 갱신하고 구간이 바뀌는 시각엔 정확히 깨우며, 창 밖에서는 알림을 지우고 다음 창 시작에 맞춰 예약합니다.
+ *
+ * iOS 실시간 현황과 같게(2026-11-25): 블록타임은 한 구간("1–2교시 수업 중"), 막대는 지금 구간 하나가 아니라 그날 일과 전체를
+ * 시간에 비례한 칸으로([LiveDay]).
  */
 object LiveActivity {
 
@@ -41,6 +44,25 @@ object LiveActivity {
     private const val KEY_TEMP_UNTIL = "temp_until"
     const val ACTION_TEMP_OFF = "com.skh.hihanaevo.LIVE_TEMP_OFF"
     private val timeFormat = DateTimeFormatter.ofPattern("H:mm")
+    private const val KEY_BAR_STYLE = "bar_style"
+
+    /** 막대 모양(설정에서 고름). */
+    enum class BarStyle(val key: String, val label: String, val caption: String) {
+        /** 그날 일과 전체 — 일정마다 시간에 비례한 칸, 지금 위치에 점(기본). */
+        DAY("day", "하루 전체", "그날 일과 전체를 일정별 칸으로 보여 주고, 지금 위치에 점을 찍습니다."),
+        /** 지금 일정 하나의 진행 — 15.1 까지의 모양. */
+        NOW("now", "지금 일정만", "지금 일정이 얼마나 지났는지만 막대 하나로 보여 줍니다."),
+    }
+
+    fun barStyle(context: Context): BarStyle {
+        val key = prefs(context).getString(KEY_BAR_STYLE, null)
+        return BarStyle.entries.firstOrNull { it.key == key } ?: BarStyle.DAY
+    }
+
+    fun setBarStyle(context: Context, style: BarStyle) {
+        prefs(context).edit().putString(KEY_BAR_STYLE, style.key).apply()
+        CoroutineScope(Dispatchers.Default).launch { update(context) }
+    }
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -157,7 +179,8 @@ object LiveActivity {
         runCatching { HanaTimetableSync.ensureInstalled(app) }
         val today = PlanStore.today()
         val places = runCatching { PlanStore.placesForToday(app, today) }.getOrDefault(emptyMap())
-        val blocks = Timetable.blocks(today) { places[it] }
+        // 하루는 8시부터(아침시간 뺌) — [LiveDay.trimMorning]. 8시 전에는 알림을 내리고 8시에 깨어 띄웁니다.
+        val blocks = LiveDay.trimMorning(Timetable.blocks(today) { places[it] })
         val now = LocalDateTime.now(PlanStore.seoulZone)
         val shown = blocks.filter { !it.isBlank }
         val windowStart = shown.minOfOrNull { it.start }
@@ -173,6 +196,8 @@ object LiveActivity {
         }
 
         val block = Timetable.blockAt(today, now) { places[it] }
+        val segs = LiveDay.segments(blocks)
+        val seg = segs.firstOrNull { !it.start.isAfter(now) && now.isBefore(it.end) } ?: LiveSeg(block, block)
         // 전날 심야면학이 자정을 넘겨 이어지면 표시 창이 전날 밤부터 시작해, 그게 끝난 뒤의 새벽 빈 시간도 창 안에
         // 들어옵니다 — 빈 구간이면 알림을 내리고 다음 일정 시작에 다시 깨웁니다.
         if (block.isBlank) {
@@ -181,25 +206,28 @@ object LiveActivity {
             scheduleAt(app, nextStart?.let { toMillis(it) } ?: (System.currentTimeMillis() + 6 * 3_600_000L), exact = false)
             return
         }
-        val next = Timetable.nextEvent(blocks, block, now)
+        // 묶인 블록타임이면 마지막 교시를 기준으로 다음 일정을 셉니다(같은 수업의 둘째 교시를 '다음'으로 보여 주지 않게).
+        val next = Timetable.nextEvent(blocks, seg.last, now)
         ensureChannel(manager)
         val kindColors = WidgetKindColors.resolve(runCatching { PlanStore.widgetKindColors(app) }.getOrDefault(emptyMap()))
-        manager.notify(NOTIFICATION_ID, build(app, block, next, now, kindColors))
+        manager.notify(NOTIFICATION_ID, build(app, seg, segs, next, now, kindColors))
         postSummary(app, manager, iconResFor(block.iconKey))
 
         // 1분 틱과 구간 경계 모두 정확한 알람으로 (알람 및 리마인더 권한이 있을 때) — 부정확 알람은 절전 상태에서
         // 5~15분씩 미뤄져 Now Bar 의 남은 시간이 실제와 어긋났습니다. 권한이 없으면 부정확 알람으로 폴백.
-        val boundary = toMillis(block.end) + 1_000
+        val boundary = toMillis(seg.end) + 1_000
         val tickAt = System.currentTimeMillis() + TICK_MS
         scheduleAt(app, minOf(boundary, tickAt), exact = true)
     }
 
     private suspend fun nextWindowStart(context: Context, date: LocalDate): LocalDateTime? {
         val places = runCatching { PlanStore.placesForToday(context, date) }.getOrDefault(emptyMap())
-        return Timetable.blocks(date) { places[it] }.filter { !it.isBlank }.minOfOrNull { it.start }
+        return LiveDay.trimMorning(Timetable.blocks(date) { places[it] }).filter { !it.isBlank }.minOfOrNull { it.start }
     }
 
-    private fun build(context: Context, block: Block, next: Block?, now: LocalDateTime, kindColors: Map<Accent, Int>): Notification {
+    private fun build(context: Context, seg: LiveSeg, segs: List<LiveSeg>, next: Block?, now: LocalDateTime, kindColors: Map<Accent, Int>): Notification {
+        // 블록타임이면 첫 교시 블록을 묶인 끝까지 늘려 씁니다(남은 시간·시간 범위가 묶인 구간 기준).
+        val block = seg.first.copy(end = seg.end)
         val remaining = Duration.between(now, block.end).coerceAtLeast(Duration.ZERO)
         val total = Duration.between(block.start, block.end).toMillis().coerceAtLeast(1L)
         val elapsed = Duration.between(block.start, now).toMillis().coerceIn(0L, total)
@@ -218,7 +246,7 @@ object LiveActivity {
         }
         // 남은 시간은 시스템 카운트다운이 이미 보여주므로(API 36) 본문에는 넣지 않습니다 — 그 아래 폴백 알림에만 씁니다.
         val text = listOfNotNull(
-            block.statusLabel.takeIf { it.isNotBlank() && kind !is BlockKind.GapKind },
+            seg.statusLabel.takeIf { it.isNotBlank() && kind !is BlockKind.GapKind },
             range,
             remainingText.takeIf { Build.VERSION.SDK_INT < 36 },
         ).joinToString(" · ")
@@ -232,22 +260,35 @@ object LiveActivity {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         if (Build.VERSION.SDK_INT >= 36) {
-            // 진행률은 0~1000 으로 — 밀리초 그대로(수백만) 넘기면 삼성 Now Bar 가 막대 오른쪽 끝을 잘라 그렸습니다.
-            val permille = (elapsed * 1000L / total).toInt().coerceIn(0, 1000)
-            // 진행률에 따라 시스템이 뒷부분을 흐리게 칠하는 방식(styledByProgress)은 One UI 가 막대 오른쪽 끝을 작은 점처럼
-            // 밝게 남겼습니다 — 대신 지난 구간·남은 구간을 색이 다른 두 조각으로 직접 그립니다. 남은 조각은 불투명한
-            // 회색으로 — 반투명 흰색은 One UI 가 알파를 무시해 지난 조각과 같은 흰색으로 그렸습니다.
-            val done = permille.coerceIn(1, 999)
-            val style = Notification.ProgressStyle()
-                .setProgress(permille)
-                .setStyledByProgress(false)
-                .setProgressSegments(
-                    listOf(
-                        Notification.ProgressStyle.Segment(done).setColor(0xFFFFFFFF.toInt()),
-                        Notification.ProgressStyle.Segment(1000 - done).setColor(0xFF8E96A6.toInt()),
-                    ),
-                )
-                .setProgressTrackerIcon(null)
+            // 막대는 그날 일과 전체 — 일정마다 시간에 비례한 칸. 끝난 일정과 지금 일정은 지금 일정의 색 한 가지, 남은 일정은 회색
+            // ([LiveDay.color]). 지금 위치는 진행률로 넘겨 시스템이 그 앞은 굵게·뒤는 가늘게 그리고(styledByProgress), 그 자리에
+            // 흰 점(트래커)을 찍습니다 — 갤럭시 S25+ One UI 9 알림창에서 확인(2026-11-25). 진행률은 0~1000 으로(밀리초 그대로 넘기면
+            // 삼성 Now Bar 가 막대 오른쪽 끝을 잘라 그렸습니다).
+            val style = if (barStyle(context) == BarStyle.NOW) {
+                // '지금 일정만'(15.1 까지의 모양) — 지금 일정의 지난 만큼은 흰색, 남은 만큼은 회색, 두 조각. 반투명 색은 One UI 가
+                // 알파를 무시해 같은 색으로 그려서 불투명 회색을 씁니다.
+                val done = (elapsed * 1000L / total).toInt().coerceIn(1, 999)
+                Notification.ProgressStyle()
+                    .setProgress(done)
+                    .setStyledByProgress(false)
+                    .setProgressSegments(
+                        listOf(
+                            Notification.ProgressStyle.Segment(done).setColor(0xFFFFFFFF.toInt()),
+                            Notification.ProgressStyle.Segment(1000 - done).setColor(0xFF8E96A6.toInt()),
+                        ),
+                    )
+                    .setProgressTrackerIcon(null)
+            } else {
+                val pieces = LiveDay.pieces(segs, now)
+                Notification.ProgressStyle()
+                    .setProgress(LiveDay.progress(segs, now))
+                    .setStyledByProgress(true)
+                    .setProgressSegments(
+                        pieces.ifEmpty { listOf(LiveDay.Piece(1000, LiveDay.Zone.AHEAD)) }
+                            .map { Notification.ProgressStyle.Segment(it.length).setColor(LiveDay.color(it.zone, color)) },
+                    )
+                    .setProgressTrackerIcon(trackerIcon(color))
+            }
             // One UI 는 subText 를 제목 바로 아래 줄에, contentText 를 그 아래에 그립니다 — 구간·시간이 먼저, 다음 장소가 뒤에
             // 오도록 자리를 바꿔 넣습니다.
             return Notification.Builder(context, CHANNEL_ID)
@@ -295,6 +336,22 @@ object LiveActivity {
             .build()
     }
 
+    /**
+     * 막대 위 '지금 위치' 점 — 흰 점에 일정 색 테두리(밝은 알림창에서도 보이게). 시스템이 아이콘을 막대 높이에 맞춰 늘려 그리므로,
+     * 큰 투명 캔버스 가운데에 작게 그려 점 크기를 정합니다(반지름 = 캔버스의 1/5, 정한 값).
+     */
+    private fun trackerIcon(accent: Int): android.graphics.drawable.Icon {
+        val d = 96
+        val bitmap = android.graphics.Bitmap.createBitmap(d, d, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = accent
+        canvas.drawCircle(d / 2f, d / 2f, d / 5f + 4f, paint)
+        paint.color = 0xFFFFFFFF.toInt()
+        canvas.drawCircle(d / 2f, d / 2f, d / 5f, paint)
+        return android.graphics.drawable.Icon.createWithBitmap(bitmap)
+    }
+
     /** 장소가 앞에 오는 이름 — 수업은 교실 + 과목(선생님 이름 없이), 면학은 장소 + 자리, 대기 구간은 바로 다음 장소. 없으면 null. */
     private fun placeFirst(block: Block): String? = when (val kind = block.kind) {
         is BlockKind.LessonKind -> placeFirst(kind.lesson)
@@ -323,6 +380,10 @@ object LiveActivity {
      * 실시간 일정만의 그룹 요약. 앱 알림(알리미·브리핑 등)이 둘 이상이면 Android 16+ 는 그룹 없는 알림, 그리고 요약 없는
      * 그룹 알림까지 '알림 더보기' 자동 묶음으로 모읍니다. 실시간 일정이 그 안에 들어가 묶음을 지우면 함께 사라졌습니다.
      * 요약과 자식이 함께 있는 그룹은 자동 묶음에서 빠지고, 자식이 하나뿐이라 화면에는 실시간 일정 알림만 보입니다.
+     *
+     * 삼성 알림창 맨 아래의 '1개 알림 더보기' 줄은 이 요약 때문이 아닙니다(2026-11-25 확인) — One UI 의 알림 필터 '백그라운드 알림'
+     * (noti_filter_background_notification)이 계속 떠 있는 알림을 접어 두는 줄(com.android.systemui 의 INSIGNIFICANT 알림)로,
+     * 요약·그룹을 빼도, 알림 카테고리를 9가지로 바꿔 봐도 그대로였습니다. 앱에서는 없앨 수 없고 사용자가 그 필터를 꺼야 사라집니다.
      */
     private fun postSummary(context: Context, manager: NotificationManager, icon: Int) {
         val summary = NotificationCompat.Builder(context, CHANNEL_ID)

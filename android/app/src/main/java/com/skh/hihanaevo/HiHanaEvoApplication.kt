@@ -27,6 +27,8 @@ class HiHanaEvoApplication : Application() {
         // 데일리 브리핑 알람 — 시각이 정해져 있어 다시 걸어도 밀리지 않습니다.
         MorningBrief.ensureChannel(this)
         MorningBrief.schedule(this)
+        // 예전 시험 빌드가 받아 둔 오프닝 영상을 지웁니다(지금은 스트리밍만).
+        OpeningVideo.removeOldDownloads(this)
     }
 
     private fun schedulePeriodicSync(replace: Boolean) {

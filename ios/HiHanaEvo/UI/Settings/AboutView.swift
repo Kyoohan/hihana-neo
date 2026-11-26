@@ -75,12 +75,25 @@ struct SilkPalette {
 /// 업데이트는 SideStore 로 — 새 버전이면 '업데이트'(SideStore 가 받아 설치), 'SideStore에 소스 추가'로 SideStore 안에서도 알림.
 struct AboutView: View {
     @State private var updater = AppUpdater.shared
+    /// 로고 연타 — 0.6초 안에 이어 누른 횟수, 다섯 번째에 오프닝(안드로이드 정보 화면과 같은 규칙).
+    @State private var logoTaps = 0
+    @State private var lastLogoTap = Date.distantPast
+    @State private var logoBounce = 0
+    @State private var opening = false
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Image("AppLogo").resizable().frame(width: 60, height: 60)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        // 누를 때마다 살짝 눌렸다 튀어 오릅니다.
+                        .keyframeAnimator(initialValue: CGFloat(1), trigger: logoBounce) { content, scale in
+                            content.scaleEffect(scale)
+                        } keyframes: { _ in
+                            CubicKeyframe(0.9, duration: 0.06)
+                            SpringKeyframe(1, duration: 0.45, spring: .init(response: 0.35, dampingRatio: 0.45))
+                        }
+                        .onTapGesture(perform: tapLogo)
                         .accessibilityHidden(true)
                     Text("HiHana Evo").font(.title2.bold())
                     Text("하나고 시간표·급식·게시판·신청을 한곳에서 보는 학생용 앱입니다.")
@@ -119,6 +132,32 @@ struct AboutView: View {
                 RouteLink("법적 고지", value: Route.legal)
             }
         }
+        // 업데이트 뒤 '정보' 줄과 설정 톱니의 'N' 은 바뀐 점을 보러 이 화면에 들어오면 지웁니다 — 예전엔 설정 화면이 닫힐 때만 지워
+        // 정보에 들어갔다 나와도(아이패드는 설정 목록이 그대로 떠 있어 끝내) 남아 있었습니다.
+        .onAppear { if WhatsNew.shared.pending { WhatsNew.shared.markSeen() } }
+        // 오프닝은 제 배경을 직접 그리고 끝에 그 배경이 걷히며 정보 화면이 드러나므로, 시트처럼 올라오지 않게 애니메이션 없이 띄웁니다.
+        .fullScreenCover(isPresented: $opening) {
+            EvoOpeningAuto { withoutAnimation { opening = false } }
+                .presentationBackground(.clear)
+        }
+    }
+
+    private func tapLogo() {
+        let now = Date()
+        logoTaps = now.timeIntervalSince(lastLogoTap) < 0.6 ? logoTaps + 1 : 1
+        lastLogoTap = now
+        logoBounce += 1
+        UISelectionFeedbackGenerator().selectionChanged()
+        if logoTaps >= 5 && !opening {
+            logoTaps = 0
+            withoutAnimation { opening = true }
+        }
+    }
+
+    private func withoutAnimation(_ change: () -> Void) {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t, change)
     }
 }
 

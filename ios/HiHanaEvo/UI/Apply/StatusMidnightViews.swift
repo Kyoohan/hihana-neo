@@ -101,53 +101,6 @@ struct ClassroomStatusView: View {
 
 // MARK: - 심야면학
 
-/// 신청·내역의 심야면학 — '내역'(오늘 1·2타임 신청과 불참)과 '신청'.
-struct MidnightSection: View {
-    @Environment(AppModel.self) private var model
-    @State private var lines: [String]?
-    @State private var loading = false
-    @State private var error: String?
-
-    var body: some View {
-        Section("심야면학") {
-            RouteLink(Route.midnight) {
-                Label { Text("좌석 신청") } icon: { IconTile("moon.zzz.fill", .indigo) }
-            }
-            // 다른 줄과 같은 모양 — 파란 글자 단추 대신 회색 표시가 붙은 줄(눌러서 오늘 내역을 펼침).
-            Button { load() } label: {
-                HStack {
-                    Label { Text(error != nil ? "다시 시도" : "내역").foregroundStyle(Color.primary) } icon: { IconTile("clock.arrow.circlepath", .gray) }
-                    Spacer()
-                    if loading { ProgressView() }
-                    else { Image(systemName: lines == nil ? "chevron.down" : "arrow.clockwise").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary) }
-                }
-                .contentShape(Rectangle())
-            }
-            .disabled(loading).materialRow()
-            if let error { Text(error).font(.footnote).foregroundStyle(.red).materialRow() }
-            ForEach(lines ?? [], id: \.self) { Text($0).font(.subheadline).materialRow() }
-        }
-    }
-
-    private func load() {
-        guard MidnightSession.isLoggedIn else { model.nav.open(.midnight); return }
-        loading = true
-        error = nil
-        Task {
-            do {
-                let first = try await MidnightAPI.dashboard(session: 1, floor: nil, model: model)
-                let second = first.session2Available ? try? await MidnightAPI.dashboard(session: 2, floor: first.floor, model: model) : nil
-                func line(_ label: String, _ d: MidnightDashboard?) -> String {
-                    guard let d else { return "\(label) · 운영 안 함" }
-                    return d.hasReservation ? "\(label) · \(d.reservationFloor ?? d.floor ?? 0)층 \(d.reservationSeat ?? 0)번" : "\(label) · 신청 없음"
-                }
-                lines = [line("1타임", first), line("2타임", second), "불참 \(first.absenceCount)회 · " + (first.bannedUntil.map { "\($0)까지 신청 제한" } ?? "신청 제한 없음")]
-            } catch { self.error = error.localizedDescription }
-            loading = false
-        }
-    }
-}
-
 /// 심야면학 신청 — 타임·층을 고르고 빈 좌석을 누르면 바로 신청, 내 좌석을 누르면 취소.
 struct MidnightView: View {
     @Environment(AppModel.self) private var model

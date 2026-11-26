@@ -387,95 +387,11 @@ object MidnightApi {
 
 // MARK: - 신청·내역 카드
 
-private sealed interface MidnightHistoryState {
+internal sealed interface MidnightHistoryState {
     data object Idle : MidnightHistoryState
     data object Loading : MidnightHistoryState
     data class Loaded(val lines: List<String>) : MidnightHistoryState
     data class Error(val message: String) : MidnightHistoryState
-}
-
-/** 신청·내역 섹션의 심야면학 카드 — 다른 서비스처럼 "내역 조회"(오늘 1·2타임 신청 + 불참)와 "신청하기". */
-@Composable
-internal fun MidnightStudyCard() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf<MidnightHistoryState>(MidnightHistoryState.Idle) }
-    var showingScreen by remember { mutableStateOf(false) }
-    if (showingScreen) MidnightStudyScreen(onDismiss = { showingScreen = false; if (state !is MidnightHistoryState.Idle) state = MidnightHistoryState.Idle })
-
-    fun loadHistory() {
-        if (!MidnightSessionStore.isLoggedIn(context)) {
-            showingScreen = true
-            return
-        }
-        state = MidnightHistoryState.Loading
-        scope.launch {
-            state = try {
-                val first = MidnightApi.dashboard(context, 1, null)
-                val second = if (first.session2Available) runCatching { MidnightApi.dashboard(context, 2, first.floor) }.getOrNull() else null
-                fun line(label: String, d: MidnightDashboard?) = when {
-                    d == null -> "$label · 운영 안 함"
-                    d.hasReservation -> "$label · ${d.reservationFloor ?: d.floor}층 ${d.reservationSeat}번"
-                    else -> "$label · 신청 없음"
-                }
-                MidnightHistoryState.Loaded(
-                    listOf(
-                        line("1타임", first),
-                        line("2타임", second),
-                        "불참 ${first.absenceCount}회 · " + (first.bannedUntil?.let { "${it}까지 신청 제한" } ?: "신청 제한 없음"),
-                    ),
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                MidnightHistoryState.Error(e.message ?: "불러오지 못했습니다")
-            }
-        }
-    }
-
-    OneUiCard(modifier = Modifier.fillMaxWidth()) {
-        Text("심야면학", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        when (val s = state) {
-            MidnightHistoryState.Idle -> Unit
-            MidnightHistoryState.Loading -> {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OneUiLoading(size = 16.dp, stroke = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("불러오는 중", style = MaterialTheme.typography.bodyMedium, color = onPageVariantColor())
-                }
-            }
-            is MidnightHistoryState.Loaded -> {
-                Spacer(Modifier.height(10.dp))
-                s.lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            }
-            is MidnightHistoryState.Error -> {
-                Spacer(Modifier.height(10.dp))
-                Text(s.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OneUiButton(
-                text = when (state) {
-                    MidnightHistoryState.Idle -> "내역"
-                    MidnightHistoryState.Loading -> "불러오는 중"
-                    is MidnightHistoryState.Error -> "다시 시도"
-                    is MidnightHistoryState.Loaded -> "새로고침"
-                },
-                onClick = ::loadHistory,
-                style = OneUiButtonStyle.Neutral,
-                enabled = state != MidnightHistoryState.Loading,
-                modifier = Modifier.weight(1f),
-            )
-            OneUiButton(
-                text = "신청",
-                onClick = { showingScreen = true },
-                style = OneUiButtonStyle.Neutral,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
 }
 
 // MARK: - 신청 화면

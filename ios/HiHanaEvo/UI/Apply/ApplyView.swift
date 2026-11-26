@@ -1,101 +1,226 @@
 import SwiftUI
 
-/// 신청·내역 블록 순서 — 서비스 넷과 심야면학. '순서'에서 바꾸고 기기에 저장합니다.
-enum ApplyOrderStore {
-    static let midnight = "MIDNIGHT"
-    static let defaultOrder = ApplyService.allCases.map(\.rawValue) + [midnight]
-    private static let key = "apply_order.order"
-
-    static func get() -> [String] {
-        let saved = (SharedContainer.defaults.string(forKey: key) ?? "").split(separator: ",").map(String.init).filter { defaultOrder.contains($0) }
-        var seen = Set<String>()
-        let unique = saved.filter { seen.insert($0).inserted }
-        return unique + defaultOrder.filter { !unique.contains($0) }
-    }
-    static func set(_ order: [String]) { SharedContainer.defaults.set(order.joined(separator: ","), forKey: key) }
-    static func label(_ key: String) -> String { key == midnight ? "심야면학" : ApplyService(rawValue: key)?.label ?? key }
-}
-
-/// 신청·내역 — 서비스마다 '내역'과 '신청'. 교과교실은 내역을 이 화면 안에 펼치고 '교실별 현황'을 하나 더.
+/// 신청·내역 — 안드로이드 ApplySection.kt 와 같은 구성(2026-11-26 사용자 요청 A안):
+/// 맨 위 '오늘 면학'(타임마다 잡힌 자리)과 다가오는 외출·외박, 그 아래 '신청'(면학실·도서관·심야면학 세 칸 나란히, 교과교실은 신청과
+/// 교실별 현황, 외출·외박), 맨 아래 '내역' 칩. 모두 기기에 있는 값이라 포털에 새로 묻지 않습니다.
+/// 예전 블록 순서 편집은 자리가 정해진 구성이라 뺐습니다.
 struct ApplyView: View {
     @Environment(AppModel.self) private var model
-    @State private var order = ApplyOrderStore.get()
-    @State private var classroomRows: [HanaApplyRow]?
-    @State private var classroomLoading = false
-    @State private var classroomError: String?
-    @State private var editingOrder = false
+    @Environment(\.palette) private var palette
+    @Environment(\.listPane) private var listPane
+    /// 내역 칩 아래 펼친 심야면학 내역(오늘 1·2타임 신청 + 불참).
+    @State private var midnightLines: [String]?
+    @State private var midnightLoading = false
+    @State private var midnightError: String?
+    @State private var midnightOpen = false
+
+    private enum Tint {
+        static let studyRoom = Color(argb: 0xFF5C7CFA)
+        static let library = Color(argb: 0xFF8E7CFF)
+        static let midnight = Color(argb: 0xFF4B4FC9)
+        static let classroom = Color(argb: 0xFF14A8B8)
+        static let classroomStatus = Color(argb: 0xFF2E9FAE)
+        static let outing = Color(argb: 0xFF34B27D)
+    }
 
     var body: some View {
-        List {
-            ForEach(order, id: \.self) { key in
-                if key == ApplyOrderStore.midnight {
-                    MidnightSection()
-                } else if let service = ApplyService(rawValue: key) {
-                    section(service)
+        let today = model.today
+        let rest = model.context().isRestDay(today)
+        let slots = rest ? PlanSlot.slots(isRestDay: true) : [.weekday0] + PlanSlot.slots(isRestDay: false)
+        let places: [PlanSlot: StudyPlace] = Dictionary(uniqueKeysWithValues: slots.compactMap { s in
+            (model.places[today.iso]?[s] ?? s.defaultPlace).map { (s, $0) }
+        })
+        let outing = model.outingSpans().filter { $0.end > Date() }.min { $0.start < $1.start }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                todayCard(slots: slots, places: places)
+                if let outing { outingCard(outing) }
+
+                sectionTitle("신청")
+                // 아이콘과 이름만 — 오늘 자리는 위 '오늘 면학'에 있어 되풀이하지 않습니다.
+                HStack(spacing: 10) {
+                    seatTile("면학실", "chair.fill", Tint.studyRoom, .seats(.studyRoom))
+                    seatTile("도서관", "books.vertical.fill", Tint.library, .seats(.library))
+                    seatTile("심야면학", "moon.zzz.fill", Tint.midnight, .midnight)
                 }
+                OneUiCard(padding: EdgeInsets()) {
+                    row("교과교실", "door.left.hand.open", Tint.classroom, .quickApply(.classroom))
+                    palette.onSurface.opacity(0.10).frame(height: 0.7).padding(.leading, 60)
+                    row("교실별 현황", "square.grid.3x3.fill", Tint.classroomStatus, .classroomStatus)
+                }
+                OneUiCard(padding: EdgeInsets()) {
+                    row("외출·외박", "figure.walk", Tint.outing, .quickApply(.outing))
+                }
+
+                sectionTitle("내역")
+                // 다섯 곳을 카드 한 장에 같은 폭으로 — 칩을 늘어놓으면 기기 폭에 따라 줄 끝이 들쭉날쭉하고 오른쪽이 비었습니다.
+                // 아이패드 두 칸에선 오른쪽에 떠 있는 내역의 칸을 그 색으로(예전 목록의 고른 줄 표시와 같은 역할).
+                let shown: (ApplyService) -> Bool = { listPane && model.nav.isSelected(.history($0)) }
+                historyStrip([
+                    ("면학실", "chair.fill", Tint.studyRoom, shown(.studyRoom), { go(.history(.studyRoom)) }),
+                    ("도서관", "books.vertical.fill", Tint.library, shown(.library), { go(.history(.library)) }),
+                    ("교과교실", "door.left.hand.open", Tint.classroom, shown(.classroom), { go(.history(.classroom)) }),
+                    ("외출·외박", "figure.walk", Tint.outing, shown(.outing), { go(.history(.outing)) }),
+                    ("심야면학", "moon.zzz.fill", Tint.midnight, midnightOpen, { toggleMidnight() }),
+                ])
+                if midnightOpen { midnightCard }
             }
+            .padding(.horizontal, 16)
+            // 큰 제목 바로 밑에 카드가 붙던 것 — 예전 목록(List)은 제목과 첫 묶음 사이를 시스템이 띄웠는데, 카드를 직접 쌓으며 그 간격이 사라졌음.
+            .padding(.top, 14)
+            .padding(.bottom, 24)
+            .readableWidth(860)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .navigationTitle("신청·내역")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { editingOrder = true } label: { Label("순서", systemImage: "arrow.up.arrow.down") }
-            }
-        }
-        .sheet(isPresented: $editingOrder) { OrderSheet(order: $order) }
     }
 
-    /// 서비스마다 색 아이콘이 붙은 '신청'·'내역' 줄 — 글자만 늘어서 구분이 어렵던 것.
-    @ViewBuilder private func section(_ service: ApplyService) -> some View {
-        Section(service.label) {
-            RouteLink(service == .library ? Route.seats(.library) : service == .studyRoom ? Route.seats(.studyRoom) : Route.quickApply(service)) {
-                Label { Text(service == .library || service == .studyRoom ? "좌석 신청" : "신청") } icon: { IconTile(service.symbol, service.tint) }
+    // MARK: 부품
+
+    private func go(_ route: Route) { listPane ? model.nav.select(route) : model.nav.open(route) }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.subheadline.weight(.semibold)).foregroundStyle(palette.onSurface.opacity(0.62)).padding(.leading, 6).padding(.top, 6)
+    }
+
+    /// 신청 칸과 같은 장소는 그 칸의 색, 나머지(생활관·방과후·1인2기)는 홈 일정의 장소 색.
+    private func color(of p: StudyPlace) -> Color {
+        switch p {
+        case .studyRoom: Tint.studyRoom
+        case .library: Tint.library
+        case .classroom: Tint.classroom
+        case .midnight: Tint.midnight
+        default: p.accent.color
+        }
+    }
+
+    /// 오늘 면학 — 타임마다 시작 시각, 장소, 자리·교실. 비어 있는 타임은 점선 칸('위치 미설정', 홈 일정과 같은 말).
+    private func todayCard(slots: [PlanSlot], places: [PlanSlot: StudyPlace]) -> some View {
+        OneUiCard(cornerRadius: 26) {
+            HStack(alignment: .lastTextBaseline) {
+                Text("오늘 면학").font(.headline)
+                Spacer()
+                Text("\(model.today.month)월 \(model.today.day)일").font(.caption).foregroundStyle(palette.onSurface.opacity(0.62))
             }
-            RouteLink(Route.history(service)) {
-                Label { Text("내역") } icon: { IconTile("clock.arrow.circlepath", .gray) }
-            }
-            if service == .classroom {
-                RouteLink(Route.classroomStatus) {
-                    Label { Text("교실별 현황") } icon: { IconTile("square.grid.3x3.fill", service.tint) }
+            .padding(.bottom, 10)
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(slots, id: \.self) { s in
+                    let p = places[s]
+                    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(s.title) \(s.timeText.split(separator: " ").first ?? "")").font(.caption2).foregroundStyle(palette.onSurface.opacity(0.62)).lineLimit(1)
+                        Text(p?.name ?? "위치 미설정").font(.subheadline.weight(.bold))
+                            .foregroundStyle(p.map { color(of: $0) } ?? palette.onSurface.opacity(0.62)).brightness(palette.dark ? 0.25 : -0.12).lineLimit(1)
+                        if let d = p?.detail { Text(d).font(.caption2).foregroundStyle(palette.onSurface.opacity(0.62)).lineLimit(2) }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background { if let p { shape.fill(color(of: p).opacity(palette.dark ? 0.22 : 0.13)) } }
+                    .overlay { if p == nil { shape.strokeBorder(palette.onSurface.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func loadClassroomHistory() {
-        classroomLoading = true
-        classroomError = nil
+    /// 다가오는(또는 지금인) 외출·외박 한 건 — 기간·사유와 승인 상태.
+    private func outingCard(_ o: OutingSpan) -> some View {
+        // 두 줄 — 날짜(외박은 기간)와 시각·사유. 한 줄에 날짜와 시각을 다 넣으면 좁은 폭에서 '09:00 ~ / 13:00'처럼 시각 중간에서 꺾였습니다.
+        let day: (Date) -> String = { d in "\(d.localDate.month).\(d.localDate.day)(\(d.localDate.weekdayShort))" }
+        let dates = o.overnight ? "\(day(o.start)) ~ \(day(o.end))" : day(o.start)
+        let times = "\(o.start.hm) ~ \(o.end.hm)" + ((o.reason?.isEmpty == false) ? " · \(o.reason!)" : "")
+        let tint = o.pending ? Color(argb: 0xFFE3A82E) : Color(argb: 0xFF2FB67C)
+        return OneUiCard(cornerRadius: 26, padding: EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 14)) {
+            HStack(spacing: 12) {
+                SolidCircleIcon(symbol: "figure.walk", color: Tint.outing, size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(o.overnight ? "외박" : "외출") · \(dates)").font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(times).font(.caption).foregroundStyle(palette.onSurface.opacity(0.62)).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Text(o.pending ? "승인 대기" : "승인됨").font(.caption.weight(.bold)).foregroundStyle(tint).brightness(palette.dark ? 0.2 : -0.15)
+                    .padding(.horizontal, 10).padding(.vertical, 4).background(tint.opacity(0.18), in: Capsule())
+            }
+        }
+    }
+
+    /// 자리 신청 칸 — 색 원 아이콘과 이름만.
+    private func seatTile(_ label: String, _ symbol: String, _ tint: Color, _ route: Route) -> some View {
+        OneUiCard(cornerRadius: 24, padding: EdgeInsets(top: 14, leading: 8, bottom: 14, trailing: 8), action: { go(route) }) {
+            VStack(spacing: 8) {
+                SolidCircleIcon(symbol: symbol, color: tint, size: 36)
+                Text(label).font(.subheadline.weight(.bold)).foregroundStyle(palette.onSurface).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// 카드 안 한 줄 — 색 원 아이콘, 이름, 오른쪽 화살표.
+    private func row(_ label: String, _ symbol: String, _ tint: Color, _ route: Route) -> some View {
+        Button { go(route) } label: {
+            HStack(spacing: 12) {
+                SolidCircleIcon(symbol: symbol, color: tint, size: 32)
+                Text(label).font(.subheadline.weight(.semibold)).foregroundStyle(palette.onSurface)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(RowPressStyle())
+    }
+
+    /// 내역 다섯 곳 — 카드 한 장을 같은 폭 칸으로 나누고 가는 선으로 구분('전체' 바로 가기와 같은 결). 펼쳐 둔 칸은 그 색으로 옅게.
+    private func historyStrip(_ items: [(String, String, Color, Bool, () -> Void)]) -> some View {
+        let line = palette.onSurface.opacity(0.10)
+        return OneUiCard(cornerRadius: 24, padding: EdgeInsets()) {
+            HStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.offset) { i, item in
+                    if i > 0 { line.frame(width: 0.7).padding(.vertical, 14) }
+                    Button(action: item.4) {
+                        VStack(spacing: 6) {
+                            SolidCircleIcon(symbol: item.1, color: item.2, size: 28)
+                            Text(item.0).font(.caption.weight(.semibold)).foregroundStyle(palette.onSurface).lineLimit(1).minimumScaleFactor(0.8)
+                        }
+                        .padding(.vertical, 12).padding(.horizontal, 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(item.3 ? item.2.opacity(0.16) : .clear)
+                    }
+                    .buttonStyle(RowPressStyle())
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var midnightCard: some View {
+        OneUiCard(cornerRadius: 24) {
+            Text("심야면학 내역").font(.subheadline.weight(.bold)).padding(.bottom, 8)
+            if midnightLoading { HStack(spacing: 8) { ProgressView(); Text("불러오는 중").font(.footnote).foregroundStyle(.secondary) } }
+            if let midnightError { Text(midnightError).font(.footnote).foregroundStyle(.red) }
+            ForEach(midnightLines ?? [], id: \.self) { Text($0).font(.subheadline).padding(.vertical, 2) }
+        }
+    }
+
+    /// 심야면학 내역 펼치기·접기 — 로그인 전이면 신청 화면(로그인)으로.
+    private func toggleMidnight() {
+        if midnightOpen { midnightOpen = false; return }
+        guard MidnightSession.isLoggedIn else { go(.midnight); return }
+        midnightOpen = true
+        midnightLoading = true
+        midnightError = nil
         Task {
-            do { classroomRows = try await ClassroomHistoryAPI.fetch() }
-            catch let e as PortalError where e == .missingCredentials { classroomError = academicNeedsLogin }
-            catch { classroomError = applyErrorText(error) }
-            classroomLoading = false
-        }
-    }
-}
-
-/// 순서 바꾸기 — 끌어서 옮기고 바로 저장. '기본 순서로'.
-private struct OrderSheet: View {
-    @Binding var order: [String]
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(order, id: \.self) { Text(ApplyOrderStore.label($0)) }
-                        .onMove { order.move(fromOffsets: $0, toOffset: $1); ApplyOrderStore.set(order) }
+            do {
+                let first = try await MidnightAPI.dashboard(session: 1, floor: nil, model: model)
+                let second = first.session2Available ? try? await MidnightAPI.dashboard(session: 2, floor: first.floor, model: model) : nil
+                func line(_ label: String, _ d: MidnightDashboard?) -> String {
+                    guard let d else { return "\(label) · 운영 안 함" }
+                    return d.hasReservation ? "\(label) · \(d.reservationFloor ?? d.floor ?? 0)층 \(d.reservationSeat ?? 0)번" : "\(label) · 신청 없음"
                 }
-                Section {
-                    Button("기본 순서로") { order = ApplyOrderStore.defaultOrder; ApplyOrderStore.set(order) }
-                        .disabled(order == ApplyOrderStore.defaultOrder)
-                }
-            }
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("블록 순서")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { ConfirmButton("완료") { dismiss() } } }
+                midnightLines = [line("1타임", first), line("2타임", second), "불참 \(first.absenceCount)회 · " + (first.bannedUntil.map { "\($0)까지 신청 제한" } ?? "신청 제한 없음")]
+            } catch { midnightError = error.localizedDescription }
+            midnightLoading = false
         }
-        .presentationDetents([.medium])
     }
 }
 

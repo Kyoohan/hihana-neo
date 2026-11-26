@@ -139,6 +139,8 @@ struct TimeAxisView: View {
                             }
                             // 위 막대 아래로 지나가는 날짜 머리·칸이 단추와 겹쳐 보이지 않게 흐림을 깝니다.
                             .topEdgeBlur()
+                            // 홈과 같은 전체 갱신 — 목록 맨 위에서 당기면(상태 막대를 누르면 맨 위로).
+                            .refreshable { await model.refreshAll() }
                             .onAppear { proxy.scrollTo("axis-focus", anchor: .top) }
                             .onChange(of: jumpTick) { _, _ in proxy.scrollTo("axis-focus", anchor: .top) }
                         }
@@ -157,6 +159,7 @@ struct TimeAxisView: View {
                         }
                         .readableWidth(860)
                     }
+                    .refreshable { await model.refreshAll() }
                 case .month:
                     MonthWeeks(today: today, agenda: agenda) { monday in
                         focusDay = monday > today ? monday : today
@@ -177,17 +180,21 @@ struct TimeAxisView: View {
         .axisSubtitle("\(today.weekdayShort)요일")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { todayButton }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Menu {
-                    Picker("보기", selection: $scale) {
-                        ForEach(AxisScale.allCases, id: \.self) { Label($0.label, systemImage: $0.symbol).tag($0) }
+            // 칸 폭을 줄인 묶음(BarButton) — 홈과 같게.
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 0) {
+                    Menu {
+                        Picker("보기", selection: $scale) {
+                            ForEach(AxisScale.allCases, id: \.self) { Label($0.label, systemImage: $0.symbol).tag($0) }
+                        }
+                    } label: {
+                        BarGlyph(symbol: scale.symbol)
                     }
-                } label: {
-                    Label("보기", systemImage: scale.symbol)
+                    .accessibilityLabel("보기")
+                    BarButton(title: "검색", symbol: "magnifyingglass") { model.nav.open(.portalSearch) }
+                    // 캘린더 앱처럼 + — 보고 있던 날로 새 일정을 엽니다.
+                    BarButton(title: "일정 추가", symbol: "plus") { model.nav.present(UserEventEditor(day: focusDay)) }
                 }
-                Button { model.nav.open(.portalSearch) } label: { Label("검색", systemImage: "magnifyingglass") }
-                // 캘린더 앱처럼 + — 보고 있던 날로 새 일정을 엽니다.
-                Button { model.nav.present(UserEventEditor(day: focusDay)) } label: { Label("일정 추가", systemImage: "plus") }
             }
         }
         .simultaneousGesture(MagnifyGesture()
@@ -199,6 +206,8 @@ struct TimeAxisView: View {
             .onEnded { _ in pinchDone = false })
         .onChange(of: scale) { _, s in if s == .hour { jumpTo(focusDay, now: focusDay == model.today) } }
         .onAppear { jumpTo(model.today, now: true) }
+        // 타임라인으로 올 때마다 낡은 게시판 글·일정·클래스룸을 조용히 — 당기지 않아도 새것이 보이게.
+        .task { await model.refreshStale() }
     }
 
     private var todayButton: some View {
@@ -259,6 +268,7 @@ struct TimeAxisView: View {
                 }
                 .scrollPosition($verticalPosition)
                 .topEdgeBlur()
+                .refreshable { await model.refreshAll() }
                 // 처음엔 고른 날(보통 오늘)을 맨 왼쪽에, 위아래는 지금 시각 근처로 — scrollPosition 만으로는 처음 자리가 안 잡힙니다.
                 .onAppear { DispatchQueue.main.async { jumpColumns(proxy, to: first) } }
                 .onChange(of: jumpTick) { _, _ in jumpColumns(proxy, to: focusDay) }

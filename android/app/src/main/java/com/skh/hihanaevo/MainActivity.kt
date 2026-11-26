@@ -1188,6 +1188,14 @@ private fun HiHanaEvoAppContent(
         }
     }
 
+    /** 낡은 것만 조용히 다시 받기 — 앱 복귀·타임라인 열기·켜 둔 동안 10분마다. 전체 새로고침 중이면 건너뜁니다. */
+    suspend fun refreshStale() {
+        if (isRefreshingAll || !HanaCredentialStore.hasCredentials(context)) return
+        runCatching { loadHomeBoard(false) }
+        runCatching { loadSchedule(false) }
+        runCatching { loadClassroom(false) }
+    }
+
     suspend fun syncFromHana() {
         if (!HanaCredentialStore.hasCredentials(context)) {
             showingAccountSheet = true
@@ -1319,12 +1327,21 @@ private fun HiHanaEvoAppContent(
                     runCatching { loadMealDay(today.plusDays(1), force = false) }
                 }
                 runCatching { loadClassroom(false) }
+                // 홈·타임라인의 게시판 글과 학사일정도 — 캐시 수명(게시판 10분·학사일정 하루)이 지났을 때만 서버에 묻습니다.
+                refreshStale()
                 checkRemoteNotice()
             }
         }
         resumeLifecycle.lifecycle.addObserver(observer)
         onDispose { resumeLifecycle.lifecycle.removeObserver(observer) }
     }
+    // 켜 둔 채로 있어도 10분마다(게시판 캐시 수명과 같게) 낡은 게시판 글·학사일정을 조용히 다시 받습니다 — 타임라인·홈이 당기지 않아도 새것으로.
+    // 처음 그릴 때는 건너뜁니다 — 시작할 때 홈이 이미 받고 있어 같은 요청이 겹치면(재로그인 경합) 안 되니까.
+    val staleSlot = now.hour * 6 + now.minute / 10
+    val firstStaleSlot = remember { staleSlot }
+    LaunchedEffect(staleSlot) { if (staleSlot != firstStaleSlot) refreshStale() }
+    // 타임라인으로 넘어올 때마다 한 번 — 캐시가 살아 있으면 네트워크 없이 끝납니다.
+    LaunchedEffect(axisTimeline) { if (axisTimeline) refreshStale() }
     // 앱이 떠 있는 동안에도 3분마다 클래스룸 사본을 확인합니다(2분 TTL 이라 대부분 한 번 받고 끝).
     LaunchedEffect(now.minute / 3, classroomConnected) {
         if (classroomConnected) runCatching { loadClassroom(false) }
@@ -1454,13 +1471,15 @@ private fun HiHanaEvoAppContent(
     // 아래로 당겨 새로고침 상태 — 인디케이터는 따로 그리지 않고, 오른쪽 위 새로고침 아이콘이 당긴 만큼
     // 가운데로 내려와 도는 애니메이션으로 대신합니다 (아이콘이 둘로 보이지 않게).
     val pullState = rememberPullToRefreshState()
+    // 타임라인은 홈 위를 덮는 따로 된 화면이라 당김도 따로 받습니다 — 아이콘은 둘 중 당긴 쪽을 따라갑니다.
+    val axisPullState = rememberPullToRefreshState()
     var rootSize by remember { mutableStateOf(IntSize.Zero) }
     var refreshIconOrigin by remember { mutableStateOf(Offset.Zero) }
     // 오른쪽 버튼 섬의 실제 폭 — 접힌 제목 섬이 여기까지만 늘어나게 헤더에 넘깁니다 (탭마다 버튼 수가 달라 폭이 다릅니다).
     // 섬의 왼쪽 끝(루트 기준) — 접힌 제목 섬이 거기까지만 늘어나게 헤더에 넘깁니다 (탭마다 버튼 수가 달라 폭이 다릅니다).
     var pillLeftPx by remember { mutableFloatStateOf(Float.NaN) }
     val refreshTravel by animateFloatAsState(
-        targetValue = if (isRefreshingAll) 1f else pullState.distanceFraction.coerceIn(0f, 1f),
+        targetValue = if (isRefreshingAll) 1f else maxOf(pullState.distanceFraction, axisPullState.distanceFraction).coerceIn(0f, 1f),
         animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
         label = "refreshTravel",
     )
@@ -1483,11 +1502,7 @@ private fun HiHanaEvoAppContent(
             Icon(Icons.Filled.Add, contentDescription = "일정 추가")
         }
         when (target) {
-            // 홈은 폰·태블릿 모두 칸 자리가 정해진 벤토라 순서 편집을 두지 않습니다.
-            TabIndex.APPLY -> TabButton("순서 편집", { editingApplyOrder = !editingApplyOrder }) {
-                if (editingApplyOrder) Icon(AppIcons.Check, contentDescription = "순서 편집 끝내기")
-                else Icon(AppIcons.Edit, contentDescription = "블록 순서 편집")
-            }
+            // 신청·내역은 '오늘 면학 · 신청 · 내역' 자리가 정해진 화면이라 순서 편집을 두지 않습니다(홈도 마찬가지).
             TabIndex.MEAL -> TabButton("일간·주간", { toggleMealWeek() }) {
                 Icon(
                     AppIcons.Calendar,
@@ -2366,14 +2381,16 @@ private fun HiHanaEvoAppContent(
     }
     // 새로고침 아이콘 — 당긴 만큼 새로고침 버튼 자리(큰 화면) 또는 화면 맨 위(폰)에서 화면 정중앙으로 내려오고,
     // 새로고침 중에는 거기서 돌다가 끝나면 다시 올라갑니다.
-    RefreshTravelIcon(
+    val refreshIcon: @Composable () -> Unit = { RefreshTravelIcon(
         travel = { refreshTravel },
         // 폰엔 새로고침 버튼이 없어 화면 맨 위 가운데(상태 바 바로 아래)에서 내려옵니다.
         origin = if (large) refreshIconOrigin
         else Offset(rootSize.width / 2f, WindowInsets.statusBars.getTop(LocalDensity.current).toFloat()),
         isRefreshing = isRefreshingAll,
         headerExtra = headerExtra,
-    )
+    ) }
+    // 세 칸 바 모드에선 타임라인 위에서도 보이게 타임라인 다음에 그립니다.
+    if (!axisMode) refreshIcon()
     if (axisMode) {
         // 세 칸 바 [홈 · 타임라인 · ⊞] — 홈은 위의 예전 홈 그대로. 타임라인은 그 위를 덮는 시간 하나 화면, ⊞ 는 갈 곳 여덟,
         // 고른 화면은 아래에서 올라오는 시트입니다. 바·⊞·시트는 홈의 머리·섬보다 위 층.
@@ -2396,6 +2413,14 @@ private fun HiHanaEvoAppContent(
                     }
                     .hazeSourceUnlessPerf(hazeState, zIndex = 1f),
             ) {
+                // 아래로 당겨 새로고침 — 홈과 같은 전체 갱신. 목록 맨 위에서, 또는 위 머리(날짜·배율 줄)를 잡고 당기면.
+                PullToRefreshBox(
+                    isRefreshing = isRefreshingAll,
+                    onRefresh = { scope.launch { refreshAll() } },
+                    state = axisPullState,
+                    modifier = Modifier.fillMaxSize(),
+                    indicator = {},
+                ) {
                 TimeAxisScreen(
                     resetTick = timelineReset,
                     onAddEvent = { day -> editingUserEvent = null to day },
@@ -2417,8 +2442,10 @@ private fun HiHanaEvoAppContent(
                         tab = TabIndex.SCHEDULE
                     },
                 )
+                }
             }
         }
+        refreshIcon()
         AppNavBar(
             // ⊞ 는 '모든 기능'을 여는 단추라 캡슐이 가지 않습니다 — 열고 닫는 내내 보던 칸(홈·타임라인)에 머뭅니다.
             selected = if (axisTimeline) 1 else 0,
@@ -3281,10 +3308,16 @@ private fun SettingsScreen(
             OneUiGroupColumn {
                 OneUiListItem(
                     title = "Now Bar에 지금 일정 표시",
-                    subtitle = "평일은 아침시간부터 2타임까지, 주말은 1타임부터 4타임까지 남은 시간을 실시간으로",
+                    subtitle = "평일은 8시부터 2타임(심면을 신청했으면 심면)까지, 주말은 12시부터 4타임까지 지금 일정과 남은 시간을 실시간으로",
                     trailing = { OneUiSwitch(checked = liveOn, onCheckedChange = { setLive(it) }) },
                     onClick = { setLive(!liveOn) },
                 )
+                // 막대 모양 — Android 16 의 진행 알림에서만 다릅니다(그 아래 버전은 시스템 기본 진행 막대 하나).
+                if (liveOn && Build.VERSION.SDK_INT >= 36) {
+                    var barStyle by remember { mutableStateOf(LiveActivity.barStyle(context)) }
+                    OneUiDivider()
+                    LiveBarStylePicker(selected = barStyle, onSelect = { barStyle = it; LiveActivity.setBarStyle(context, it) })
+                }
                 val reason = liveBlocked
                 if (liveOn && reason != null) {
                     OneUiDivider()

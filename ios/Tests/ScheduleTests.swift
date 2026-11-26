@@ -201,4 +201,150 @@ final class MealTests: XCTestCase {
         XCTAssertEqual(titles, ["홍콩중문대 정규 전형 마감"])
         XCTAssertEqual(today.adding(days: BoardAgendaStore.horizonDays), LocalDate(year: 2027, month: 2, day: 22))
     }
+
+}
+
+/// 실시간 현황용 구간 — 블록타임 묶기와 깨우기 시각.
+final class LiveSegmentsTests: XCTestCase {
+    let friday = LocalDate(year: 2026, month: 10, day: 23)
+
+    func week(_ lessons: [Int: Lesson]) -> TimetableWeek {
+        TimetableWeek(lessons: Dictionary(uniqueKeysWithValues: (1...5).map { ($0, lessons) }))
+    }
+
+    /// 블록타임: 같은 과목·같은 교실이 쉬는 시간만 두고 두 교시 이어지면 실시간 현황에서는 한 구간(쉬는 시간 포함).
+    /// 3학점 과목(한 교시 수업 + 한 교시 공강)과 점심을 사이에 둔 4·5교시는 묶지 않습니다.
+    func testLiveSegmentsMergeBlockTime() {
+        let math = Lesson(subject: "미적분Ⅱ", room: "B301"), eng = Lesson(subject: "영어", room: "A202")
+        let ctx = Schedule.Context(week: week([1: math, 2: math, 3: eng, 4: .free, 5: eng, 6: eng, 7: eng]))
+        let segs = LiveSegments.build(Schedule.blocks(for: friday, context: ctx)).filter { !$0.isBlank }
+        let merged = segs.first { $0.status == "1–2교시 수업 중" }
+        XCTAssertEqual(merged?.start, friday.at(minutes: 8 * 60 + 20))
+        XCTAssertEqual(merged?.end, friday.at(minutes: 10 * 60 + 10))
+        XCTAssertEqual(merged?.title, "1–2교시 수업 중 미적분Ⅱ")
+        XCTAssertEqual(merged?.room, "B301")
+        // 3교시 영어 + 4교시 공강은 따로.
+        XCTAssertNotNil(segs.first { $0.status == "3교시 수업 중" })
+        XCTAssertNotNil(segs.first { $0.status == "4교시 · 공강" })
+        // 5·6·7교시가 같은 수업이면 한 구간으로 이어 묶습니다.
+        let long = segs.first { $0.status == "5–7교시 수업 중" }
+        XCTAssertEqual(long?.end, friday.at(minutes: 16 * 60))
+        // 구간끼리 빈틈·겹침 없음.
+        for (a, b) in zip(segs, segs.dropFirst()) { XCTAssertEqual(a.end, b.start, "\(a.status) → \(b.status)") }
+        // 지금(9:15, 원래는 쉬는 시간)도 묶인 구간.
+        XCTAssertEqual(LiveSegments.segment(at: friday.at(minutes: 9 * 60 + 15), in: segs)?.status, "1–2교시 수업 중")
+    }
+
+    /// 하루를 한 번에 올릴 때 — 쉬는 시간은 빠지고, 블록타임은 한 구간, 식사는 남습니다.
+    func testLiveDayParts() {
+        let math = Lesson(subject: "미적분Ⅱ", room: "B301"), eng = Lesson(subject: "영어Ⅱ", room: "A201"), phys = Lesson(subject: "물리학Ⅱ", room: "과학동 2")
+        let ctx = Schedule.Context(week: week([1: math, 2: math, 3: eng, 4: eng, 5: phys]))
+        let segs = LiveSegments.build(Schedule.blocks(for: friday, context: ctx))
+        let parts = LiveSegments.dayParts(segs)
+        XCTAssertFalse(parts.contains { $0.status == "쉬는 시간" })
+        XCTAssertFalse(parts.contains { $0.isBlank })
+        XCTAssertNotNil(parts.first { $0.status == "1–2교시 수업 중" })
+        XCTAssertNotNil(parts.first { $0.status == "3–4교시 수업 중" })
+        XCTAssertNotNil(parts.first { $0.status == "점심시간" })
+        // 시간순이고 겹치지 않습니다(빈틈은 있어도 됨).
+        for (a, b) in zip(parts, parts.dropFirst()) { XCTAssertLessThanOrEqual(a.end, b.start, "\(a.status) → \(b.status)") }
+        // 8시에 열면 8시간 안에 걸치는 구간만, 이미 끝난 구간은 빠집니다.
+        let from = friday.at(minutes: 10 * 60 + 30)
+        let window = LiveSegments.dayParts(segs, from: from)
+        XCTAssertEqual(window.first?.status, "3–4교시 수업 중")
+        XCTAssertTrue(window.allSatisfy { $0.end > from && $0.start < from.addingTimeInterval(8 * 3600) })
+        XCTAssertLessThanOrEqual(window.count, 8)
+    }
+
+    /// 현황에 한 번에 올리는 구간 — 지금 구간부터 빈틈 없이 이어지고(쉬는 시간 포함), 개수·시간 한도에서 끊깁니다.
+    func testLiveFrames() {
+        let math = Lesson(subject: "미적분Ⅱ", room: "B301"), eng = Lesson(subject: "영어Ⅱ", room: "A201"), phys = Lesson(subject: "물리학Ⅱ", room: "과학동 2")
+        let ctx = Schedule.Context(week: week([1: math, 2: math, 3: eng, 4: eng, 5: phys]))
+        let segs = LiveSegments.build(Schedule.blocks(for: friday, context: ctx))
+        let from = friday.at(minutes: 8 * 60 + 30)          // 1–2교시 중
+        let all = LiveSegments.frames(segs, from: from, until: from.addingTimeInterval(8 * 3600), limit: 12)
+        XCTAssertEqual(all.parts.first?.status, "1–2교시 수업 중")
+        XCTAssertEqual(all.parts.first?.head, "미적분Ⅱ")
+        XCTAssertEqual(all.parts.first?.label, "1–2교시 미적분Ⅱ")
+        // 쉬는 시간도 구간으로 들어 있지만(화면이 '다음 · …'을 보여 주려면 필요), 하루 목록에는 오르지 않습니다.
+        let rest = all.parts.first { $0.status == "쉬는 시간" }
+        XCTAssertNotNil(rest)
+        XCTAssertEqual(rest?.head, "")
+        XCTAssertFalse(rest.map(LiveSegments.isListed) ?? true)
+        XCTAssertTrue(all.parts.first { $0.status == "점심시간" }.map(LiveSegments.isListed) ?? false)
+        // 빈틈 없이 이어집니다.
+        for (a, b) in zip(all.parts, all.parts.dropFirst()) { XCTAssertEqual(a.end, b.start, "\(a.status) → \(b.status)") }
+        XCTAssertFalse(all.parts.contains { $0.isBlank })
+        XCTAssertLessThanOrEqual(all.parts.count, 12)
+        // 개수 한도에서 끊기면 more.
+        let few = LiveSegments.frames(segs, from: from, until: from.addingTimeInterval(8 * 3600), limit: 3)
+        XCTAssertEqual(few.parts.count, 3)
+        XCTAssertTrue(few.more)
+        // 시간 한도 — 그 전에 시작하는 구간까지만.
+        let short = LiveSegments.frames(segs, from: from, until: friday.at(minutes: 10 * 60 + 15), limit: 12)
+        XCTAssertEqual(short.parts.last?.status, "쉬는 시간")
+        // 일과 밖(빈 시간)에서는 올릴 것이 없습니다.
+        XCTAssertTrue(LiveSegments.frames(segs, from: friday.at(minutes: 3 * 60), until: friday.at(minutes: 11 * 60), limit: 12).parts.isEmpty)
+    }
+
+    /// 아침에 연 현황 — 글자 구간은 12시간·16개 안, 막대는 2타임 끝(23:10)까지, 현황 데이터는 4KB 안.
+    func testLiveDayStateReachesNightStudy() {
+        // 블록타임 없는 7교시 날(구간이 가장 많은 경우).
+        let subjects = ["국어", "수학Ⅰ", "영어Ⅰ", "물리학Ⅰ", "화학Ⅰ", "한국사", "체육"].enumerated().map { Lesson(subject: $1, room: "B30\($0)") }
+        let ctx = Schedule.Context(week: week(Dictionary(uniqueKeysWithValues: subjects.enumerated().map { ($0 + 1, $1) })))
+        let segs = LiveSegments.build(Schedule.blocks(for: friday, context: ctx))
+        let now = friday.at(minutes: 8 * 60 + 30)
+        guard let d = LiveActivityController.dayState(segs, now: now, startedAt: now, argb: { _ in 0xFF5B9BFF }) else { return XCTFail() }
+        XCTAssertLessThanOrEqual(d.framed, LiveActivityController.frameLimit)
+        let ahead = d.day.dropFirst(d.lead)
+        XCTAssertTrue(ahead.prefix(d.framed).allSatisfy { $0.start < now.addingTimeInterval(12 * 3600) })
+        XCTAssertEqual(d.day.last?.end, friday.at(minutes: 23 * 60 + 10), "막대는 2타임 끝까지")
+        XCTAssertTrue(d.more)
+        // 막대 전용 구간은 이름이 비어 있고(첫 일정 하나만 예외), 현황 데이터가 4KB 안.
+        XCTAssertLessThanOrEqual(ahead.dropFirst(d.framed).filter { !$0.label.isEmpty }.count, 1)
+        var state = NowActivityAttributes.ContentState(status: "1교시 수업 중", title: "1교시 수업 중 국어", room: "B300", start: now, end: now,
+                                                       accentARGB: 0, symbol: "book", next: "09:20 · 수학Ⅰ · B301", then: nil,
+                                                       day: d.day, more: d.more, framed: d.framed)
+        state.lead = d.lead
+        let bytes = (try? JSONEncoder().encode(state))?.count ?? .max
+        XCTAssertLessThanOrEqual(bytes, 3600, "현황 데이터 \(bytes)바이트")
+    }
+
+    /// 낮에 연 현황 — 막대는 그날 시작(8:00)부터, 지난 구간은 이름 없이 앞에(lead), 글자 구간은 지금 구간부터. 구간이 가장 많은 날에도 4KB 안.
+    func testLiveDayBarStartsAtDayStartWhenOpenedLater() {
+        let subjects = ["국어", "수학Ⅰ", "영어Ⅰ", "물리학Ⅰ", "화학Ⅰ", "한국사", "체육"].enumerated().map { Lesson(subject: $1, room: "B30\($0)") }
+        let ctx = Schedule.Context(week: week(Dictionary(uniqueKeysWithValues: subjects.enumerated().map { ($0 + 1, $1) })))
+        let segs = LiveSegments.build(LiveSegments.trimMorning(Schedule.blocks(for: friday, context: ctx)))
+        let now = friday.at(minutes: 13 * 60 + 30)
+        guard let d = LiveActivityController.dayState(segs, now: now, startedAt: now, argb: { _ in 0xFF5B9BFF }) else { return XCTFail() }
+        XCTAssertGreaterThan(d.lead, 0)
+        XCTAssertEqual(d.day.first?.start, friday.at(minutes: 8 * 60), "막대는 8시부터")
+        let past: [NowActivityAttributes.DayPart] = Array(d.day.prefix(d.lead))
+        XCTAssertTrue(past.allSatisfy { (p: NowActivityAttributes.DayPart) -> Bool in p.end.timeIntervalSince(now) <= 0 && p.label.isEmpty && p.status.isEmpty })
+        let current: NowActivityAttributes.DayPart = d.day[d.lead]
+        XCTAssertTrue(current.start.timeIntervalSince(now) <= 0 && now.timeIntervalSince(current.end) < 0, "글자 구간은 지금 구간부터")
+        var state = NowActivityAttributes.ContentState(status: "5교시 수업 중", title: "5교시 수업 중 화학Ⅰ", room: "B304", start: now, end: now,
+                                                       accentARGB: 0, symbol: "book", next: "14:10 · 한국사 · B305", then: nil,
+                                                       day: d.day, more: d.more, framed: d.framed)
+        state.lead = d.lead
+        let bytes = (try? JSONEncoder().encode(state))?.count ?? .max
+        print("LIVE_LEAD lead=\(d.lead) parts=\(d.day.count) bytes=\(bytes)")
+        XCTAssertLessThanOrEqual(bytes, 3600, "현황 데이터 \(bytes)바이트")
+    }
+
+    /// 실시간 현황의 하루 — 평일은 아침시간이 빠지고 등교 및 조회(8:00)부터, 주말은 12:00~13:30 점심시간부터.
+    func testLiveDayStartsAtEight() {
+        let ctx = Schedule.Context(week: week([1: Lesson(subject: "미적분Ⅱ", room: "B301")]))
+        let weekday = LiveSegments.build(LiveSegments.trimMorning(Schedule.blocks(for: friday, context: ctx))).filter { !$0.isBlank }
+        XCTAssertEqual(weekday.first?.status, "등교 및 조회")
+        XCTAssertEqual(weekday.first?.start, friday.at(minutes: 8 * 60))
+        XCTAssertFalse(weekday.contains { $0.status == "아침시간" })
+        XCTAssertEqual(weekday.dropFirst().first?.status, "쉬는 시간")
+        XCTAssertEqual(weekday.dropFirst().first?.end, friday.at(minutes: 8 * 60 + 20))
+        let saturday = friday.adding(days: 1)
+        let weekend = LiveSegments.build(LiveSegments.trimMorning(Schedule.blocks(for: saturday, context: ctx))).filter { !$0.isBlank }
+        XCTAssertEqual(weekend.first?.start, saturday.at(minutes: 12 * 60), "주말은 12시부터")
+        XCTAssertEqual(weekend.first?.status, "점심시간")
+        XCTAssertEqual(weekend.first?.end, saturday.at(minutes: 13 * 60 + 30))
+    }
 }

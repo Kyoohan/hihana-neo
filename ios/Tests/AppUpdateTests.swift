@@ -47,4 +47,20 @@ final class RemoteNoticeTests: XCTestCase {
         XCTAssertNotNil(RemoteNoticeStore.parse(notice(), today: today, version: "15.0"))
         XCTAssertNil(RemoteNoticeStore.parse(notice(["to": "dev"]), today: today, version: "15.0"), "안드로이드 빌드 대상 공지는 아이폰에 띄우지 않습니다")
     }
+
+    /// 번호는 하나를 같이 쓰고 한쪽만 바뀐 버전은 건너뜀 — 안드로이드만 낸 15.3 뒤에 있는 아이폰 15.2 를 찾습니다.
+    func testBestSkipsOtherPlatformReleases() {
+        func rel(_ tag: String, _ asset: String, draft: Bool = false) -> [String: Any] {
+            ["tag_name": tag, "draft": draft, "body": "",
+             "assets": [["name": asset, "browser_download_url": "https://example.com/\(asset)"]]]
+        }
+        let list = [rel("v15.4", "a.ipa", draft: true), rel("v15.3", "a.apk"), rel("v15.2", "a.ipa"), rel("v15.1", "a.ipa")]
+        XCTAssertEqual(AppUpdater.best(list, installed: "15.1")?.version, "15.2")
+        XCTAssertNil(AppUpdater.best(list, installed: "15.2"))
+    }
+
+    func testNotesForThisPlatform() {
+        let body = "아이패드 화면을 다듬었습니다.\n- [iOS] 잠금 화면 현황 배경\n- [안드로이드] 위젯 글자 크기\n- 공통 수정"
+        XCTAssertEqual(AppUpdater.notesForThisPlatform(body), "아이패드 화면을 다듬었습니다.\n- 잠금 화면 현황 배경\n- 공통 수정")
+    }
 }

@@ -278,7 +278,7 @@ enum Schedule {
         }
     }
 
-    private static func sameLesson(_ a: Block?, _ b: Block) -> Bool {
+    static func sameLesson(_ a: Block?, _ b: Block) -> Bool {
         guard case .lesson(_, let x)? = a?.kind, case .lesson(_, let y) = b.kind else { return false }
         return !x.isFree && x.subject == y.subject && x.room == y.room
     }

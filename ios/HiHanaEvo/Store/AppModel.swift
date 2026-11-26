@@ -119,7 +119,8 @@ final class AppModel {
             homeBoardPosts = Sample.board(today)
             boardPosts = homeBoardPosts
             alims = Sample.alims
-            outings = Sample.outings(today)
+            // `-noOuting`: 외출 없는 날의 화면을 보려고(외출은 드물어서 신청·내역 등에서 외출 카드가 빠진 모습을 확인).
+            outings = CommandLine.arguments.contains("-noOuting") ? [] : Sample.outings(today)
             alimUnread = alims.filter { !$0.read }.count
             ClassroomStore.shared.installSample()
         } else {
@@ -225,6 +226,7 @@ final class AppModel {
                     if !self.isDemo { Task { await self.loadMealDay(day, force: false); await self.loadMealDay(day.adding(days: 1), force: false) } }
                 }
                 self.publishSurfaces()
+                if Date().timeIntervalSince(self.lastStaleCheck) >= 10 * 60 { Task { await self.refreshStale() } }
             }
         }
     }
@@ -239,6 +241,21 @@ final class AppModel {
         await syncFromHana()
         // 앱을 다시 펼치면 클래스룸도 바로 — 스크립트가 5분마다 올리니 2분 넘은 사본이면 새로 받습니다(안드로이드 14.3).
         await loadClassroom(force: bridge.pending)
+        // 홈·타임라인의 게시판 글과 학사일정도 — 캐시 수명(게시판 10분·학사일정 하루)이 지났을 때만 서버에 묻습니다.
+        await loadHomeBoard(force: false)
+        await loadSchedule(force: false)
+    }
+
+    /// 마지막 자동 확인 — 켜 둔 채 10분마다 한 번(게시판 캐시 수명과 같게).
+    @ObservationIgnored private var lastStaleCheck = Date()
+
+    /// 낡은 것만 조용히 다시 받기 — 타임라인을 열 때, 켜 둔 동안 10분마다. 캐시가 살아 있으면 네트워크를 타지 않습니다.
+    func refreshStale() async {
+        guard !isDemo, hasCredentials, !isRefreshingAll else { return }
+        lastStaleCheck = Date()
+        await loadHomeBoard(force: false)
+        await loadSchedule(force: false)
+        await loadClassroom(force: false)
     }
 
     func reloadPlaces() {

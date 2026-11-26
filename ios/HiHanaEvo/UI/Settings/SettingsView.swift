@@ -242,9 +242,11 @@ struct SettingsPageView: View {
                 .materialRow()
         } header: { Text("실시간 일정") } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(isPad
-                     ? "잠금 화면에 평일은 아침시간부터 2타임까지, 주말은 1타임부터 4타임까지 남은 시간을 실시간으로 보여 줍니다."
-                     : "잠금 화면과 Dynamic Island에 평일은 아침시간부터 2타임까지, 주말은 1타임부터 4타임까지 남은 시간을 실시간으로 보여 줍니다.")
+                Text((isPad ? "잠금 화면에" : "잠금 화면과 Dynamic Island에")
+                     + " 평일은 8시(등교 및 조회)부터 2타임까지, 주말은 12시(점심시간)부터 4타임까지 하루 일과와 남은 시간을 보여 줍니다. 심야면학을 신청했으면 심면까지.")
+                if #available(iOS 26.0, *) {
+                    Text("하루가 시작되는 시각에 앱을 열지 않아도 저절로 뜹니다. 사흘 치까지 미리 맡겨 두므로, 사흘 넘게 앱을 열지 않으면 한 번 열어 주세요.")
+                }
                 if !ActivityAuthorizationInfo().areActivitiesEnabled {
                     Text("지금 이 기기에선 실시간 활동이 꺼져 있습니다 — 설정 → HiHana Evo → 실시간 현황을 켜 주세요. 기기가 지원하지 않으면 켜도 보이지 않습니다.")
                         .foregroundStyle(.orange)

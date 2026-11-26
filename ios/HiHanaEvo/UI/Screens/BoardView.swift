@@ -280,6 +280,7 @@ struct BoardPostView: View {
     @State private var comments: [HanaComment]?
     @State private var zoom: URL?
     @State private var run = 0
+    @State private var attempt = 0
 
     var body: some View {
         Group {
@@ -287,8 +288,13 @@ struct BoardPostView: View {
                 SheetScroll {
                     OneUiCard {
                         Text("게시글을 불러오지 못했습니다").font(.ui(.titleMedium, .bold))
-                        Text("포털 페이지로 열어 볼 수 있습니다.").font(.ui(.bodySmall)).foregroundStyle(palette.onSurfaceVariant).padding(.top, 4)
-                        OneUiButton("웹으로 보기") { model.nav.open(.web(url: url, title: "게시글", resync: false)) }.padding(.top, 14)
+                        // 다음에 또 떴을 때 원인을 알 수 있게 — 짧은 이유를 함께(안드로이드와 같게).
+                        Text("\(error ?? ""). 다시 시도하거나 포털 페이지로 열어 볼 수 있습니다.").font(.ui(.bodySmall)).foregroundStyle(palette.onSurfaceVariant).padding(.top, 4)
+                        HStack(spacing: 8) {
+                            OneUiButton("다시 시도") { error = nil; attempt += 1 }
+                            OneUiButton("웹으로 보기", style: .neutral) { model.nav.open(.web(url: url, title: "게시글", resync: false)) }
+                        }
+                        .padding(.top, 14)
                     }
                 }
             } else if let d = detail {
@@ -311,8 +317,11 @@ struct BoardPostView: View {
             }
         }
         .fullScreenCover(item: Binding(get: { zoom.map(IdentifiedURL.init) }, set: { zoom = $0?.url })) { PhotoViewer(urls: [$0.url]) }
-        .task(id: url) {
-            do { detail = try await PostAPI.detail(url) } catch { self.error = error.localizedDescription }
+        .task(id: "\(url)#\(attempt)") {
+            do { detail = try await PostAPI.detail(url) } catch is CancellationError { return } catch {
+                self.error = (error as? URLError).map { $0.code == .timedOut ? "학교 서버가 응답하지 않습니다" : "인터넷에 연결되어 있지 않습니다" }
+                    ?? error.localizedDescription.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+            }
             guard let d = detail else { return }
             comments = (try? await PostAPI.comments(url)) ?? []
         }

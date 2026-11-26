@@ -131,14 +131,16 @@ enum class TourKind {
     WELCOME,
     /** 14.0(Evo) 투어를 아직 안 본 사람 — 13.x 이하에서 바로 올라온 경우. */
     UPDATE,
-    /** 14.0 투어는 봤고 이번 버전(14.3)에서 새로 생긴 것만 — 오프닝 없이 몇 장. */
+    /** 14.0 투어는 봤고 그 뒤 버전에서 새로 생긴 것만 — 오프닝 없이 몇 장. 14.3 투어를 못 봤으면 14.3 장부터, 그다음 15 장. */
     WHATS_NEW,
 }
 
 /** 이 버전의 투어 — 앱을 열 때 이 값보다 작게 기록돼 있으면 한 번 보여 줍니다 (새로 설치는 새로 설치 투어, 업데이트는 업데이트 투어). */
-const val TOUR_VERSION = 143
+const val TOUR_VERSION = 152
 /** Evo 개편 투어(14.0) — 이보다 작게 기록된 사람은 개편 투어부터. */
 private const val EVO_TOUR_VERSION = 140
+/** 14.3 새 기능 투어 — 이보다 작게 기록된 사람(14.0~14.2 에서 바로 올라옴)은 15 장 앞에 14.3 장도. */
+private const val NEW143_TOUR_VERSION = 143
 private const val TOUR_PREFS = "prompts"
 private const val KEY_TOUR_VERSION = "tourVersion"
 
@@ -154,6 +156,10 @@ fun pendingTour(context: android.content.Context): TourKind? {
         else -> TourKind.WHATS_NEW
     }
 }
+
+/** 마지막으로 본 투어 버전 — 처음이면 -1. */
+private fun seenTourVersion(context: android.content.Context): Int =
+    context.getSharedPreferences(TOUR_PREFS, android.content.Context.MODE_PRIVATE).getInt(KEY_TOUR_VERSION, -1)
 
 fun markTourSeen(context: android.content.Context) {
     context.getSharedPreferences(TOUR_PREFS, android.content.Context.MODE_PRIVATE).edit().putInt(KEY_TOUR_VERSION, TOUR_VERSION).apply()
@@ -176,6 +182,8 @@ private enum class TourPage {
     UPDATE_BACKGROUND,
     /** 14.3 — 클래스룸 과제·할 일(사실상 처음 보이는 기능), 내 일정, 자세한 날씨, 그 밖에. */
     NEW143_CLASSROOM, NEW143_MY_EVENTS, NEW143_WEATHER, NEW143_MORE,
+    /** 15.0~15.2 — 하루 전체 Now Bar(15.2, Android 16+ 에서만), 외출·외박 승인 알림(15.0), 그 밖에. 15.0·15.1 은 투어 없이 나가 15.2 에서 함께. */
+    NEW15_LIVE, NEW15_OUTING, NEW15_MORE,
 }
 
 /** 투어의 원 아이콘 색 — 설정 첫 화면과 같은 One UI 9 설정 색. */
@@ -249,16 +257,25 @@ private fun TourContent(
                         TourPage.UPDATE_ALERTS, TourPage.UPDATE_ICONS,
                     ),
                 )
+                // 15 에서 생긴 것 중 큰 둘 — 나머지는 개편 투어의 '그 밖에'와 겹치지 않게 빼 둡니다.
+                if (Build.VERSION.SDK_INT >= 36) add(TourPage.NEW15_LIVE)
+                add(TourPage.NEW15_OUTING)
                 if (com.skh.hihanaevo.ui.PageBackgroundStore.exists(context)) add(TourPage.UPDATE_BACKGROUND)
                 add(TourPage.UPDATE_MORE)
                 if (needsPermissions) add(TourPage.PERMISSIONS)
                 if (ClassroomBridge.available) add(TourPage.CLASSROOM_LINK)
             }
             TourKind.WHATS_NEW -> buildList {
-                add(TourPage.NEW143_CLASSROOM)
-                add(TourPage.NEW143_MY_EVENTS)
-                add(TourPage.NEW143_WEATHER)
-                add(TourPage.NEW143_MORE)
+                if (seenTourVersion(context) < NEW143_TOUR_VERSION) {
+                    add(TourPage.NEW143_CLASSROOM)
+                    add(TourPage.NEW143_MY_EVENTS)
+                    add(TourPage.NEW143_WEATHER)
+                    add(TourPage.NEW143_MORE)
+                }
+                // Now Bar(실시간 정보)는 Android 16 부터 — 그 아래 버전은 막대가 바뀌지 않아 이 장을 뺍니다.
+                if (Build.VERSION.SDK_INT >= 36) add(TourPage.NEW15_LIVE)
+                add(TourPage.NEW15_OUTING)
+                add(TourPage.NEW15_MORE)
                 if (needsPermissions) add(TourPage.PERMISSIONS)
                 // 아직 클래스룸을 연결하지 않았으면 끝에 연결 장 — 과제를 보려면 연결이 먼저라서.
                 if (ClassroomBridge.available && !ClassroomBridge.isConnected(context)) add(TourPage.CLASSROOM_LINK)
@@ -436,6 +453,9 @@ private fun TourContent(
                             TourPage.NEW143_MY_EVENTS -> New143MyEventsPage()
                             TourPage.NEW143_WEATHER -> New143WeatherPage()
                             TourPage.NEW143_MORE -> New143MorePage()
+                            TourPage.NEW15_LIVE -> New15LivePage()
+                            TourPage.NEW15_OUTING -> New15OutingPage()
+                            TourPage.NEW15_MORE -> New15MorePage()
                             TourPage.NAVIGATE -> NavigatePage()
                             TourPage.PRACTICE -> PracticePage(onDone = { practiced = true })
                         }
@@ -480,7 +500,7 @@ private fun TourContent(
         )
         if (showingPrivacy) PrivacyScreen(onDismiss = { showingPrivacy = false })
         // 투어 첫 장면 — 리본이 로고로 펼쳐지는 오프닝이 끝나면(또는 누르면) 투어가 드러납니다.
-        if (opening) EvoOpening(onFinish = { opening = false }, handoff = handoff)
+        if (opening) EvoOpeningAuto(onFinish = { opening = false }, handoff = handoff)
         // 업데이트 투어 첫 장 — 오프닝 끝 장면(로고·'HiHana Evo'·'Neo를 넘어 Evo로')이 바탕이 걷히는 동안 줄어들며 벤토의
         // 가운데 타일로 들어갑니다. 화면 전체 좌표라 페이저 밖에 두고, 가운데 타일의 자리(넘기기·스크롤 포함)를 따라갑니다.
         if (evoPage != null) run {
@@ -777,10 +797,20 @@ private fun ColumnScope.NowBarPage() {
 
 /**
  * 실제 Now Bar(실시간 알림) 모양 — 어두운 둥근 카드 왼쪽에 종류 색이 번지고, 큰 색 원 아이콘 · 장소 + 남은 시간 ·
- * 구간과 시각 · 지난 만큼 흰색, 남은 만큼 회색인 굵은 진행 막대.
+ * 구간과 시각 · 그날 일과 전체 막대(15.2 부터의 기본 모양).
  */
+/** 평일 하루 막대의 칸(8:00~23:10, 폰에 뜬 실제 칸 길이를 따름) — 여덟째 칸이 면학 1타임(19:00~21:00). */
+private val EveningParts = listOf(0.088f, 0.066f, 0.121f, 0.066f, 0.121f, 0.087f, 0.110f, 0.132f, 0.033f, 0.176f)
+/** 같은 하루에서 셋째 칸이 3–4교시(10:20~12:10) — 2026-11-25 S25+ 알림에 실제로 올라간 칸 길이. */
+private val MorningParts = listOf(0.088f, 0.066f, 0.121f, 0.066f, 0.121f, 0.087f, 0.099f, 0.077f, 0.165f, 0.110f)
+
 @Composable
-private fun NowBarMock(icon: Painter, tint: Color, title: String, countdown: String, subtitle: String, progress: Float) {
+private fun NowBarMock(
+    icon: Painter, tint: Color, title: String, countdown: String, subtitle: String, progress: Float,
+    detail: String? = null,
+    parts: List<Float> = EveningParts,
+    current: Int = 7,
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -805,12 +835,10 @@ private fun NowBarMock(icon: Painter, tint: Color, title: String, countdown: Str
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
+                if (detail != null) Text(detail, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val done = progress.coerceIn(0.02f, 0.98f)
-                    Box(Modifier.weight(done).height(6.dp).clip(CircleShape).background(Color.White))
-                    Box(Modifier.weight(1f - done).height(6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.45f)))
-                }
+                // 실제 막대 그리기(설정의 막대 모양 고르기와 같은 그림) — 하루 전체 칸, [current] 칸에서 [progress] 만큼 지남.
+                LiveBarDrawing(LiveActivity.BarStyle.DAY, tint, light = true, modifier = Modifier.fillMaxWidth(), parts = parts, current = current, into = progress)
             }
         }
     }
@@ -2215,6 +2243,128 @@ private fun ColumnScope.New143MorePage() {
         TourRow(
             painterResource(R.drawable.ic_bolt), TourSlate, "고친 것",
             "알리미 글이 스크롤되지 않던 것과, 외출·외박 사유를 쓸 때 키보드가 입력칸을 가리던 것을 고쳤습니다.",
+        )
+    }
+}
+
+// MARK: - 15 새 기능 투어 — 15.0~15.2 에서 생긴 것([TourKind.WHATS_NEW]). 15.0·15.1 은 투어 없이 나가 15.2 에서 함께 소개. 그림은 실제 화면 부품(막대 그리기·막대 모양 고르기)과
+// 실제 알림 문구 형식을 그대로 씁니다. 제목은 명사형, 설명은 문장.
+
+@Composable
+private fun ColumnScope.New15LivePage() {
+    val context = LocalContext.current
+    PageHead(
+        "Now Bar",
+        "하루 전체를 보여 주는 Now Bar",
+        "Now Bar 막대가 이제 지금 수업 하나가 아니라 그날 일과 전체를 보여 줍니다. 일정마다 걸리는 시간만큼 칸이 나뉘고, 지난 시간은 굵게, " +
+            "지금 위치에는 점이 찍힙니다. 평일은 8시 등교 및 조회부터, 주말은 12시 점심시간부터 시작하고, 심야면학을 신청했으면 심면까지 이어집니다. " +
+            "같은 과목이 두 교시 이어지면 '3–4교시 수업 중'처럼 한 칸으로 묶입니다.",
+        isNew = true,
+    )
+    // 남은 시간과 지금 위치 점이 실제처럼 흐릅니다 (1초마다) — 3–4교시 110분 중 남은 시간.
+    val total = 110 * 60
+    var remaining by remember { mutableIntStateOf(56 * 60 + 41) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            remaining = if (remaining <= 0) total else remaining - 1
+        }
+    }
+    WallpaperPanel {
+        Text("11:13", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Light, color = Color.White, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Text("11월 25일 수요일", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(18.dp))
+        NowBarMock(
+            icon = painterResource(R.drawable.ic_science),
+            tint = Color(0xFF5B67F1),
+            title = "A205 화학Ⅱ",
+            countdown = "%d:%02d".format(remaining / 60, remaining % 60),
+            subtitle = "3–4교시 수업 중 · 10:20 – 12:10",
+            detail = "다음 · B301 영어Ⅱ",
+            progress = 1f - remaining.toFloat() / total,
+            parts = MorningParts,
+            current = 2,
+        )
+    }
+    Spacer(Modifier.height(16.dp))
+    TourCaption("예전 모양이 편하면 — 설정 › 알림에서도 바꿀 수 있습니다")
+    // 실제 설정과 같은 고르기 — 여기서 고르면 바로 적용됩니다.
+    var style by remember { mutableStateOf(LiveActivity.barStyle(context)) }
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+        LiveBarStylePicker(selected = style, onSelect = { style = it; LiveActivity.setBarStyle(context, it) })
+    }
+    if (!LiveActivity.isEnabled(context)) {
+        Spacer(Modifier.height(16.dp))
+        OneUiCard(Modifier.fillMaxWidth()) {
+            TourRow(
+                painterResource(R.drawable.ic_tour_now_bar), TourBlue, "켜는 곳",
+                "Now Bar는 아직 꺼져 있습니다. 설정 › 알림 › 'Now Bar에 지금 일정 표시'를 켜면 다음 일정부터 보입니다.",
+            )
+        }
+    }
+}
+
+/** 실제 알림 한 개 모양 — 개편 투어의 새 글 알림 그림과 같은 틀(앱 이름 · 시각, 제목, 내용). */
+@Composable
+private fun TourNotification(title: String, text: String) {
+    OneUiCard(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(16.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF1F5A3C)))
+            Spacer(Modifier.width(7.dp))
+            Text("HiHana Evo · 외출·외박 승인 · 방금", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text(text, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun ColumnScope.New15OutingPage() {
+    PageHead(
+        "외출·외박",
+        "외출·외박 승인 알림",
+        "외출이나 외박을 신청해 두면 승인되거나 반려되는 순간 알림이 옵니다. 알림을 누르면 외출 내역이 바로 열립니다. " +
+            "승인을 기다리는 신청이 있을 때만 5분마다 확인하므로 배터리 걱정은 없고, 설정의 알림 메뉴에서 끌 수 있습니다.",
+        isNew = true,
+    )
+    // 문구는 OutingNotifier 와 같은 형식 — '외출 승인됨', 'M.d(E) HH:mm ~ HH:mm · 사유'.
+    TourCaption("승인되면")
+    TourNotification("외출 승인됨", "11.26(목) 18:00 ~ 21:00 · 병원 진료")
+    Spacer(Modifier.height(10.dp))
+    TourCaption("날이 바뀌는 외박도")
+    TourNotification("외박 승인됨", "11.28(토) 12:00 ~ 11.29(일) 19:00 · 가족 행사")
+}
+
+@Composable
+private fun ColumnScope.New15MorePage() {
+    PageHead("그 밖에", "그 밖에 달라진 것", "15.0부터 이번 버전까지 함께 손본 것들입니다.")
+    OneUiCard(Modifier.fillMaxWidth()) {
+        TourRow(
+            painterResource(R.drawable.ic_pv_star), TourViolet, "새 오프닝",
+            "처음 설치하면 학교를 날아 로고로 모이는 새 오프닝 영상이 나옵니다. 정보 화면의 로고를 다섯 번 누르면 다시 볼 수 있습니다. " +
+                "영상은 앱에 넣지 않고 볼 때만 받아 와서 앱 크기는 그대로입니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_pv_phone), TourBlue, "iPhone·iPad 판",
+            "아이폰이나 아이패드를 쓰는 친구도 설치할 수 있습니다. 무료 Apple ID로 SideStore에서 설치하고, 업데이트는 앱 안에서 바로 받습니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_home_stay), TourOrange, "놓치지 않는 귀가일",
+            "귀가일은 1인2기가 끝나는 17시 50분부터 귀가로 봅니다. '1,2학년 귀가'처럼 학년이 붙은 일정도 알아봅니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_history_edu), TourPink, "사라지지 않는 시험 D-day",
+            "학사일정을 받지 못한 날에도 다가오는 중간·기말고사의 D-day가 그대로 보입니다.",
+        )
+        RowGap()
+        TourRow(
+            painterResource(R.drawable.ic_bolt), TourSlate, "고친 것",
+            "하이하나 접속이 끊긴 뒤 영어 오류가 뜨던 것, 게시글에서 뽑은 먼 날짜 일정이 목록 끝에 남던 것, 업데이트할 때마다 설정에 빨간 점이 뜨던 것을 고쳤습니다. " +
+                "좁은 위젯의 남은 시간은 다시 분:초로 보입니다.",
         )
     }
 }

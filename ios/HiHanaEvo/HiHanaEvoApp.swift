@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         BackgroundWork.register()
         BackgroundWork.scheduleRefresh()
         UNUserNotificationCenter.current().delegate = self
+        #if DEBUG
+        LiveDayTest.startIfAsked()
+        #endif
         return true
     }
 

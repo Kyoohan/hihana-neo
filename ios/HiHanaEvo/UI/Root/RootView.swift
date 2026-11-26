@@ -16,6 +16,12 @@ struct RootView: View {
     @State private var started = false
     /// 아이패드 사이드바 검색을 시작하기 전에 보던 칸 — 검색어를 지우면 돌아갑니다.
     @State private var beforeSearch: AppTab?
+    /// 세 칸 화면에서 보일 칸 — 시스템 기본(automatic)이 보여 주던 모습을 그대로 적되, 좁은 세로만 바꿉니다:
+    /// 가로는 사이드바·목록·본문 셋, 넓은 세로(800pt 이상, Pro 11·13)는 목록·본문 둘, 좁은 세로(iPad mini 744pt)는 기본이 오른쪽 칸 하나만
+    /// 보여 목록 없이 '…을 고르세요'만 떴던 것 — 메일 앱 세로처럼 고른 게 없으면 목록을 띄우고, 고르면 목록이 비켜 본문을 다 보이게.
+    /// (automatic 으로 되돌리는 방식은 좁은 세로 → 가로로 돌렸을 때 사이드바가 다시 펼쳐지지 않았습니다.)
+    @State private var splitColumns: NavigationSplitViewVisibility = .automatic
+    @State private var padSize: CGSize = .zero
     /// 백그라운드에 다녀왔는지 — 돌아와 active 가 될 때 한 번 새로 고칩니다.
     @State private var wasBackground = false
     /// 앱을 열 때 띄우는 창 하나 — 서버 공지(15분에 한 번까지 물어 처음 보는 것만) 또는 새 버전.
@@ -28,8 +34,10 @@ struct RootView: View {
         let dark = prefs.appTheme == .dark || (prefs.appTheme == .system && systemScheme == .dark)
         let palette = Palette.make(dark: dark, accentARGB: prefs.accentARGB)
         Group {
-            if isPad { padRoot } else { phoneTabs }
+            if isPad { padRoot.onGeometryChange(for: CGSize.self) { CGSize(width: $0.size.width.rounded(), height: $0.size.height.rounded()) } action: { padSize = $0 } } else { phoneTabs }
         }
+        // 예전 시험 빌드가 받아 둔 오프닝 영상을 지웁니다(지금은 스트리밍만).
+        .task { OpeningVideo.removeOldDownloads() }
         // 화면 전체 뒤에도 같은 배경 — 두 칸 화면에서 위 막대 뒤나 열 사이가 비면 검게 보이던 것.
         .background { PageBackdrop() }
         .sheet(item: $nav.sheet) { item in
@@ -119,17 +127,30 @@ struct RootView: View {
         }
     }
 
-    /// 아이폰 — 아래 탭 홈 · 타임라인 · 전체.
+    /// 아이폰 — 아래 탭 홈 · 타임라인 · 전체. '전체'는 탭으로 옮기지 않고 시트로 올립니다(안드로이드 ⊞ 처럼) — 탭 바는 보던 칸에 남습니다.
     private var phoneTabs: some View {
-        TabView(selection: $nav.tab) {
+        TabView(selection: Binding(get: { nav.tab == .all ? .home : nav.tab }, set: { t in
+            if t == .all { nav.allOpen = true } else { nav.tab = t }
+        })) {
             Tab(AppTab.home.label, systemImage: AppTab.home.symbol, value: AppTab.home) {
                 stack(.home) { HomeView(shown: nav.tab == .home && nav.isEmpty) }
             }
             Tab(AppTab.timeline.label, systemImage: AppTab.timeline.symbol, value: AppTab.timeline) {
                 stack(.timeline) { TimeAxisView() }
             }
-            Tab(AppTab.all.label, systemImage: AppTab.all.symbol, value: AppTab.all) { stack(.all) { AllPanelView() } }
+            // 이 탭의 내용은 보이지 않습니다(누르면 시트) — 자리만.
+            Tab(AppTab.all.label, systemImage: AppTab.all.symbol, value: AppTab.all) { Color.clear }
                 .badge(model.alimUnread)
+        }
+        .sheet(isPresented: $nav.allOpen) {
+            // 다른 시트(nav.sheet)와 같이 색·모델을 직접 넘깁니다.
+            let dark = prefs.appTheme == .dark || (prefs.appTheme == .system && systemScheme == .dark)
+            let palette = Palette.make(dark: dark, accentARGB: prefs.accentARGB)
+            AllSheetView()
+                .environment(model)
+                .environment(\.palette, palette)
+                .environment(\.onPage, onPageColor)
+                .tint(palette.primary)
         }
     }
 
@@ -142,7 +163,7 @@ struct RootView: View {
         let layout = tab == .search ? (beforeSearch ?? .search) : tab
         // 좁은 창(compact)에선 세 칸이 접혀 오른쪽 칸이 뜨지 않으므로 — 목록을 한 칸 스택으로 그리고 글은 그 위에 밀어 넣습니다.
         if layout.isSplit, !nav.sectionNarrow, let root = layout.root {
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $splitColumns) {
                 sidebar
             } content: {
                 NavigationStack {
@@ -164,6 +185,9 @@ struct RootView: View {
                 }
             }
             .id("split-\(layout.rawValue)")
+            .onAppear { fitColumns(layout) }
+            .onChange(of: nav.selection[layout]) { _, _ in fitColumns(layout) }
+            .onChange(of: padSize) { _, _ in fitColumns(layout) }
         } else {
             NavigationSplitView {
                 sidebar
@@ -180,6 +204,16 @@ struct RootView: View {
                 .background { PageBackdrop() }
             }
         }
+    }
+
+    /// 세 칸 화면의 보일 칸 — splitColumns 설명 참고.
+    private func fitColumns(_ layout: AppTab) {
+        guard padSize.width > 0 else { return }   // 크기를 알기 전엔 시스템에 맡김
+        let want: NavigationSplitViewVisibility =
+            padSize.width > padSize.height ? .all
+            : padSize.width >= 800 ? .doubleColumn
+            : (nav.selection[layout] == nil ? .doubleColumn : .detailOnly)
+        if splitColumns != want { splitColumns = want }
     }
 
     private var sidebar: some View {

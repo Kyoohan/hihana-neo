@@ -1,6 +1,27 @@
 package com.skh.hihanaevo
 
 import com.skh.hihanaevo.ui.onPageVariantColor
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import com.skh.hihanaevo.ui.isDark
+import com.skh.hihanaevo.widget.WidgetKindColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -158,56 +179,258 @@ internal fun ApplyHistorySection(
         }
     }
 
-    if (editing) {
-        OrderEditor(
-            order = order,
-            defaultOrder = ApplyOrderStore.defaultOrder,
-            label = ApplyOrderStore::label,
-            onMove = { from, to ->
-                order = order.toMutableList().apply { add(to, removeAt(from)) }
-                ApplyOrderStore.set(context, order)
-            },
-            onReset = {
-                order = ApplyOrderStore.defaultOrder
-                ApplyOrderStore.set(context, order)
-            },
-        )
-        return
+    // 심야면학 — 신청 화면, 내역(오늘 1·2타임 신청 + 불참)은 아래 '내역'에 펼쳐 보입니다.
+    var showingMidnight by remember { mutableStateOf(false) }
+    if (showingMidnight) MidnightStudyScreen(onDismiss = { showingMidnight = false; MidnightSchedule.ensureInstalled(context) })
+    var midnightHistory by remember { mutableStateOf<MidnightHistoryState>(MidnightHistoryState.Idle) }
+    // 아래 '내역'에서 펼쳐 둔 것 — 교과교실·심야면학은 화면을 따로 띄우지 않고 칩 아래 카드로(예전 카드 안 목록과 같은 내용).
+    var openedInline by remember { mutableStateOf<String?>(null) }
+
+    fun loadMidnightHistory() {
+        if (!MidnightSessionStore.isLoggedIn(context)) {
+            showingMidnight = true
+            return
+        }
+        openedInline = ApplyOrderStore.MIDNIGHT
+        midnightHistory = MidnightHistoryState.Loading
+        scope.launch { midnightHistory = loadMidnightLines(context) }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        order.forEach { key ->
-            // 심야면학은 학교 포털이 아닌 기숙사 쪽 별도 사이트(Supabase) — 자체 로그인으로 내역·신청.
-            if (key == ApplyOrderStore.MIDNIGHT) {
-                MidnightStudyCard()
-                return@forEach
-            }
-            val service = ApplyService.valueOf(key)
-            ApplyServiceCard(
-                service = service,
-                state = states[service] ?: ApplyHistoryState.Idle,
-                // 교과교실은 "누가 어느 교실에 있는지" 현황 조회를 하나 더.
-                onStatus = if (service == ApplyService.CLASSROOM) ({ showingClassroomStatus = true }) else null,
-                // 교과교실은 카드 안에 목록, 나머지 셋은 전체 화면.
-                onHistory = {
-                    when {
-                        service == ApplyService.CLASSROOM -> loadHistory(service)
-                        onShowHistory != null -> onShowHistory(service)
-                        else -> historyScreen = service
-                    }
-                },
-                historySelected = historyShown == service,
-                // 도서관·면학실은 좌석 화면, 교과교실·외출외박은 신청 화면 — 모두 앱 안.
-                onApply = {
-                    when (service) {
-                        ApplyService.LIBRARY -> onOpenSeats(SeatService.LIBRARY)
-                        ApplyService.STUDY_ROOM -> onOpenSeats(SeatService.STUDY_ROOM)
-                        ApplyService.CLASSROOM, ApplyService.OUTING -> applyScreen = service
-                    }
-                },
-            )
+    // 오늘 타임별 자리·외출·심야면학 — 모두 기기에 이미 있는 값(포털에 새로 묻지 않음). 좌석 화면에서 신청하고 돌아오면 바뀌므로
+    // 이 화면이 떠 있는 동안 3초마다 다시 읽습니다(기기 저장소만 읽어 가볍습니다).
+    val today = PlanStore.today()
+    var places by remember { mutableStateOf<Map<PlanSlot, StudyPlace?>>(emptyMap()) }
+    LaunchedEffect(today) {
+        while (true) {
+            places = PlanStore.placesForToday(context, today)
+            kotlinx.coroutines.delay(3_000)
         }
     }
+    val outing = remember(OutingSchedule.revision) { Timetable.outingList().filter { it.end.isAfter(java.time.LocalDateTime.now(PlanStore.seoulZone)) }.minByOrNull { it.start } }
+    val slots = if (Timetable.isRestDay(today)) PlanSlot.slots(today) else listOf(PlanSlot.weekday0) + PlanSlot.slots(today)
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TodayStudyCard(slots, places)
+        if (outing != null) OutingStatusCard(outing)
+
+        ApplySectionTitle("신청")
+        // 자리 셋 — 면학실·도서관·심야면학을 한 줄에. 아이콘과 이름만(오늘 자리는 위 '오늘 면학'에 있어 되풀이하지 않음).
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SeatTile("면학실", painterResource(R.drawable.ic_chair), ApplyColors.STUDY_ROOM, Modifier.weight(1f)) { onOpenSeats(SeatService.STUDY_ROOM) }
+            SeatTile("도서관", painterResource(R.drawable.ic_local_library), ApplyColors.LIBRARY, Modifier.weight(1f)) { onOpenSeats(SeatService.LIBRARY) }
+            SeatTile("심야면학", painterResource(R.drawable.ic_bedtime), ApplyColors.MIDNIGHT, Modifier.weight(1f)) { showingMidnight = true }
+        }
+        // 교과교실 — 신청과 교실별 현황(누가 어느 교실에 있는지)을 한 카드에.
+        OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+            ApplyRow("교과교실", painterResource(R.drawable.ic_meeting_room), ApplyColors.CLASSROOM) { applyScreen = ApplyService.CLASSROOM }
+            OneUiDivider()
+            ApplyRow("교실별 현황", painterResource(R.drawable.ic_school), ApplyColors.CLASSROOM_STATUS) { showingClassroomStatus = true }
+        }
+        OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+            ApplyRow("외출·외박", painterResource(R.drawable.ic_directions_run), ApplyColors.OUTING) { applyScreen = ApplyService.OUTING }
+        }
+
+        ApplySectionTitle("내역")
+        // 다섯 곳을 카드 한 장에 같은 폭으로 — 칩을 늘어놓으면 기기 폭에 따라 줄 끝이 들쭉날쭉하고 오른쪽이 비었습니다.
+        fun show(service: ApplyService) = if (onShowHistory != null) onShowHistory(service) else historyScreen = service
+        HistoryStrip(
+            listOf(
+                HistoryItem("면학실", painterResource(R.drawable.ic_chair), ApplyColors.STUDY_ROOM, historyShown == ApplyService.STUDY_ROOM) { show(ApplyService.STUDY_ROOM) },
+                HistoryItem("도서관", painterResource(R.drawable.ic_local_library), ApplyColors.LIBRARY, historyShown == ApplyService.LIBRARY) { show(ApplyService.LIBRARY) },
+                HistoryItem("교과교실", painterResource(R.drawable.ic_meeting_room), ApplyColors.CLASSROOM, openedInline == ApplyService.CLASSROOM.name) {
+                    if (openedInline == ApplyService.CLASSROOM.name) openedInline = null
+                    else { openedInline = ApplyService.CLASSROOM.name; loadHistory(ApplyService.CLASSROOM) }
+                },
+                HistoryItem("외출·외박", painterResource(R.drawable.ic_directions_run), ApplyColors.OUTING, historyShown == ApplyService.OUTING) { show(ApplyService.OUTING) },
+                HistoryItem("심야면학", painterResource(R.drawable.ic_bedtime), ApplyColors.MIDNIGHT, openedInline == ApplyOrderStore.MIDNIGHT) {
+                    if (openedInline == ApplyOrderStore.MIDNIGHT) openedInline = null else loadMidnightHistory()
+                },
+            ),
+        )
+        when (openedInline) {
+            ApplyService.CLASSROOM.name -> OneUiCard(Modifier.fillMaxWidth()) {
+                Text("교과교실 내역", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                ClassroomHistoryBody(states[ApplyService.CLASSROOM] ?: ApplyHistoryState.Loading)
+            }
+            ApplyOrderStore.MIDNIGHT -> OneUiCard(Modifier.fillMaxWidth()) {
+                Text("심야면학 내역", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                when (val m = midnightHistory) {
+                    MidnightHistoryState.Idle, MidnightHistoryState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        OneUiLoading(size = 16.dp, stroke = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("불러오는 중", style = MaterialTheme.typography.bodySmall, color = onPageVariantColor())
+                    }
+                    is MidnightHistoryState.Loaded -> m.lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
+                    is MidnightHistoryState.Error -> Text(m.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+/** 신청·내역의 서비스 색 — 모든 기능(⊞)의 바로 가기와 같은 색. */
+private object ApplyColors {
+    val STUDY_ROOM = Color(0xFF5C7CFA)
+    val LIBRARY = Color(0xFF8E7CFF)
+    val MIDNIGHT = Color(0xFF4B4FC9)
+    val CLASSROOM = Color(0xFF14A8B8)
+    val CLASSROOM_STATUS = Color(0xFF2E9FAE)
+    val OUTING = Color(0xFF34B27D)
+}
+
+@Composable
+private fun ApplySectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = onPageVariantColor(),
+        modifier = Modifier.padding(start = 6.dp, top = 6.dp))
+}
+
+/** 오늘 면학 — 타임마다 시작 시각, 장소, 자리·교실. 자리가 없는 타임은 점선 칸(홈 일정과 같은 '위치 미설정'). */
+@Composable
+private fun TodayStudyCard(slots: List<PlanSlot>, places: Map<PlanSlot, StudyPlace?>) {
+    val scheme = MaterialTheme.colorScheme
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("오늘 면학", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("${PlanStore.today().monthValue}월 ${PlanStore.today().dayOfMonth}일", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            slots.forEach { slot ->
+                val place = places[slot]
+                // 신청 칸과 같은 장소(면학실·도서관·교과교실·심야면학)는 그 칸의 색, 나머지(생활관·방과후·1인2기)는 홈 일정의 장소 색.
+                val color = place?.let {
+                    when (it) {
+                        is StudyPlace.StudyRoom -> ApplyColors.STUDY_ROOM
+                        is StudyPlace.Library -> ApplyColors.LIBRARY
+                        is StudyPlace.ClassroomPlace -> ApplyColors.CLASSROOM
+                        is StudyPlace.Midnight -> ApplyColors.MIDNIGHT
+                        else -> Color(WidgetKindColors.defaults[it.accent] ?: 0xFF3B82F6.toInt())
+                    }
+                }
+                val shape = RoundedCornerShape(14.dp)
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().clip(shape)
+                        .then(if (color != null) Modifier.background(color.copy(alpha = if (scheme.isDark) 0.22f else 0.13f))
+                        else Modifier.border(1.dp, scheme.onSurface.copy(alpha = 0.18f), shape))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text("${slot.title} ${slot.timeText.substringBefore(" ")}", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
+                    Spacer(Modifier.height(3.dp))
+                    Text(place?.name ?: "위치 미설정", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                        color = color?.let { if (scheme.isDark) lerp(it, Color.White, 0.45f) else lerp(it, Color.Black, 0.25f) } ?: scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    place?.detail?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        }
+    }
+}
+
+/** 다가오는(또는 지금인) 외출·외박 한 건 — 기간·사유와 승인 상태. */
+@Composable
+private fun OutingStatusCard(o: OutingSpan) {
+    val scheme = MaterialTheme.colorScheme
+    // 두 줄 — 날짜(외박은 기간)와 시각·사유. 한 줄에 날짜와 시각을 다 넣으면 좁은 폭에서 '09:00 ~ / 13:00'처럼 시각 중간에서 꺾였습니다.
+    val day = java.time.format.DateTimeFormatter.ofPattern("M.d(E)", java.util.Locale.KOREAN)
+    val hm = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+    val dates = if (o.overnight) "${o.start.format(day)} ~ ${o.end.format(day)}" else o.start.format(day)
+    val times = "${o.start.format(hm)} ~ ${o.end.format(hm)}" + (o.reason?.let { " · $it" } ?: "")
+    OneUiCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ApplyIcon(painterResource(R.drawable.ic_directions_run), ApplyColors.OUTING, 32.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("${if (o.overnight) "외박" else "외출"} · $dates", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(times, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.width(8.dp))
+            val ok = !o.pending
+            val tint = if (ok) Color(0xFF2FB67C) else Color(0xFFE3A82E)
+            Text(if (ok) "승인됨" else "승인 대기", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                color = if (scheme.isDark) lerp(tint, Color.White, 0.35f) else lerp(tint, Color.Black, 0.3f),
+                modifier = Modifier.clip(CircleShape).background(tint.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+    }
+}
+
+/** 자리 신청 칸 — 색 원 아이콘과 이름만. */
+@Composable
+private fun SeatTile(label: String, icon: Painter, color: Color, modifier: Modifier, onClick: () -> Unit) {
+    OneUiCard(modifier, contentPadding = PaddingValues(0.dp)) {
+        Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            ApplyIcon(icon, color, 36.dp)
+            Spacer(Modifier.height(8.dp))
+            Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+/** 카드 안 한 줄 — 색 원 아이콘, 이름, 오른쪽 화살표. */
+@Composable
+private fun ApplyRow(label: String, icon: Painter, color: Color, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        ApplyIcon(icon, color, 32.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = scheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ApplyIcon(icon: Painter, color: Color, size: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.size(size).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.56f))
+    }
+}
+
+private class HistoryItem(val label: String, val icon: Painter, val color: Color, val selected: Boolean, val onClick: () -> Unit)
+
+/** 내역 다섯 곳 — 카드 한 장을 같은 폭 칸으로 나누고 가는 선으로 구분(모든 기능 바로 가기와 같은 결). 펼쳐 둔 칸은 그 색으로 옅게. */
+@Composable
+private fun HistoryStrip(items: List<HistoryItem>) {
+    val scheme = MaterialTheme.colorScheme
+    val line = scheme.onSurface.copy(alpha = 0.10f)
+    OneUiCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            items.forEachIndexed { i, item ->
+                if (i > 0) Box(Modifier.padding(vertical = 14.dp).width(0.7.dp).fillMaxHeight().background(line))
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .background(if (item.selected) item.color.copy(alpha = 0.16f) else Color.Transparent)
+                        .clickable(onClick = item.onClick)
+                        .padding(horizontal = 2.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    ApplyIcon(item.icon, item.color, 28.dp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(item.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false,
+                        overflow = TextOverflow.Clip, color = scheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
+/** 심야면학 내역 — 오늘 1·2타임 신청과 불참 횟수(예전 심야면학 카드의 '내역'과 같은 내용). */
+private suspend fun loadMidnightLines(context: android.content.Context): MidnightHistoryState = try {
+    val first = MidnightApi.dashboard(context, 1, null)
+    val second = if (first.session2Available) runCatching { MidnightApi.dashboard(context, 2, first.floor) }.getOrNull() else null
+    fun line(label: String, d: MidnightDashboard?) = when {
+        d == null -> "$label · 운영 안 함"
+        d.hasReservation -> "$label · ${d.reservationFloor ?: d.floor}층 ${d.reservationSeat}번"
+        else -> "$label · 신청 없음"
+    }
+    MidnightHistoryState.Loaded(listOf(
+        line("1타임", first),
+        line("2타임", second),
+        "불참 ${first.absenceCount}회 · " + (first.bannedUntil?.let { "${it}까지 신청 제한" } ?: "신청 제한 없음"),
+    ))
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
+} catch (e: Exception) {
+    MidnightHistoryState.Error(e.message ?: "불러오지 못했습니다")
 }
 
 /** 순서 편집 — 블록 이름마다 위·아래 버튼. 바꾸는 즉시 저장되고, 헤더의 체크 아이콘으로 끝냅니다. */
@@ -265,56 +488,6 @@ internal fun OrderEditor(
     }
 }
 
-
-@Composable
-private fun ApplyServiceCard(
-    service: ApplyService,
-    state: ApplyHistoryState?,
-    onHistory: () -> Unit,
-    onApply: () -> Unit,
-    onStatus: (() -> Unit)? = null,
-    historySelected: Boolean = false,
-) {
-    // 내역 조회와 신청하기는 같은 급의 동작이라, 카드 아래에 같은 모양·같은 폭의 알약 버튼 두 개로 나란히 둡니다.
-    val historyLabel = when (state) {
-        null, ApplyHistoryState.Idle -> "내역"
-        ApplyHistoryState.Loading -> "불러오는 중"
-        is ApplyHistoryState.Error -> "다시 시도"
-        is ApplyHistoryState.Rows -> "새로고침"
-    }
-    OneUiCard(modifier = Modifier.fillMaxWidth()) {
-        Text(service.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (state != null && state != ApplyHistoryState.Idle) {
-            Spacer(Modifier.height(10.dp))
-            ClassroomHistoryBody(state = state)
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OneUiButton(
-                text = historyLabel,
-                onClick = onHistory,
-                style = if (historySelected) OneUiButtonStyle.Filled else OneUiButtonStyle.Neutral,
-                enabled = state != ApplyHistoryState.Loading,
-                modifier = Modifier.weight(1f),
-            )
-            OneUiButton(
-                text = "신청",
-                onClick = onApply,
-                style = OneUiButtonStyle.Neutral,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (onStatus != null) {
-            Spacer(Modifier.height(10.dp))
-            OneUiButton(
-                text = "교실별 현황",
-                onClick = onStatus,
-                style = OneUiButtonStyle.Neutral,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
 
 /** 교과교실 내역 본문 — 상태별 문구/목록만 그리고, 동작 버튼은 카드 아래 공용 버튼 줄이 맡습니다. */
 @Composable

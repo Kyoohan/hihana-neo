@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -28,8 +29,12 @@ data class UpdateInfo(
  * 스토어 없이 하는 앱 내 업데이트(OTA).
  *
  * 배포 쪽은 GitHub Releases 하나면 됩니다: 태그(v6.20 같은 형식)로 릴리스를 만들고 APK 를 첨부하면,
- * 앱이 `releases/latest` API 로 태그를 읽어 설치된 버전과 비교하고, 새 버전이면 APK 를 캐시 폴더에
+ * 앱이 릴리스 목록에서 APK 가 붙은 가장 새 버전을 골라 설치된 버전과 비교하고, 새 버전이면 APK 를 캐시 폴더에
  * 받아 시스템 설치 화면으로 넘깁니다. 서명 키가 같으면 데이터를 유지한 채 덮어씌워집니다.
+ *
+ * 버전 번호는 iOS 와 하나를 같이 쓰고, 한쪽만 바뀐 버전은 다른 쪽이 건너뜁니다(2026-11-25 결정) — 그래서 '최신 릴리스 하나'만
+ * 보면 아이폰만 낸 릴리스 뒤에 숨은 안드로이드 업데이트를 놓칩니다. 릴리스 노트에서 "[iOS]"로 시작하는 줄은 빼고,
+ * "[안드로이드]" 표시는 떼고 보여 줍니다.
  *
  * 저장소는 `gradle.properties` 의 `updateRepo=owner/repo` 로 지정합니다(비어 있으면 확인을 건너뜁니다).
  */
@@ -48,9 +53,9 @@ object AppUpdater {
 
     val isConfigured: Boolean get() = BuildConfig.UPDATE_REPO.isNotBlank()
 
-    /** 최신 릴리스 주소 — GitHub API. */
-    private val latestUrl: String
-        get() = "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
+    /** 릴리스 목록 주소 — GitHub API(제 플랫폼 파일이 든 최신 릴리스를 고르려고 목록으로 받음). */
+    private val listUrl: String
+        get() = "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases?per_page=20"
 
     /**
      * 최신 릴리스를 확인합니다.
@@ -89,30 +94,59 @@ object AppUpdater {
     }
 
     private fun fetchLatest(): UpdateInfo? {
+        val body = get(listUrl)
+        body ?: return null
+        val releases = runCatching { JSONArray(body).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } }
+            .getOrElse { runCatching { listOf(JSONObject(body)) }.getOrDefault(emptyList()) }
+        return best(releases)
+    }
+
+    private fun get(url: String): String? {
         val request = Request.Builder()
-            .url(latestUrl)
+            .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "HiHanaEvo/${BuildConfig.VERSION_NAME}")
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val json = JSONObject(response.body?.string().orEmpty())
-            val tag = json.optString("tag_name").removePrefix("v").trim()
-            if (tag.isEmpty()) return null
-            val assets = json.optJSONArray("assets")
-            val apkUrl = (0 until (assets?.length() ?: 0))
-                .mapNotNull { assets?.optJSONObject(it) }
-                .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                ?.optString("browser_download_url")
-                ?: return null
-            return UpdateInfo(
-                versionName = tag,
-                apkUrl = apkUrl,
-                notes = json.optString("body").trim(),
-                publishedAt = json.optString("published_at").takeIf { it.isNotBlank() },
-            )
-        }
+        return client.newCall(request).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
     }
+
+    /** 릴리스 여러 개 → APK 가 붙은 것 가운데 가장 새 버전. 초안·미리 보기 릴리스는 뺍니다. */
+    internal fun best(releases: List<JSONObject>): UpdateInfo? =
+        releases
+            .filter { !it.optBoolean("draft") && !it.optBoolean("prerelease") }
+            .mapNotNull(::parse)
+            .reduceOrNull { a, b -> if (isNewer(b.versionName, a.versionName)) b else a }
+
+    private fun parse(json: JSONObject): UpdateInfo? {
+        val tag = json.optString("tag_name").removePrefix("v").trim()
+        if (tag.isEmpty()) return null
+        val assets = json.optJSONArray("assets")
+        val apkUrl = (0 until (assets?.length() ?: 0))
+            .mapNotNull { assets?.optJSONObject(it) }
+            .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+            ?.optString("browser_download_url")
+            ?: return null
+        return UpdateInfo(
+            versionName = tag,
+            apkUrl = apkUrl,
+            notes = notesForThisPlatform(json.optString("body")),
+            publishedAt = json.optString("published_at").takeIf { it.isNotBlank() },
+        )
+    }
+
+    /** 릴리스 노트 가운데 이 플랫폼 것만 — "[iOS]"로 시작하는 줄은 빼고, "[안드로이드]"/"[Android]" 표시는 떼어 냅니다. */
+    internal fun notesForThisPlatform(body: String): String =
+        body.lines().mapNotNull { line ->
+            val t = line.trim()
+            val bullet = if (t.startsWith("- ")) "- " else ""
+            val rest = t.removePrefix(bullet)
+            when {
+                rest.startsWith("[iOS]") -> null
+                rest.startsWith("[안드로이드]") -> bullet + rest.removePrefix("[안드로이드]").trim()
+                rest.startsWith("[Android]") -> bullet + rest.removePrefix("[Android]").trim()
+                else -> line
+            }
+        }.joinToString("\n").trim()
 
     /** "6.20" 과 "6.19.1" 처럼 점으로 나뉜 숫자들을 앞에서부터 비교합니다 — 숫자가 아닌 조각은 0 으로 봅니다. */
     fun isNewer(remote: String, installed: String): Boolean {

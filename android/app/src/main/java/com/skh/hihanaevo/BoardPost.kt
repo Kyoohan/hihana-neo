@@ -195,11 +195,43 @@ object HanaPostApi {
     }
 
     /** board_view.do 는 인증된 요청에 JSON(boardVo)으로 답합니다 — 본문·첨부를 그대로 꺼냅니다. */
-    suspend fun detail(context: Context, url: String): HanaPostDetail =
-        parse(HanaAcademicApi.fetchBoardDetail(context, url))
+    /**
+     * 글 본문. 가끔 열리지 않던 것(2026-11-25 사용자 제보) 대비로 한 번 더 시도합니다 — 원인을 폰에서 재현하지 못해, 생길 수 있는
+     * 경우를 모두 덮습니다: 응답을 읽지 못하면(세션이 끊겼는데 로그인 페이지도 만료 JSON 도 아닌 응답, 다른 요청의 재로그인과 겹쳐
+     * 세션이 바뀐 경우, 빈 응답) 새로 로그인한 뒤 다시, 연결 문제(시간 초과 등)면 잠깐 쉬고 그대로 다시.
+     */
+    suspend fun detail(context: Context, url: String): HanaPostDetail {
+        return try {
+            parse(HanaAcademicApi.fetchBoardDetail(context, url))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: HanaPortalException.MissingCredentials) {
+            throw e
+        } catch (e: HanaPortalException.LoginFailed) {
+            // 비밀번호가 틀린 경우 — 다시 로그인하면 실패가 한 번 더 쌓여 하이하나의 5회 실패 잠금에 가까워집니다.
+            throw e
+        } catch (e: java.io.IOException) {
+            Log.w("BoardPost", "detail: network, retry", e)
+            kotlinx.coroutines.delay(600)
+            parse(HanaAcademicApi.fetchBoardDetail(context, url))
+        } catch (e: Exception) {
+            Log.w("BoardPost", "detail: unreadable, relogin and retry", e)
+            HanaPortalClient.get().relogin(context)
+            parse(HanaAcademicApi.fetchBoardDetail(context, url))
+        }
+    }
+
+    /** 응답에 글이 없을 때 — [reason] 은 화면에 보일 짧은 문구, [detail] 은 원인을 찾을 때 볼 기술 정보(HTTP 본문 앞부분 등). */
+    class Unreadable(val reason: String, val detail: String) : Exception("$reason · $detail")
 
     fun parse(raw: String): HanaPostDetail {
-        val vo = JSONObject(raw).getJSONObject("boardVo")
+        if (raw.isBlank()) throw Unreadable("학교 서버가 빈 응답을 보냈습니다", "빈 응답")
+        val root = runCatching { JSONObject(raw) }.getOrNull()
+            ?: throw Unreadable("게시글 응답을 읽지 못했습니다", "JSON 아님 ${raw.length}자 · " + raw.take(80).replace(Regex("\\s+"), " "))
+        val vo = root.optJSONObject("boardVo") ?: throw Unreadable(
+            root.optString("resMsg").takeIf { it.isNotBlank() && it != "null" } ?: "게시글 응답을 읽지 못했습니다",
+            "boardVo 없음 · result=" + root.optString("result").ifBlank { "-" } + " · " + raw.take(80),
+        )
         fun str(key: String) = vo.optString(key).takeIf { !vo.isNull(key) && it.isNotBlank() && it != "null" }
         val html = str("bd_content").orEmpty()
         val files = vo.optJSONArray("fileList")?.let { list ->
@@ -545,14 +577,20 @@ fun BoardPostPane(
     var summaryRun by remember(url) { mutableIntStateOf(0) }
     val key = remember(url) { PostSummarizer.key(url) }
 
-    LaunchedEffect(url) {
+    var errorDetail by remember(url) { mutableStateOf<String?>(null) }
+    var attempt by remember(url) { mutableIntStateOf(0) }
+    LaunchedEffect(url, attempt) {
+        error = null
+        errorDetail = null
         try {
             detail = HanaPostApi.detail(context, url)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w("BoardPost", "detail failed", e)
-            error = e.message ?: "게시글을 불러오지 못했습니다"
+            // 다음에 또 떴을 때 원인을 알 수 있게 — 사용자에게는 짧은 이유, 그 아래 흐린 글씨로 기술 정보.
+            error = postFailureReason(e)
+            errorDetail = (e as? HanaPostApi.Unreadable)?.detail ?: "${e.javaClass.simpleName}: ${e.message.orEmpty().take(120)}"
         }
     }
     LaunchedEffect(detail, summaryRun) {
@@ -580,12 +618,19 @@ fun BoardPostPane(
                 Text("게시글을 불러오지 못했습니다", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "포털 페이지로 열어 볼 수 있습니다.",
+                    "${error.orEmpty()}. 다시 시도하거나 포털 페이지로 열어 볼 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = onPageVariantColor(),
                 )
+                errorDetail?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = onPageVariantColor().copy(alpha = 0.6f), maxLines = 3)
+                }
                 Spacer(Modifier.height(14.dp))
-                OneUiButton(text = "웹으로 보기", onClick = onFallbackWeb)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OneUiButton(text = "다시 시도", onClick = { attempt++ }, modifier = Modifier.weight(1f))
+                    OneUiButton(text = "웹으로 보기", onClick = onFallbackWeb, style = com.skh.hihanaevo.ui.OneUiButtonStyle.Neutral, modifier = Modifier.weight(1f))
+                }
             }
         }
         d == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
@@ -607,6 +652,16 @@ fun BoardPostPane(
     }
 
     zoomImage?.let { src -> ImageViewer(src, onDismiss = { zoomImage = null }) }
+}
+
+/** 글을 못 열었을 때 화면에 보일 짧은 이유(마침표 없이). */
+private fun postFailureReason(e: Exception): String = when (e) {
+    is java.net.UnknownHostException, is java.net.ConnectException -> "인터넷에 연결되어 있지 않습니다"
+    is java.net.SocketTimeoutException, is HanaPortalException.Timeout -> "학교 서버가 응답하지 않습니다"
+    is HanaPortalException.MissingCredentials -> "하이하나 계정이 연결되어 있지 않습니다"
+    is HanaPortalException.LoginFailed, HanaPortalException.LoginPage -> "하이하나에 다시 로그인하지 못했습니다"
+    is HanaPostApi.Unreadable -> e.reason
+    else -> "알 수 없는 오류가 났습니다"
 }
 
 @Composable

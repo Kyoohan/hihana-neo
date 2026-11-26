@@ -94,6 +94,38 @@ struct NowActivityAttributes: ActivityAttributes {
         var next: String?
         /// 이 구간이 끝난 뒤의 구간 — 푸시 없이도 끝나는 시각(staleDate)에 위젯이 이걸로 넘어가 그립니다.
         var then: Segment?
+        /// 지금부터 이어지는 하루치 구간(쉬는 시간 포함, 시간순·빈틈 없음). 있으면 화면은 이걸 겹쳐 두고 제 시간인 구간만 보여 줘서,
+        /// 앱이 자는 동안에도 구간 이름·남은 시간이 넘어갑니다. 없으면 위의 '지금 + 다음' 방식.
+        var day: [DayPart]? = nil
+        /// day 뒤에 일정이 더 있는지(8시간·개수 한도로 잘렸는지) — 마지막 구간이 끝난 뒤의 문구가 달라집니다.
+        var more: Bool? = nil
+        /// day 가운데 앞에서부터 몇 개가 글자까지 보여 줄 구간인지. 나머지는 하루 막대에만 쓰는 구간(현황이 iOS 제한으로 사라진 뒤라
+        /// 글자는 볼 수 없지만, 막대는 그날 마지막 일정까지 보이게 — 2026-11-25 사용자 요청). 없으면 전부.
+        var framed: Int? = nil
+        /// day 맨 앞의 몇 개가 이미 지난 구간인지 — 하루 막대를 그날 시작(평일 8시·주말 12시)부터 그리려고 붙인 것으로, 글자 구간은
+        /// 그 뒤부터 셉니다(framed 도 그 뒤 기준). 앱을 낮에 열면 막대가 그 시각부터 시작하던 것(2026-11-26 사용자 요청). 없으면 0.
+        var lead: Int? = nil
+    }
+
+    /// 하루치 구간 하나. 현황 데이터는 4KB 한도라 저장 이름을 한 글자로 줄입니다.
+    struct DayPart: Codable, Hashable {
+        /// "3–4교시 수업 중", "쉬는 시간", "1타임".
+        var status: String
+        /// 큰 글자 — 과목·면학 위치. 사이 시간은 빈 문자열.
+        var head: String
+        /// 하루 목록의 짧은 이름("3–4교시 영어Ⅱ").
+        var label: String
+        var room: String?
+        var start: Date
+        var end: Date
+        var accentARGB: UInt32
+        var symbol: String
+        /// 하루 목록(막대)에 올리는 구간 — 쉬는 시간·휴식은 false.
+        var listed: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case status = "s", head = "h", label = "l", room = "r", start = "a", end = "b", accentARGB = "c", symbol = "y", listed = "L"
+        }
     }
 
     struct Segment: Codable, Hashable {

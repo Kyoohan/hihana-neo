@@ -20,13 +20,15 @@
  *   아침 브리핑 — 오늘 수업과 앞으로 7일 일정 중 중요한 것(수행평가·시험·마감)을 AI 가 두세 문장으로 풀어 줍니다.
  *   사람마다 내용이 달라 KV 에 보관하지 않습니다(받은 일정은 답을 만든 뒤 버리고, 횟수만 셉니다).
  *
- * 키 앞의 v7 는 프롬프트 버전 — 프롬프트를 바꾸면 올려서 예전 요약 대신 새로 만들게 합니다.
+ * 키 앞의 v8 는 프롬프트 버전 — 프롬프트를 바꾸면 올려서 예전 요약 대신 새로 만들게 합니다.
  * 요약은 (제목 + 본문) 해시마다 딱 한 번만 AI 로 만들고 KV 에 보관합니다. 같은 글을 다른 사용자가 열면
  * 저장된 요약을 돌려줄 뿐이라 AI 사용량이 늘지 않습니다. 키가 본문 해시라서 누가 엉뚱한 본문을 보내도
  * 진짜 글의 요약을 덮어쓸 수 없습니다.
  */
 
 import { bridge } from "./bridge";
+import { opening } from "./opening";
+import { askClaude, BRIEF_MODEL, CLAUDE_IMAGE_TYPES, SUMMARY_MODEL, type ClaudeImageType } from "./claude";
 
 export interface Env {
   AI: Ai;
@@ -35,8 +37,13 @@ export interface Env {
   KMA_SERVICE_KEY?: string;
   /** 클래스룸 중계 — 기기별 암호문 한 줄씩 (bridge.ts). */
   BRIDGE: D1Database;
+  /** 정적 파일(assets/) — 오프닝 영상 (opening.ts). */
+  ASSETS: Fetcher;
+  /** Claude API 키 — `wrangler secret put ANTHROPIC_API_KEY`. 없으면 요약·브리핑도 예전처럼 Workers AI(Gemma)만 씁니다 (claude.ts). */
+  ANTHROPIC_API_KEY?: string;
 }
 
+/** Workers AI 모델 — 급식 특식 고르기, 그리고 Claude 가 없거나 실패했을 때 요약·브리핑을 대신 (claude.ts). */
 const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const MAX_TITLE = 300;
 const MAX_TEXT = 6000;
@@ -76,7 +83,8 @@ const SYSTEM = `너는 한국 고등학교 포털 공지를 학생에게 요약�
 - 대상, 날짜·시간, 장소, 해야 할 일, 마감, 준비물을 우선한다.
 - 인사말, 감사 표현, 제도 배경 설명은 뺀다.
 - 글에 없는 내용은 지어내지 않는다. 날짜와 숫자는 본문 그대로 옮긴다.
-- 각 글머리표는 짧은 한 문장으로, 존댓말 없이 '~함', '~해야 함'처럼 끝낸다.
+- 각 글머리표는 한 가지만 담은 짧은 한 문장(공백 포함 40자 이내)으로, 존댓말 없이 '~함', '~해야 함'처럼 끝낸다.
+  두 가지를 한 줄에 이어 붙이지 말고, 담을 게 많으면 덜 중요한 것(문의처·배경 설명)을 뺀다.
 
 글머리표 뒤에, 글에 날짜가 분명히 적힌 일정을 한 줄에 하나씩 아래 형식으로 덧붙인다(없으면 아무 줄도 쓰지 않는다):
 일정: <시작 YYYY-MM-DD> | <끝 YYYY-MM-DD, 하루면 비움> | <HH:MM, 시각이 없으면 비움> | <마감 또는 행사> | <대상 학년> | <일정 이름>
@@ -89,6 +97,8 @@ const SYSTEM = `너는 한국 고등학교 포털 공지를 학생에게 요약�
   학년은 대상 학년 칸에만 쓰고 일정 이름에는 다시 쓰지 않는다.
 - 대상이 'N기'(예: 16기, 17기)로 적혀 있으면 사용자 글 위의 '학교 정보'에 있는 기수-학년 표로 학년 숫자로 바꿔 대상 학년 칸에 쓴다.
   일정 이름에는 기수도 학년도 쓰지 않는다.
+- 시각 칸: 행사는 시작 시각. 마감은 마감 시각 — 기간으로 적힌 마감(예: 11/28 08:00 ~ 11/29 17:59 응답)은 끝 칸에 끝나는 날,
+  시각 칸에 끝나는 시각(17:59)을 쓰고 시작 시각은 쓰지 않는다(앱은 기간 마감을 끝나는 날에 그 시각으로 보여 준다).
 - 시각 대신 '면학 1타임'처럼 면학 타임이 적혀 있으면 '학교 정보'의 그 타임 시작 시각을 HH:MM 칸에 쓴다. 평일(월~금)과
   주말(토·일) 타임 시각이 다르니 그 날짜의 요일로 고른다. 본문에 시각이 따로 적혀 있으면 본문 시각을 쓴다.
 - 일정 이름은 20자 이내로, 무엇을 하는 날인지 바로 알게 쓴다. 예) '수학경시대회 신청 마감', '2학기 중간고사', '진로 설명회'.
@@ -104,6 +114,7 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === "/weather") return weather(req, env, url);
     if (url.pathname.startsWith("/bridge/")) return bridge(req, env, url);
+    if (url.pathname.startsWith("/opening/")) return opening(req, env, url);
     if (url.pathname === "/brief") return brief(req, env, ctx);
     if (url.pathname === "/menu") return menu(req, env, ctx);
     if (url.pathname === "/notice") return notice(env);
@@ -128,7 +139,7 @@ export default {
 
     // 이미지가 없는 글은 예전과 같은 키(제목+본문)를 써서, 이미 만든 요약을 그대로 돌려줍니다.
     const source = images.length > 0 ? `${title}\n${text}\n${images.join("\n")}` : `${title}\n${text}`;
-    const key = "v7:" + (await sha256(source));
+    const key = "v8:" + (await sha256(source));
     const hit = await env.SUMMARIES.get<Summary>(key, "json");
     if (hit) return json({ ...hit, cached: true });
 
@@ -153,12 +164,21 @@ export default {
     }
     if (!content) return json({ error: "no_content" }, 422);
 
+    const user = `${schoolInfo(posted)}\n${posted ? `글 작성일: ${posted}\n` : ""}제목: ${title}\n본문:\n${content.slice(0, MAX_TEXT * 2)}`;
+    // Claude(Opus)가 먼저 — 키가 없거나 실패·거절이거나 형식이 깨지면 예전처럼 Gemma 가 답합니다.
+    const claudeRaw = await askClaude(env, SUMMARY_MODEL, SYSTEM, user, 4000);
+    let summary = claudeRaw ? parse(claudeRaw) : null;
+    if (claudeRaw && !summary) console.error("claude unparsable", claudeRaw.slice(0, 300));
+    // 누가 답했는지 — 응답·보관본에 함께(앱은 이 칸을 쓰지 않음, 배포 뒤 확인용).
+    let by = SUMMARY_MODEL;
+    if (!summary) {
+    by = MODEL;
     let raw: string;
     try {
       const out = (await env.AI.run(MODEL as keyof AiModels, {
         messages: [
           { role: "system", content: SYSTEM },
-          { role: "user", content: `${schoolInfo(posted)}\n${posted ? `글 작성일: ${posted}\n` : ""}제목: ${title}\n본문:\n${content.slice(0, MAX_TEXT * 2)}` },
+          { role: "user", content: user },
         ],
         max_tokens: 1200,
         temperature: 0.2,
@@ -172,16 +192,17 @@ export default {
       return json({ error: "ai_failed" }, 502);
     }
 
-    const summary = parse(raw);
+    summary = parse(raw);
     if (!summary) {
       console.error("unparsable", raw.slice(0, 500));
       return json({ error: "empty" }, 502);
     }
+    }
     // 글에 날짜 표현이 하나도 없으면 일정은 버립니다 — 날짜 없는 클래스룸 공지('조 편성', '주제를 정해 두세요')에도 모델이
     // 글 작성일을 일정 날짜로 지어내 '미적분2 조별 학습' 같은 오늘 일정이 생겼습니다.
     if (!hasDateHint(`${title}\n${content}`)) summary.events = [];
-    await env.SUMMARIES.put(key, JSON.stringify(summary), { expirationTtl: KEEP_SECONDS });
-    return json({ ...summary, cached: false });
+    await env.SUMMARIES.put(key, JSON.stringify({ ...summary, model: by }), { expirationTtl: KEEP_SECONDS });
+    return json({ ...summary, model: by, cached: false });
   },
 } satisfies ExportedHandler<Env>;
 
@@ -211,6 +232,18 @@ async function readImages(env: Env, urls: string[]): Promise<string> {
       if (!res.ok || !type.startsWith("image/")) continue;
       const buf = await res.arrayBuffer();
       if (buf.byteLength > MAX_IMAGE_BYTES) continue;
+      // Claude 가 받는 형식이면 Claude(Opus)로 먼저 읽고, 안 되면 Gemma 로.
+      const mediaType = type.split(";")[0].trim().toLowerCase();
+      if ((CLAUDE_IMAGE_TYPES as readonly string[]).includes(mediaType)) {
+        const read = await askClaude(env, SUMMARY_MODEL, undefined, [
+          { type: "image", source: { type: "base64", media_type: mediaType as ClaudeImageType, data: base64(buf) } },
+          { type: "text", text: OCR_PROMPT },
+        ], 4000);
+        if (read) {
+          if (!read.includes("(글자 없음)")) parts.push(read);
+          continue;
+        }
+      }
       const out = (await env.AI.run(MODEL as keyof AiModels, {
         messages: [
           {
@@ -707,7 +740,7 @@ const BRIEF_SYSTEM = `너는 한국 기숙형 고등학교 학생에게 아침 �
 반드시 아래 형식 그대로, 한국어로만 답한다.
 
 제목: (오늘 아침 가장 먼저 알아야 할 것 하나, 공백 포함 24자 이내)
-브리핑: (두세 문장. 오늘 하루에 무엇이 있는지와, 이번 주에 미리 챙길 것을 이어서 설명)
+브리핑: (두세 문장. 첫 문장은 오늘 수업, 이어서 오늘 하루에 무엇이 있는지와 이번 주에 미리 챙길 것을 설명)
 중요: (YYYY-MM-DD) | (일정 이름, 20자 이내) | (왜 중요한지 또는 해야 할 일, 28자 이내)
 
 괄호 안은 쓸 내용의 설명이다 — 괄호·꺾쇠 없이 내용만 쓴다. 예: 중요: 2026-10-27 | 미적분 수행평가 | 3단원 범위 복습
@@ -719,7 +752,9 @@ const BRIEF_SYSTEM = `너는 한국 기숙형 고등학교 학생에게 아침 �
 - 날짜는 목록에 붙은 요일·오늘 기준 말을 그대로 써서 '오늘', '내일', '모레' 또는 '토요일(10/24)'처럼 말한다. 요일을 직접 세지 않는다. 중요 줄의 날짜 칸만 YYYY-MM-DD 로 쓴다.
 - 목록에 없는 일정·준비물·시험 범위를 지어내지 않는다. 일정 이름은 목록의 말을 그대로 쓰되 길면 줄인다.
 - 오늘 일정에 휴업일·공휴일·방학·귀가가 있으면 수업 목록은 무시하고 수업 이야기를 하지 않는다. 수업 목록이 비어 있어도 그렇다.
-- 수업은 과목을 하나하나 늘어놓지 말고, 일정과 이어질 때만(예: 수행평가가 있는 과목) 언급한다.
+- 브리핑 첫 문장에서 오늘 수업 과목을 시간 순서로 한 번씩 말한다. 같은 과목이 연달아 있으면 한 번만, 교시 번호·시각은 쓰지 않고
+  과목 이름은 목록 그대로 쓴다. 예) '오늘은 인공지능을 위한 선형대수학, 심화 영어 독해Ⅰ, 확률과 통계, AP일반물리Ⅰ 수업이 있어요.'
+  공강·빈 시간은 말하지 않는다. 제목에는 수업을 늘어놓지 않는다.
 - 문장은 '~해요', '~예요'처럼 부드러운 존댓말로 쓰고, 인사말·이모지·느낌표는 쓰지 않는다.
 - 중요한 일정이 하나도 없으면 브리핑에 '이번 주는 큰 마감이 없어요'처럼 사실대로 쓰고 중요 줄은 쓰지 않는다.`;
 
@@ -784,6 +819,13 @@ ${classes.length ? classes.map((c) => `- ${c}`).join("\n") : "(없음)"}
 일정(오늘부터 7일):
 ${lines.length ? lines.join("\n") : "(없음)"}`;
 
+  // Claude(Haiku)가 먼저 — 키가 없거나 실패·거절이거나 형식이 깨지면 예전처럼 Gemma 가 답합니다.
+  // Haiku 는 low 에서도 생각에 많이 써(시험 때 출력 1,500~2,000, 한도 2,000 에서는 답이 빈 적이 있음) 넉넉히 — 다 써도 1회 약 $0.003.
+  const claudeRaw = await askClaude(env, BRIEF_MODEL, BRIEF_SYSTEM, prompt, 6000);
+  const fromClaude = claudeRaw ? parseBrief(claudeRaw, date) : null;
+  if (claudeRaw && !fromClaude) console.error("claude brief unparsable", claudeRaw.slice(0, 300));
+  if (fromClaude) return json({ ...fromClaude, model: BRIEF_MODEL });
+
   let raw: string;
   try {
     const out = (await env.AI.run(MODEL as keyof AiModels, {
@@ -806,7 +848,7 @@ ${lines.length ? lines.join("\n") : "(없음)"}`;
     console.error("brief unparsable", raw.slice(0, 500));
     return json({ error: "empty" }, 502);
   }
-  return json(parsed);
+  return json({ ...parsed, model: MODEL });
 }
 
 /** "제목: …", "브리핑: …"(다음 줄까지 이어질 수 있음), "중요: 날짜 | 이름 | 설명" 을 뽑습니다. 7일 밖의 날짜는 버립니다. */

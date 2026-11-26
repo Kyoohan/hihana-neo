@@ -77,3 +77,43 @@ extension View {
         if #available(iOS 26.0, *) { symbolEffect(.drawOn.byLayer, isActive: !shown) } else { self }
     }
 }
+
+/// 오른쪽 위 단추 묶음의 한 칸 — 시스템 묶음(ToolbarItemGroup)은 칸마다 약 54pt 를 써서, 단추 셋이면 iPhone 17e(390pt)에서
+/// 화면 가운데를 넘었습니다(2026-11-26 기기별 비교). 칸 폭을 40pt 로 고정해 한 ToolbarItem 안의 HStack 에 나란히 둡니다 —
+/// 유리 캡슐은 시스템이 그대로 씌웁니다. 배지는 시스템 .badge 와 같은 빨간 알약을 직접 그립니다(HStack 안에선 .badge 가 안 그려짐).
+struct BarButton: View {
+    let title: String
+    let symbol: String
+    var badge: Int = 0
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { BarGlyph(symbol: symbol, badge: badge) }
+            .accessibilityLabel(title)
+            .accessibilityValue(badge > 0 ? "\(badge)개" : "")
+    }
+}
+
+/// 단추 칸의 모양 — 메뉴(Menu)의 라벨로도 씁니다.
+struct BarGlyph: View {
+    let symbol: String
+    var badge: Int = 0
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.tint)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 40, height: 36)
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text(badge > 99 ? "99+" : "\(badge)")
+                        .font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(.white)
+                        .padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
+                        .background(Color.red, in: Capsule())
+                        .offset(x: 2, y: -2)
+                }
+            }
+            .contentShape(Rectangle())
+    }
+}
