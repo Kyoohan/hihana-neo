@@ -92,11 +92,11 @@ struct NowLiveActivity: Widget {
             } compactTrailing: {
                 if let frames {
                     IslandGate(frames: frames, width: 60, height: 24, alignment: .trailing) { f in
-                        f.countdown.monospacedDigit().foregroundStyle(f.accent).multilineTextAlignment(.trailing)
+                        f.countdownCompact.monospacedDigit().foregroundStyle(f.accent).multilineTextAlignment(.trailing)
                             .padding(.trailing, 4)
                     } plain: { EmptyView() }
                 } else {
-                    Text(s.end, style: .timer).monospacedDigit().foregroundStyle(accent).frame(maxWidth: 52)
+                    LiveFrame.minutesTimer(to: s.end).monospacedDigit().foregroundStyle(accent).frame(maxWidth: 52)
                 }
             } minimal: {
                 if frames != nil, let day = context.state.day, let a = day.first, let b = day.last {
@@ -226,6 +226,15 @@ struct LiveFrame {
     /// '아직 시작 안 함(전체 길이)'으로 그린 채 시작 시각이 지나도 다시 세지 않았습니다(2026-11-26, 08:33 에 '1:50:00' 그대로).
     /// 같은 현황의 가림막·막대(ProgressView(timerInterval:))는 제때 움직였고, 시뮬레이터의 45초 앞 예약에서는 재현되지 않았습니다.
     var countdown: Text { isTail ? Text("") : Text(end, style: .timer) }
+
+    /// 접힌 아일랜드 오른쪽용 — 한 시간이 넘어도 '분:초'로만(79:19). '1:09:59'는 그 좁은 칸에서 끝이 잘렸습니다.
+    var countdownCompact: Text { isTail ? Text("") : LiveFrame.minutesTimer(to: end) }
+
+    /// 시(時) 자리 없이 분:초로 세는 타이머. 시 자리를 빼는 건 timerInterval 타이머만 되는데, 이 타이머는 시작이 미래면
+    /// '아직 시작 안 함'으로 멈춥니다(위 countdown 설명) — 시작을 끝보다 이레 앞(언제 올려도 이미 지난 때)으로 둬서 늘 세는 중이게 합니다.
+    static func minutesTimer(to end: Date) -> Text {
+        Text(timerInterval: end.addingTimeInterval(-7 * 86400)...end, countsDown: true, showsHours: false)
+    }
 
     static func build(_ state: NowActivityAttributes.ContentState) -> [LiveFrame]? {
         // 맨 앞의 지난 구간(lead)은 막대에만 — 글자 구간은 그 뒤부터.

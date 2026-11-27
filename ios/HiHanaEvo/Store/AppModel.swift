@@ -39,6 +39,18 @@ enum SettingsPage: String, Hashable, CaseIterable {
 }
 
 /// 앱 전체 상태 — 안드로이드 HiHanaEvoAppContent 의 상태와 불러오기 규칙을 그대로 옮겼습니다.
+/// 화면이 쓰는 앱 모델 — 환경에 실려 온 것, 없으면 앱에 하나뿐인 모델([AppModel.current]).
+/// 예전엔 `@Environment(AppModel.self)` 였는데, iOS 26.5 실기기에서 위 막대(툴바) 쪽 화면이 환경을 받기 전에 그려지면
+/// 'AppModel 없음' 단언으로 앱이 죽었습니다(2026-11-27 크래시 기록 5건, 알리미·게시판을 열 때). 모델은 하나뿐이고
+/// @Observable 이라 어디서 얻든 읽은 값의 변화는 그대로 따라갑니다.
+@propertyWrapper
+@MainActor
+struct SharedModel: DynamicProperty {
+    @Environment(AppModel.self) private var env: AppModel?
+    init() {}
+    var wrappedValue: AppModel { env ?? AppModel.current! }
+}
+
 @Observable
 @MainActor
 final class AppModel {

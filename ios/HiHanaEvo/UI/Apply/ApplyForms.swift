@@ -5,7 +5,7 @@ import SwiftUI
 /// 교과교실 신청 — 건물 → 교실 → 타임(지난 타임은 숨김) → 사유, 교실에 따라 승인 교사와 주의사항 동의.
 /// 아래엔 오늘 내 신청과 취소. 신청·취소는 확인 창에서 한 번 더 눌러야 보냅니다.
 struct ClassroomApplyView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var buildings: [ClassroomBuildingOption] = []
     @State private var building: ClassroomBuildingOption?
     @State private var rooms: [ClassroomRoomOption]?
@@ -199,7 +199,7 @@ struct OutingEdit: Identifiable {
 struct OutingApplyView: View {
     var edit: OutingEdit? = nil
     var onEdited: () -> Void = {}
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.dismiss) private var dismiss
     @State private var form: OutingFormInfo?
     @State private var formError: String?

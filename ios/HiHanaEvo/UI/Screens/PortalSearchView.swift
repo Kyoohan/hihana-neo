@@ -76,7 +76,7 @@ func highlighted(_ html: String, accent: Color) -> Text {
 /// 하이하나 검색 — 시스템 검색창, 검색 전엔 최근 검색어 제안. 결과는 게시판별 구역(구역마다 다섯 건과 '모두 보기'),
 /// 위의 범위 단추로 게시판 하나만 고르면 20건씩 더. 정렬은 오른쪽 위 메뉴.
 struct PortalSearchView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @State private var input = ""
     @State private var overview: SearchOverview?

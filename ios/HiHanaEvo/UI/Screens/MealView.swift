@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 급식 — 이번 주 날짜 줄(오늘이 먼저 골라져 있음)과 그날 끼니별 식단·사진 카드. 알레르기 설정은 머리의 경고.
 struct MealView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.onPage) private var onPage
     @Binding var selected: LocalDate
@@ -290,7 +290,7 @@ struct PhotoViewer: View {
 
 /// 시간표 — 월~금 주간 표를 카드에. 오늘 요일 열에 옅은 바탕. 화면에 다 들어가면 스크롤 없이 행 높이를 맞춥니다.
 struct TimetableView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
 
     var body: some View {

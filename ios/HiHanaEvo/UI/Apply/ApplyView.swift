@@ -5,7 +5,7 @@ import SwiftUI
 /// 교실별 현황, 외출·외박), 맨 아래 '내역' 칩. 모두 기기에 있는 값이라 포털에 새로 묻지 않습니다.
 /// 예전 블록 순서 편집은 자리가 정해진 구성이라 뺐습니다.
 struct ApplyView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.listPane) private var listPane
     /// 내역 칩 아래 펼친 심야면학 내역(오늘 1·2타임 신청 + 불참).
@@ -324,15 +324,16 @@ struct SeatHistoryView: View {
 struct PortalLink: View {
     let path: String
     let title: String
-    @Environment(AppModel.self) private var model
+    // 위 막대(툴바)에 놓이는 단추라 환경의 AppModel 을 읽지 않습니다 — iOS 26.5 에서 막대 단추가 환경을 받기 전에 그려져
+    // 'AppModel 없음'으로 앱이 죽었습니다(2026-11-27 크래시 기록: UIKitBarItemHost → EnvironmentValues).
     var body: some View {
-        Button { model.nav.open(.web(url: PortalClient.base + path, title: title, resync: true)) } label: { Label("포털에서 열기", systemImage: "globe") }
+        Button { Navigator.shared.open(.web(url: PortalClient.base + path, title: title, resync: true)) } label: { Label("포털에서 열기", systemImage: "globe") }
     }
 }
 
 /// 외출·외박 내역 — 상태로 거르고, 줄을 누르면 이동방법·승인 교사·복귀 확인을 펼칩니다. 신청(대기) 상태의 개인 신청은 수정·취소.
 struct OutingHistoryView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var filter: OutingFilter = .all
     @State private var rows: [OutingRow] = []
     @State private var total = 0

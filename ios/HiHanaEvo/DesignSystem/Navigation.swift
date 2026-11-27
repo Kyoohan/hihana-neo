@@ -152,8 +152,8 @@ final class Navigator {
     static let shared = Navigator()
 
     var tab: AppTab = .home
-    /// 아이폰 '전체' 시트가 열렸는지 — 탭으로 옮기지 않고 보던 탭 위에 올립니다(AllSheetView).
-    var allOpen = false
+    /// 타임라인 탭을 보던 중에 다시 누르면 올라갑니다 — 타임라인이 오늘 지금 시각으로.
+    var timelineNowTick = 0
     /// 탭마다(아이패드는 '전체' 안의 칸마다) 쌓인 화면.
     var paths: [AppTab: [Route]] = [:]
     /// 아이패드 '전체'에서 오른쪽에 열린 칸(급식·게시판·설정…).
@@ -177,7 +177,7 @@ final class Navigator {
     func open(_ route: Route) {
         if !isPad {
             switch route {
-            case .allPanel: allOpen = true
+            case .allPanel: tab = .all; paths[.all] = []
             default: paths[tab, default: []].append(route)
             }
             return

@@ -266,9 +266,12 @@ enum LiveDayTest {
             let startAt = t
             // 글자 구간 frameLimit 개 + 막대에만 쓰는 구간 6개(현황이 사라진 뒤의 저녁 일정처럼).
             let n = Int(ProcessInfo.processInfo.environment["LIVE_N"] ?? "") ?? LiveActivityController.frameLimit
+            // LIVE_SCALE=<배>: 구간 길이를 그만큼 늘림 — 한 시간 넘게 남은 때의 타이머 모양(접힌 아일랜드의 '79:19')을 봅니다.
+            let mul = Double(ProcessInfo.processInfo.environment["LIVE_SCALE"] ?? "") ?? 1
             let day: [NowActivityAttributes.DayPart] = Array((rows + rows + rows).prefix(n + 6)).map { r in
-                defer { t = t.addingTimeInterval(r.4) }
-                return .init(status: r.0, head: r.1, label: r.2, room: r.3, start: t, end: t.addingTimeInterval(r.4), accentARGB: r.5.defaultARGB, symbol: r.6, listed: r.7)
+                let len = TimeInterval(r.4) * mul
+                defer { t = t.addingTimeInterval(len) }
+                return .init(status: r.0, head: r.1, label: r.2, room: r.3, start: t, end: t.addingTimeInterval(len), accentARGB: r.5.defaultARGB, symbol: r.6, listed: r.7)
             }
             let f = day[0]
             // LIVE_LEAD=<n>: 막대 앞에 이미 지난 구간 n개(40분씩, 이름 없이)를 붙여 — 하루 시작부터 그리는 막대의 그리기 데이터 크기를 잼.

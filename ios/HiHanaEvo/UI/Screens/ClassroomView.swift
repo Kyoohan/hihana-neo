@@ -30,7 +30,7 @@ private func kindColor(_ kind: ClassroomKind) -> Color {
 private func trimNumber(_ v: Double) -> String { v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(v) }
 
 struct ClassroomView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.listPane) private var listPane
     @State private var query = ""
     @State private var editingCourses = false
@@ -174,7 +174,7 @@ private struct ClassroomSearchable: ViewModifier {
 
 /// 연결 전 — 학교 계정으로 '허용'을 한 번. 허용하러 갔다 왔으면 '확인'.
 private struct ConnectSection: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     var body: some View {
         let pending = model.bridge.pending
         Section {
@@ -378,7 +378,7 @@ private struct HiddenTodoSheet: View {
 
 /// 과제 권한이 빠진 연결 — 같은 비밀키로 웹 앱을 다시 열면 Google 이 새 권한만 묻습니다.
 private struct ReconnectSection: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
@@ -399,7 +399,7 @@ private struct ReconnectSection: View {
 /// 클래스룸 글 — 제목, 올린 시각, (과제면) 마감·제출·점수, 본문(주소는 누를 수 있게), 첨부. '클래스룸에서 열기'는 오른쪽 위.
 struct ClassroomPostView: View {
     let id: String
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
 
     var body: some View {
         let snapshot = model.classroomStore.snapshot

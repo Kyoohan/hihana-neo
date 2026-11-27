@@ -3,7 +3,7 @@ import SwiftUI
 /// 알리미 — 메일 목록처럼 안 읽은 줄은 파란 점과 굵은 글자. 누르면 읽음 처리 후 포털 알리미를 앱 안 웹으로,
 /// 열지 않고 읽음으로 하려면 왼쪽으로 밉니다. '모두 읽음'은 오른쪽 위.
 struct AlimView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.listPane) private var listPane
 
     var body: some View {

@@ -1,65 +1,54 @@
 import SwiftUI
 
 /*
- * 아이폰 '전체' — 안드로이드 ⊞ 모든 기능(TimeAxis.kt AxisPanel)과 같은 모양. 탭 바의 '전체'를 누르면 탭이 바뀌지 않고 이 시트가
- * 아래에서 올라오고(Instagram 의 + 탭처럼 탭 바 단추가 시트를 여는 방식), 탭 바는 보던 홈·타임라인에 그대로 남습니다.
- * 갈 곳 여덟은 카드 한 장에 두 칸씩, 바로 가기는 카드 한 장에 세 칸씩 — 칸 사이는 가는 선. 고르면 시트를 닫고 보던 탭에 그 화면을
- * 밀어 넣어, '<'로 돌아가면 홈·타임라인입니다(안드로이드도 그 화면을 닫으면 홈·타임라인).
+ * 아이폰 '전체' 탭의 첫 화면 — 안드로이드 ⊞ 모든 기능(TimeAxis.kt AxisPanel)과 같은 모양의 격자.
+ * 갈 곳 여덟은 카드 한 장에 두 칸씩, 바로 가기는 카드 한 장에 세 칸씩 — 칸 사이는 가는 선. 고르면 이 탭의 스택에 그 화면을
+ * 밀어 넣어, '<'로 돌아오면 다시 이 격자입니다.
+ * (15.2 에서는 탭 대신 아래에서 올라오는 시트였는데 iOS 26 에서 화면이 깨져 탭으로 되돌렸습니다 — RootView.phoneTabs 설명.)
  * 아이패드는 사이드바에 갈 곳이 모두 있어 쓰지 않습니다.
  */
-struct AllSheetView: View {
-    @Environment(AppModel.self) private var model
+struct AllGridView: View {
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     private var store = QuickLinkStore.shared
     @State private var editing = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    grid(destinations, columns: 2, height: 116) { d in destinationCell(d) }
-                    HStack {
-                        Text("바로 가기").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("편집") { editing = true }.font(.subheadline.weight(.semibold))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.top, 4)
-                    let chosen = store.keys.compactMap { k in QuickLink.all.first { $0.key == k } }
-                    if chosen.isEmpty {
-                        Text("'편집'을 눌러 자주 여는 곳을 두세요.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 6)
-                    } else {
-                        grid(chosen, columns: 3, height: 86) { q in quickCell(q) }
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                grid(destinations, columns: 2, height: 116) { d in destinationCell(d) }
+                HStack {
+                    Text("바로 가기").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("편집") { editing = true }.font(.subheadline.weight(.semibold))
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .pageBackground()
-            .navigationTitle("전체")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { CloseButton { close() } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 0) {
-                        BarButton(title: "통합 검색", symbol: "magnifyingglass") { go(.search) }
-                        BarButton(title: "설정", symbol: "gearshape") { go(.settings(nil)) }
-                    }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                let chosen = store.keys.compactMap { k in QuickLink.all.first { $0.key == k } }
+                if chosen.isEmpty {
+                    Text("'편집'을 눌러 자주 여는 곳을 두세요.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 6)
+                } else {
+                    grid(chosen, columns: 3, height: 86) { q in quickCell(q) }
                 }
             }
-            .navigationDestination(isPresented: $editing) { QuickLinkEditView().pageBackground() }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
         }
-        .presentationDragIndicator(.visible)
+        .scrollBounceBehavior(.basedOnSize)
+        .navigationTitle("전체")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 0) {
+                    BarButton(title: "통합 검색", symbol: "magnifyingglass") { go(.search) }
+                    BarButton(title: "설정", symbol: "gearshape") { go(.settings(nil)) }
+                }
+            }
+        }
+        .navigationDestination(isPresented: $editing) { QuickLinkEditView().pageBackground() }
     }
 
-    private func close() { Navigator.shared.allOpen = false }
-
-    /// 시트를 닫고 보던 탭에 그 화면을 밀어 넣습니다.
-    private func go(_ route: Route) {
-        close()
-        Navigator.shared.open(route)
-    }
+    /// 이 탭의 스택에 그 화면을 밀어 넣습니다.
+    private func go(_ route: Route) { Navigator.shared.open(route) }
 
     // MARK: 칸
 

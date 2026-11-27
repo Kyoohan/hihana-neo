@@ -27,7 +27,7 @@ extension BoardCategory {
 /// 게시판 — Mail 받은 편지함처럼 칸 없이 이어진 목록. 위의 분할 단추로 다섯 게시판을 고르고, 검색창은 늘 보입니다
 /// (치는 동안은 이 게시판에서 거르고, 검색을 누르면 하이하나 전체에서 찾습니다). '모두 읽음'은 왼쪽 위.
 struct BoardView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.listPane) private var listPane
     @State private var query = ""
 
@@ -105,7 +105,7 @@ private struct BoardTopBar<Bar: View>: ViewModifier {
 private struct BoardRow: View {
     let post: HanaBoardPost
     let action: () -> Void
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
 
     var body: some View {
         let read = model.boardRead.isRead(post)
@@ -159,10 +159,13 @@ func mailDate(_ raw: String?) -> String? {
 }
 
 extension View {
-    /// 내비게이션 막대 바로 아래에 붙는 띠 — iOS 26 은 스크롤 가장자리 효과가 함께 걸리는 막대, 그 전엔 막대 재질.
+    /// 내비게이션 막대 바로 아래에 붙는 띠 — iOS 27 은 스크롤 가장자리 효과가 함께 걸리는 막대, iOS 26 은 바탕 없는 띠, 그 전엔 막대 재질.
+    /// iOS 26 에서 safeAreaBar 를 쓰면 가장자리 흐림이 큰 제목까지 덮어 '게시판' 제목이 뿌옇게 깔렸습니다(26.5 시뮬레이터·실기기 26.5.2).
     @ViewBuilder func topBar<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 27.0, *) {
             safeAreaBar(edge: .top) { content().padding(.horizontal, 16).padding(.bottom, 8) }
+        } else if #available(iOS 26.0, *) {
+            safeAreaInset(edge: .top, spacing: 0) { content().padding(.horizontal, 16).padding(.bottom, 8) }
         } else {
             safeAreaInset(edge: .top, spacing: 0) { content().padding(.horizontal, 16).padding(.vertical, 8).background(.bar) }
         }
@@ -272,7 +275,7 @@ struct SummaryCard: View {
 struct BoardPostView: View {
     let url: String
     let fallbackTitle: String?
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @State private var detail: HanaPostDetail?
     @State private var error: String?

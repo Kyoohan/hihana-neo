@@ -18,6 +18,15 @@
       "category": "education",
       "versions": [
         {
+          "version": "15.3",
+          "buildVersion": "551",
+          "date": "2026-11-27",
+          "localizedDescription": "• iOS 26: '전체'를 한 번 연 뒤부터 화면 내용이 제목·탭 바와 겹치고, 게시판·알리미를 열 때 앱이 꺼지던 문제 — '전체'는 다시 탭으로 열립니다(칸 모양은 그대로)\n• 전체: 고른 화면에서 뒤로 가면 전체로 돌아오고, 전에 열었던 화면들이 차례로 나오지 않게\n• iOS 26: 게시판·신청 내역의 큰 제목이 흐리게 보이던 문제\n• 실시간 현황: 접힌 다이내믹 아일랜드의 남은 시간을 분:초로(79:19) — 한 시간이 넘으면 끝이 잘리던 문제\n• 타임라인: 아래 탭의 '타임라인'을 다시 누르면 지금 시각으로",
+          "downloadURL": "https://github.com/Kyoohan/hihana-neo/releases/download/v15.3/hihana-neo-15.3-ios.ipa",
+          "size": 5243429,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "15.2",
           "buildVersion": "540",
           "date": "2026-11-26",

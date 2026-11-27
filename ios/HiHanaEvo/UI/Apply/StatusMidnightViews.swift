@@ -103,7 +103,7 @@ struct ClassroomStatusView: View {
 
 /// 심야면학 신청 — 타임·층을 고르고 빈 좌석을 누르면 바로 신청, 내 좌석을 누르면 취소.
 struct MidnightView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var loggedIn = MidnightSession.isLoggedIn
     @State private var session = 1
     @State private var floor: Int?

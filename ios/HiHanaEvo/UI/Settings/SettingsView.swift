@@ -74,7 +74,7 @@ let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersion
 
 /// 설정 첫 화면 — iOS 설정 앱처럼 맨 위 계정 줄은 크게, 나머지는 아이콘과 제목만(값이 있으면 오른쪽에 회색).
 struct SettingsRootView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     private var prefs = Prefs.shared
 
     var body: some View {
@@ -161,7 +161,7 @@ struct SettingsHeaderCard: View {
 /// 설정의 세부 화면.
 struct SettingsPageView: View {
     let page: SettingsPage
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Bindable private var prefs = Prefs.shared
 
     init(page: SettingsPage) { self.page = page }
@@ -311,7 +311,7 @@ struct SettingsPageView: View {
 // MARK: - 클래스룸
 
 private struct ClassroomSettings: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var disconnecting = false
 
     var body: some View {
@@ -703,7 +703,7 @@ private struct WidgetSettingsSection: View {
 
 /// 학사시스템 연동 — 아이디·비밀번호를 저장하고 바로 로그인을 확인해 결과를 시트 안에서 보여 줍니다.
 struct AccountDialog: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.dismissDialog) private var dismiss
     @State private var memID = Credentials.memId ?? ""

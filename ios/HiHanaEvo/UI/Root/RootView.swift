@@ -3,7 +3,7 @@ import SwiftUI
 /// 앱 틀 — 아이폰은 아래 탭 홈 · 타임라인 · 전체, 아이패드는 왼쪽 사이드바에 갈 곳 모두.
 /// 곳마다 NavigationStack, 목록이 있는 곳은 목록 | 본문, 시트는 그 위.
 struct RootView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -127,10 +127,18 @@ struct RootView: View {
         }
     }
 
-    /// 아이폰 — 아래 탭 홈 · 타임라인 · 전체. '전체'는 탭으로 옮기지 않고 시트로 올립니다(안드로이드 ⊞ 처럼) — 탭 바는 보던 칸에 남습니다.
+    /// 아이폰 — 아래 탭 홈 · 타임라인 · 전체. '전체'도 제 스택을 가진 진짜 탭입니다(AllGridView 가 첫 화면).
+    /// 15.2 에서는 '전체' 탭 누름을 가로채 탭은 그대로 두고 시트만 올렸는데, iOS 26 에서는 그렇게 한 번 가로챈 뒤부터 밀어 넣는
+    /// 화면마다 안전 영역(위·아래 여백)과 환경(AppModel)을 받지 못해 제목·탭 바와 겹치고 죽었습니다(실기기 26.5.2 진단 기록과
+    /// 26.5 시뮬레이터로 확인, 2026-11-27. iOS 27 에서는 멀쩡). 탭 선택은 시스템이 고른 그대로 따라야 합니다.
     private var phoneTabs: some View {
-        TabView(selection: Binding(get: { nav.tab == .all ? .home : nav.tab }, set: { t in
-            if t == .all { nav.allOpen = true } else { nav.tab = t }
+        TabView(selection: Binding(get: { nav.tab }, set: { t in
+            // 보던 탭을 다시 누름 — 안쪽 화면이 열려 있으면 첫 화면으로, 타임라인 첫 화면이면 지금 시각으로(캘린더 앱의 '오늘' 탭처럼).
+            if t == nav.tab {
+                if !(nav.paths[t] ?? []).isEmpty { nav.paths[t] = [] }
+                else if t == .timeline { nav.timelineNowTick += 1 }
+            }
+            nav.tab = t
         })) {
             Tab(AppTab.home.label, systemImage: AppTab.home.symbol, value: AppTab.home) {
                 stack(.home) { HomeView(shown: nav.tab == .home && nav.isEmpty) }
@@ -138,19 +146,8 @@ struct RootView: View {
             Tab(AppTab.timeline.label, systemImage: AppTab.timeline.symbol, value: AppTab.timeline) {
                 stack(.timeline) { TimeAxisView() }
             }
-            // 이 탭의 내용은 보이지 않습니다(누르면 시트) — 자리만.
-            Tab(AppTab.all.label, systemImage: AppTab.all.symbol, value: AppTab.all) { Color.clear }
+            Tab(AppTab.all.label, systemImage: AppTab.all.symbol, value: AppTab.all) { stack(.all) { AllGridView() } }
                 .badge(model.alimUnread)
-        }
-        .sheet(isPresented: $nav.allOpen) {
-            // 다른 시트(nav.sheet)와 같이 색·모델을 직접 넘깁니다.
-            let dark = prefs.appTheme == .dark || (prefs.appTheme == .system && systemScheme == .dark)
-            let palette = Palette.make(dark: dark, accentARGB: prefs.accentARGB)
-            AllSheetView()
-                .environment(model)
-                .environment(\.palette, palette)
-                .environment(\.onPage, onPageColor)
-                .tint(palette.primary)
         }
     }
 

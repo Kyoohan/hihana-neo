@@ -22,7 +22,7 @@ private enum TourPage: Hashable { case welcome, features, todo, agenda, weather,
 
 struct OnboardingView: View {
     let onFinish: () -> Void
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var opening = true
     @State private var page: TourPage = .welcome
     @State private var pages: [TourPage] = [.welcome, .features, .todo, .agenda, .weather, .widget, .display, .privacy, .permissions, .login, .classroom, .update, .done]
@@ -375,7 +375,7 @@ final class LoginState {
 
 private struct LoginPage: View {
     @Bindable var state: LoginState
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     var body: some View {
         Head(title: "학사시스템 로그인", desc: "하이하나(hi.hana.hs.kr) 계정으로 로그인하면 시간표·면학 위치·학사일정·게시판을 자동으로 가져옵니다.") {
             Image(systemName: "graduationcap.circle.fill").font(.system(size: 84)).foregroundStyle(.white, Color.blue.gradient).accessibilityHidden(true)
@@ -397,7 +397,7 @@ private struct LoginPage: View {
 }
 
 private struct ClassroomPage: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     var body: some View {
         Head(title: "클래스룸 연결",
              desc: "학교 Google 계정으로 한 번 허용하면 수업의 공지·과제·자료와 과제 마감을 앱에서 봅니다. 읽기만 하고, 내용은 암호화되어 이 기기에만 저장됩니다.") {

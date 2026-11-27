@@ -27,7 +27,7 @@ private struct DayColumnHeader: View {
     let date: LocalDate
     let today: LocalDate
     let allDay: [AgendaItem]
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.onPage) private var onPage
 
@@ -56,7 +56,7 @@ private struct DayColumnHeader: View {
 /// 여러 날 보기의 왼쪽 시각 눈금 — 날짜 머리 높이만큼 비우고 7:00~23:00, 지금 시각 알약.
 private struct TimeGutter: View {
     let focusHour: CGFloat
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.onPage) private var onPage
 
@@ -96,13 +96,15 @@ struct AxisEntry: Identifiable {
 }
 
 struct TimeAxisView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.onPage) private var onPage
 
     @State private var scale: AxisScale = .hour
     @State private var focusDay = LocalDate.today()
     @State private var jumpTick = 0
+    /// 다음 한 번의 자리 옮김을 부드럽게 — 탭을 다시 눌러 지금으로 갈 때(처음 자리 잡기·'오늘' 단추는 바로).
+    @State private var jumpAnimated = false
     @State private var pinchDone = false
     /// 넓은 화면(아이패드 가로 등)의 폭 — 시간 배율을 여러 날 나란히(캘린더의 '여러 날'처럼).
     @State private var width: CGFloat = 0
@@ -142,7 +144,11 @@ struct TimeAxisView: View {
                             // 홈과 같은 전체 갱신 — 목록 맨 위에서 당기면(상태 막대를 누르면 맨 위로).
                             .refreshable { await model.refreshAll() }
                             .onAppear { proxy.scrollTo("axis-focus", anchor: .top) }
-                            .onChange(of: jumpTick) { _, _ in proxy.scrollTo("axis-focus", anchor: .top) }
+                            .onChange(of: jumpTick) { _, _ in
+                                if jumpAnimated { withAnimation(.snappy) { proxy.scrollTo("axis-focus", anchor: .top) } }
+                                else { proxy.scrollTo("axis-focus", anchor: .top) }
+                                jumpAnimated = false
+                            }
                         }
                     }
                 case .day:
@@ -206,6 +212,13 @@ struct TimeAxisView: View {
             .onEnded { _ in pinchDone = false })
         .onChange(of: scale) { _, s in if s == .hour { jumpTo(focusDay, now: focusDay == model.today) } }
         .onAppear { jumpTo(model.today, now: true) }
+        // 아래 탭 바의 '타임라인'을 보던 중에 다시 누름 — 오늘 지금 시각으로. 이미 시간 배율이면 부드럽게 옮깁니다.
+        .onChange(of: model.nav.timelineNowTick) { _, _ in
+            jumpAnimated = scale == .hour
+            focusDay = model.today
+            scale = .hour
+            jumpTo(model.today, now: true)
+        }
         // 타임라인으로 올 때마다 낡은 게시판 글·일정·클래스룸을 조용히 — 당기지 않아도 새것이 보이게.
         .task { await model.refreshStale() }
     }
@@ -386,7 +399,7 @@ private struct HourDay: View {
     var focusHour: CGFloat? = nil
     /// 여러 날 나란히 보기의 한 칸 — 시각 눈금은 왼쪽 TimeGutter 가 맡고, 날짜 머리는 같은 높이로(칸끼리 시각이 맞게).
     var columnMode = false
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @Environment(\.onPage) private var onPage
 

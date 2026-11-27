@@ -2454,7 +2454,8 @@ private fun HiHanaEvoAppContent(
             onSelect = { i ->
                 when (i) {
                     0 -> { axisTimeline = false; axisPanelOpen = false }
-                    1 -> { axisTimeline = true; axisPanelOpen = false }
+                    // 타임라인을 보던 중에 다시 누르면 오늘 지금 시각으로(처음 모습) — 홈에서 돌아올 때와 같은 되돌리기.
+                    1 -> { if (axisTimeline && !axisPanelOpen) timelineReset++ else axisTimeline = true; axisPanelOpen = false }
                     else -> axisPanelOpen = true
                 }
             },

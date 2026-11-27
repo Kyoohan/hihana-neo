@@ -3,7 +3,7 @@ import SwiftUI
 /// 스택에 밀어 넣는 화면 — 경로마다 제목·버튼·내용.
 struct RouteView: View {
     let route: Route
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
 
     var body: some View {
         switch route {
@@ -141,7 +141,7 @@ private struct OpenInBrowserButton: View {
 
 /// 급식 — 오늘(일간)과 이번 주(주간)를 위의 분할 단추로, 알레르기 설정은 오른쪽 위.
 private struct MealRoute: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var selected: LocalDate
 
     init(date: LocalDate?) {

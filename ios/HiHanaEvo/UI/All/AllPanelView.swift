@@ -45,7 +45,7 @@ private struct Destination: Identifiable {
 
 /// 전체 — 갈 곳 여덟과 바로 가기. 바로 가기는 '편집'에서 더하고 빼고 순서를 바꿉니다.
 struct AllPanelView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var editMode: EditMode = .inactive
     private var store = QuickLinkStore.shared
 

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 학사일정 — 학사·하나 일정 + 게시글에서 뽑은 일정 + 클래스룸 마감을 날짜순 한 목록으로. 맨 위엔 다가오는 시험 D-day.
 struct AcademicView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.listPane) private var listPane
 
     var body: some View {

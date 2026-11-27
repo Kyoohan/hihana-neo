@@ -8,6 +8,12 @@ data class ChangelogEntry(val version: String, val items: List<String>)
 
 val CHANGELOG: List<ChangelogEntry> = listOf(
     ChangelogEntry(
+        "15.3",
+        listOf(
+            "타임라인: 아래 바의 타임라인을 다시 누르면 지금 시각으로",
+        ),
+    ),
+    ChangelogEntry(
         "15.2",
         listOf(
             "신청·내역: 새 구성 — 맨 위에 오늘 면학(타임마다 잡힌 자리)과 다가오는 외출·외박, 그 아래 신청(면학실·도서관·심야면학, 교과교실·교실별 현황, 외출·외박)과 내역을 나눔",

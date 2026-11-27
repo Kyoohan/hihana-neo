@@ -6,7 +6,7 @@ import SwiftUI
  */
 
 struct UnifiedSearchView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Bindable private var nav = Navigator.shared
     private var query: String { nav.searchQuery }
 

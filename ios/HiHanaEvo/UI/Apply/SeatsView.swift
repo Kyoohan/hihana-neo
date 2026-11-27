@@ -4,7 +4,7 @@ import SwiftUI
 /// 결과는 서버 문구가 아니라 새로 받은 좌석표로 판정합니다(오픈 직후엔 응답이 늦거나 비어도 실제로 잡히는 일이 있어서).
 struct SeatsView: View {
     let service: SeatService
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @State private var slots: [LibrarySlot] = []
     @State private var slotId: String?
     @State private var map: LibrarySeatMap?

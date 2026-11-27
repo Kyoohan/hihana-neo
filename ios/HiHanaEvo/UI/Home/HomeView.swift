@@ -3,7 +3,7 @@ import SwiftUI
 /// 홈 — 안드로이드 TodayDashboard(폰) + BentoHome: '지금' 고리 카드, 두 기둥(왼쪽 게시판·급식 | 오른쪽 클래스룸·오늘 일정),
 /// 날씨 | 시험까지, 그리고 데일리 브리핑(아직 안 봤거나 오전이면 맨 위, 아니면 맨 아래).
 struct HomeView: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     /// 홈이 지금 실제로 보이는지 — 데일리 브리핑을 '봤다'고 셀 때.
     var shown: Bool = true
@@ -121,7 +121,7 @@ private extension View {
 enum BentoPart: Hashable { case now, columns, bottom }
 
 private struct BentoHome: View {
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     var parts: Set<BentoPart> = [.now, .columns, .bottom]
     var onOpenWeather: () -> Void
 
@@ -397,7 +397,7 @@ private struct NowHeroCard: View {
     let needsAccount: Bool
     let hasTimetable: Bool
     let now: Date
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -485,7 +485,7 @@ struct HomeStayExtraRows: View {
 private struct MealTile: View {
     let today: LocalDate
     let now: Date
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     @State private var picked: [String] = []
 
@@ -522,7 +522,7 @@ private struct MealTile: View {
 private struct TodayTile: View {
     let today: LocalDate
     let todayAgenda: [AgendaItem]
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -579,7 +579,7 @@ private struct TodayCount: View {
 /// 클래스룸 — 새 글 수와 최근 글 셋(제목과 수업명). 연결 전이면 연결 안내.
 private struct ClassroomTile: View {
     let snapshot: ClassroomSnapshot?
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -621,7 +621,7 @@ private struct ClassroomTile: View {
 /// 게시판 — 학생공지 최신 글 셋(안 읽은 글은 굵게). 글을 누르면 그 글, 칸의 나머지는 목록.
 private struct BoardTile: View {
     let posts: [HanaBoardPost]
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -652,7 +652,7 @@ private struct BoardTile: View {
 /// 시험까지 — 다가오는 시험 D-day, 없으면 학사일정 바로가기.
 private struct ExamTile: View {
     let exam: ExamDday?
-    @Environment(AppModel.self) private var model
+    @SharedModel private var model
     @Environment(\.palette) private var palette
     var body: some View {
         BentoTile(label: "시험까지", symbol: "pencil.and.list.clipboard", accent: Color(argb: 0xFF8E7CFF), action: { model.nav.open(.academic) }) {
